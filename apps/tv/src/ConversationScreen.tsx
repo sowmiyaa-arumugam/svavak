@@ -79,14 +79,14 @@ export function ConversationScreen() { // the screen
         <Text style={styles.question}>{snap.question.text}</Text>{/* the question */}
         <View style={styles.grid}>{/* 2 x 4 reply cards, best guess first in reading order */}
           {snap.question.replies.map((reply, i) => ( // one card per reply
-            <View key={i} style={[styles.card, ...look(i)]}>{/* card */}
+            <View key={i} style={[styles.card, ...look(i)]} accessible accessibilityRole="button" accessibilityLabel={reply}>{/* card */}
               <Text style={styles.cardText} numberOfLines={2}>{reply}</Text>{/* two-line bold text */}
             </View> // end of the card
           ))}{/* end of the cards */}
         </View>{/* end of the grid */}
         <View style={styles.controls}>{/* the control bar, scanned after the cards */}
           {CONTROLS.map((label, c) => ( // one pill per control
-            <View key={label} style={[styles.pill, ...look(REPLY_COUNT + c)]}>{/* the pill */}
+            <View key={label} style={[styles.pill, ...look(REPLY_COUNT + c)]} accessible accessibilityRole="button" accessibilityLabel={label}>{/* the pill */}
               <Text style={[styles.pillText, label === 'Help' && styles.helpText]}>{label}</Text>{/* its name */}
             </View> // end of the pill
           ))}{/* end of the pills */}

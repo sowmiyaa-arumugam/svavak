@@ -1,11 +1,10 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Key handling: Select keys become presses stamped at key-down and decided at key-up; a 2 s hold is Help; no auto-repeat.
+// Key handling: Select keys become presses stamped at key-down and decided at key-up; a 2 s hold is Help; no auto-repeat;
+// no bounce just after a release.
 
-import { ScanEngine } from 'switchclock'; // the engine
-import { CONFIG, optionsFor } from '../src/conversation'; // the screen's parameters and options
-import { QUESTIONS } from '../src/questions'; // the fixture
-import { HOLD_MS, SwitchInput, type KeyEventLike } from '../src/switchInput'; // tested
+import { CONFIG } from '../src/conversation'; // the screen's engine parameters
+import { HOLD_MS, RELEASE_DEBOUNCE_MS, SwitchInput, type KeyEventLike } from '../src/switchInput'; // tested
 
 const ENTER = { keyCode: 66 }; // KEYCODE_ENTER: Enter on the emulator keyboard
 const CENTER = { keyCode: 23 }; // KEYCODE_DPAD_CENTER: the remote's centre button
@@ -89,18 +88,41 @@ describe('SwitchInput', () => { // key events to presses and holds
     expect(now).toHaveBeenCalledTimes(2); // once per handler
   }); // end of the case
 
-  it('hands presses to the engine, whose 150 ms debounce drops a press 100 ms after an accepted one', () => { // debounce
-    const engine = new ScanEngine({ ...CONFIG, threshold: 2 }, () => time); // theta 2: nothing commits
-    engine.setOptions(optionsFor(QUESTIONS[0]!)); // the screen's 10 options
-    const accepted: boolean[] = []; // the engine's verdicts
-    const switchToEngine = new SwitchInput(() => time, (t) => accepted.push(engine.click(t).accepted), () => {}); // wired
-    for (const at of [2000, 2100, 2300]) { // three presses
-      time = at; // key-down time
-      switchToEngine.keyDown(ENTER); // press
-      time += 50; // held 50 ms
-      switchToEngine.keyUp(ENTER); // release: handed to the engine
-    } // end of the presses
-    expect(CONFIG.debounceMs).toBe(150); // plan Table 11
-    expect(accepted).toEqual([true, false, true]); // 100 ms after an accepted press is dropped; 300 ms is not
+  it('ignores a key-down within 150 ms after a release, after a hold or a long press', () => { // release bounce
+    tap(ENTER, HOLD_MS + 100); // a hold from 1000, released at 3100
+    time += 20; // a bounce 20 ms after the release
+    tap(ENTER, 20); // down at 3120, up at 3140
+    expect(holds).toEqual([1000]); // the hold opened Help
+    expect(presses).toEqual([]); // the bounce did not count
+    time = 3140 + RELEASE_DEBOUNCE_MS; // 150 ms after the bounce's release
+    tap(ENTER, 100); // a real press at 3290, released at 3390
+    time = 4000; // later
+    tap(ENTER, 600); // a long press, released at 4600
+    time = 4600 + RELEASE_DEBOUNCE_MS - 1; // tremor 149 ms after that release
+    tap(ENTER, 50); // down and up
+    expect(presses).toEqual([3290, 4000]); // the press and the long press, but not the tremor
+  }); // end of the case
+
+  it('restarts the 150 ms at every release, so a burst of contacts counts once', () => { // tremor burst
+    tap(ENTER, 80); // a press at 1000, released at 1080
+    time = 1100; // 20 ms later
+    tap(ENTER, 40); // a bounce, released at 1140
+    time = 1235; // 155 ms after the press's release, but 95 ms after the bounce's
+    tap(ENTER, 10); // another contact
+    expect(presses).toEqual([1000]); // one press
+  }); // end of the case
+
+  it("ignores a bounce's auto-repeat, even when it is held past 2 s", () => { // held bounce
+    tap(ENTER, 100); // a press at 1000, released at 1100
+    time = 1200; // 100 ms after the release
+    input.keyDown(ENTER); // pressed again: a bounce
+    for (time = 1700; time < 3500; time += 50) input.keyDown(ENTER); // held, with Android's repeats
+    input.keyUp(ENTER); // released at 3500
+    expect(presses).toEqual([1000]); // no late press from the repeats
+    expect(holds).toEqual([]); // and no hold: it began as a bounce
+  }); // end of the case
+
+  it("waits the engine's debounce after a release", () => { // one value for both checks
+    expect(RELEASE_DEBOUNCE_MS).toBe(CONFIG.debounceMs); // 150 ms (plan Table 11)
   }); // end of the case
 }); // end of SwitchInput

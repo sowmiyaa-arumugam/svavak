@@ -96,7 +96,8 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   own, which leaves the opening line without a comment. `yarn lint` reports 297 `prettier/prettier` warnings across
   the 29 TypeScript files and no other finding in our code.
 - **Severity:** medium, since Prettier's formatting and the comment rule cannot both hold. *(proposed)*
-- **Workaround:** none yet; the choice is open.
+- **Workaround:** Prettier was removed from the repository on 2026-10-18 (rule, `.prettierrc` and dependency); CLAUDE.md
+  says why.
 - **Suggestion:** Prettier could offer an option to keep trailing comments on block-opening lines. *(proposed)*
 
 ## 2026-10-18: Amazon's sample resolves react-native-tvos to a release candidate
@@ -163,7 +164,9 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   config-protection hook then blocked every Edit or Write to `eslint.config.js`, including restoring the content
   the session had written.
 - **Severity:** medium, since the file cannot be put back without changing the hook set-up. *(proposed)*
-- **Workaround:** open; see the B6 hand-over.
+- **Workaround:** the git-ignored `.claude/settings.local.json` sets `ECC_DISABLED_HOOKS=stop:format-typecheck`. For
+  the approved removal of the Prettier rule on 2026-10-18, `pre:config-protection` was added there for that one edit and
+  removed straight after; the next edit attempt was blocked again.
 - **Suggestion:** the format hook should respect a project's opt-out (for example a missing format script) and skip
   files that the protection hook guards. *(proposed)*
 
@@ -219,6 +222,8 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Actual:** the hook blocked the first Bash command and the first edit of each file, including throwaway scratchpad
   files, until the session restated the callers, the purpose and the user's instruction: about 20 blocks in one session.
 - **Severity:** low; each block costs one retry. *(proposed)*
-- **Workaround:** stated the facts and retried each time.
+- **Workaround:** stated the facts and retried each time. Since 2026-10-18 the git-ignored `.claude/settings.local.json`
+  sets `GATEGUARD_EXEMPT_GLOBS=**`, which exempts edits to the repository's own paths; destructive-command checks stay
+  on, and paths outside the repository are still checked.
 - **Suggestion:** exempt the session's scratchpad directory by default, and accept one statement for a batch of related
   files. *(proposed)*

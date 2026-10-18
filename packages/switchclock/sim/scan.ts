@@ -3,7 +3,7 @@
 // Seeded synthetic user and simulator for scan mode: drives the real ScanEngine with simulated presses.
 
 import type { Option } from '../src/core/priors.ts'; // option shape
-import { cycleMs, onsetMs, type ScanConfig, ScanEngine } from '../src/core/scan.ts'; // the engine under simulation
+import { cycleMs, onsetMs, type ScanConfig, ScanEngine, windowMs } from '../src/core/scan.ts'; // the engine under simulation
 import { gaussian, mulberry32 } from './random.ts'; // seeded randomness
 import type { Summary, SyntheticUser, Trial } from './simulate.ts'; // the user model and result shapes of clock mode
 
@@ -18,10 +18,12 @@ export function nextOnset(engine: ScanEngine, config: ScanConfig, k: number, aft
   return nextOnset(engine, config, k, end); // not in the rescan, or too late for it: the full scan that follows
 } // end of nextOnset
 
-/** When the user presses next, aiming at option `k` from time `after` on. */
+/** When the user presses next, aiming at option `k` from time `after` on: while it is lit, plus the reaction delay. */
 export function scanPressTime(user: SyntheticUser, rng: () => number, engine: ScanEngine, config: ScanConfig, k: number, after: number): number { // one press
   if (rng() < user.spuriousRate) return after + rng() * cycleMs(engine.scanAt(after).items.length, config); // spurious: uniform over a cycle
-  return nextOnset(engine, config, k, after) + user.biasMs + user.noiseMs * gaussian(rng); // aimed: reaction time and noise after the onset
+  const onset = nextOnset(engine, config, k, after); // when the target next lights up
+  const w = windowMs(engine.scanAt(onset).items.indexOf(k), config); // and how long it stays lit
+  return onset + rng() * w + user.biasMs + user.noiseMs * gaussian(rng); // a uniform moment in the window, plus the delay
 } // end of scanPressTime
 
 /** Index drawn with probability proportional to its weight. */

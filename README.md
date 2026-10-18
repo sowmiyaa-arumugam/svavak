@@ -5,7 +5,12 @@ Amazon Developer Hackathon 2026.
 
 ## Status
 
-Repository bootstrap only: no product code yet.
+- **Engine** ([packages/switchclock](packages/switchclock)): Bayesian single-switch selection with clock mode
+  (gate K1: 1.19% error) and Smart Scan mode (gate K1-scan: 0.48% and 1.19% error), and a seeded simulator.
+- **TV app** ([apps/tv](apps/tv)): the conversation screen in Smart Scan mode, with mock questions and replies, a
+  2 s cancel window, a 2 s hold for Help and K2 instrumentation. It runs on the Android TV emulator; gate K2 on a
+  device is still open.
+- **Not built yet:** the server (AI replies and speech), the MCP endpoint, the studio and audio playback.
 
 ## Contributing set-up
 

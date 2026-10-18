@@ -16,9 +16,9 @@ const summary = simulate({ config: DEFAULT_CONFIG, options, targets: ['yes', 'no
 assert.equal(summary.trials, 50); // every trial ran
 assert.equal(typeof mulberry32(1)(), 'number'); // the generator is exported too
 const scan = new ScanEngine(DEFAULT_SCAN_CONFIG, () => 0); // scan engine with a fixed injected clock
-scan.setOptions(options); // "yes" lights up first, at 0
-assert.equal(scan.click(DEFAULT_SCAN_CONFIG.biasMs).committed, 'yes'); // a press one reaction time later commits it
-const scanUser = { biasMs: 400, noiseMs: 100, spuriousRate: 0 }; // a synthetic scan user
+scan.setOptions(options); // "yes" is lit from 0 to 2 s, then "no" to 3 s
+assert.equal(scan.click(2500 + DEFAULT_SCAN_CONFIG.biasMs).committed, 'no'); // a press while "no" is lit commits it
+const scanUser = { biasMs: 150, noiseMs: 120, spuriousRate: 0 }; // a synthetic scan user with the default delay
 const scanSummary = simulateScan({ config: DEFAULT_SCAN_CONFIG, options, targetWeights: [1, 1], user: scanUser, trials: 50, seed: 1 }); // a short run
 assert.equal(scanSummary.trials, 50); // every trial ran
 console.log(`smoke ok: Node ${process.version} imported switchclock from TypeScript source`); // report success

@@ -26,19 +26,24 @@ Not yet built (P1): calibration and adaptation, undo, snapshot and restore, the 
 
 ## Scan mode
 
-`ScanEngine` keeps the click model, the log-space posterior and the priors, without clocks. One highlight steps
-through the options in their fixed order, `stepMs` each (1 s by default). The first option of every cycle gets
-`firstExtraMs` more (1 s), and the scan repeats.
+`ScanEngine` keeps the log-space posterior and the priors, without clocks. One highlight steps through the options
+in their fixed order, `stepMs` each (1 s by default). The first option of every cycle gets `firstExtraMs` more (1 s),
+and the scan repeats.
 
-- **Click model.** A press at time t is scored from each option's highlight onset:
-  L_k = (1 − ε)·N(t − onset_k; μ, σ) + ε/C, where C is the cycle length and μ is the reaction time (400 ms by
-  default). The offset is measured from the onset whose expected press (onset + μ) is nearest.
-- **Commit and rescan.** The engine commits once P(i*) ≥ θ. Otherwise it rescans only the top two, in scan order,
-  for one cycle from when the press is handled. An option outside the pair has no onset, so a press gives it only
-  ε/C. If nobody presses during that cycle, the full scan resumes from the top and the posterior is kept. There is
-  no re-phasing: the scan order never changes.
-- **Simulator** (`switchclock/sim/scan`). A seeded synthetic user aims at its target's next onset (reaction time
-  μ, noise σ), or with probability ε presses at a uniform time within the running cycle.
+- **Click model: press while your card is lit.** The user decides at a uniformly random moment while the target is
+  lit and presses after a reaction delay d ~ N(μ, σ²), with μ = 150 ms and σ = 120 ms by default. A press at time t
+  therefore has likelihood
+  L_k = (1 − ε)·[Φ((t − μ − start_k)/σ) − Φ((t − μ − end_k)/σ)] / (end_k − start_k) + ε/C,
+  where [start_k, end_k) is option k's highlight window and C the cycle length. Only windows that really occur
+  count: the full scan's copies from its start, and a rescan's single cycle.
+- **Commit and rescan.** The engine commits once P(i*) ≥ θ (0.97 by default). Otherwise it rescans only the top two,
+  in scan order, for one cycle from when the press is handled. An option outside the pair has no window, so a press
+  gives it only ε/C. If nobody presses during that cycle, the full scan resumes from the top and the posterior is
+  kept. A press soon after the rescan ends still counts against the rescan's windows, since it can be a reaction to
+  the last of them. There is no re-phasing: the scan order never changes.
+- **Simulator** (`switchclock/sim/scan`). A seeded synthetic user follows the same model: a uniform moment in its
+  target's next window plus a delay d ~ N(μ, σ²), or with probability ε a press at a uniform time within the running
+  cycle.
 
 ## Use
 
@@ -87,22 +92,25 @@ Simulator assumption: the synthetic user aims at the first noon at least 500 ms 
 ## Gate K1-scan result
 
 Setup:
-- The engine and the synthetic user both use μ = 400 ms, σ = 100 ms and ε = 0.05, with θ = 0.95 and s = 1 s
-  (2 s for the first option of each cycle).
+- The engine and the synthetic user both use the window model with μ = 150 ms, σ = 120 ms and ε = 0.05, with
+  θ = 0.97 and s = 1 s (2 s for the first option of each cycle).
 - There are 10 options: 8 replies, then Something else and Help.
 - 10,000 trials per case with seed 20261014 ([test/k1scan.test.ts](test/k1scan.test.ts)).
 
 | Reply priors | Targets | Error rate | Mean presses | Mean seconds per selection |
 |---|---|---|---|---|
-| Uniform; controls 3% each | uniform over the 8 replies | **1.39%** | 1.107 | 5.12 |
-| AI-like 0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04; controls 1% each | drawn from the priors | **0.87%** | 1.126 | 3.56 |
+| Uniform; controls 3% each | uniform over the 8 replies | **0.48%** | 2.260 | 7.77 |
+| AI-like 0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04; controls 1% each | drawn from the priors | **1.19%** | 1.843 | 5.52 |
 
 Both cases are gated at an error rate of at most 2%, and the test asserts that a second run with the same seed gives
 identical results. Seconds are counted from the start of the scan to the committing press. The figures are measured
 by the simulator, not taken from trials with users.
 
-Simulator assumption: the synthetic user aims at the first onset of its target at or after its previous press; the
-reaction time μ is its only lead.
+At θ = 0.95 this engine errs on 2.07% (uniform) and 1.82% (AI-like) of trials: a single spurious press inside a
+wrong window is enough to commit it. θ = 0.97 makes such a press start a rescan instead.
+
+Simulator assumption: the synthetic user aims at the first window of its target that starts at or after its previous
+press.
 
 ## Develop
 

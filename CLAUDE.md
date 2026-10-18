@@ -31,6 +31,8 @@ lack either line.
 Every hand-written source line carries a comment explaining it. Excluded: lockfiles and generated
 files (build output, generated types).
 
+Prettier is not used: it moves trailing comments off block-opening lines, which breaks this rule.
+
 ## Test before hand-over
 
 Test every change before handing it over. Report the exact commands run and their results

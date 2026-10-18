@@ -28,11 +28,14 @@ afterEach(() => { // tidy up
   jest.useRealTimers(); // back to real timers
 }); // end of tidy-up
 
-/** Presses one reaction time (plus `lateMs`) after option i next lights up, until something is committed. */
+const AIM_MS = 500; // presses come 500 ms into a window, plus the reaction delay: clear of both edges of every window
+const BOUNDARY = 2050; // 50 ms after "Tea, please" lights up and "Coffee, please" goes dark: a press too close to call
+
+/** Presses while option i is next lit (plus `lateMs`), until something is committed. */
 function select(i: number, lateMs = 0): number { // a simulated selection; returns the number of presses
   const logged = selections.length; // commits so far
   for (let presses = 1; presses <= 10; presses++) { // an aimed press commits, or rescans with i in the pair
-    time = nextOnset(conversation.engine, CONFIG, i, time) + CONFIG.biasMs + lateMs; // aim at its next onset
+    time = nextOnset(conversation.engine, CONFIG, i, time) + AIM_MS + CONFIG.biasMs + lateMs; // aim at its next window
     conversation.press(time); // press
     if (selections.length > logged) return presses; // committed
   } // end of the presses
@@ -132,44 +135,44 @@ describe('Conversation', () => { // the state machine
   }); // end of the case
 
   it("rescans the top two after a press that does not commit, and logs offsets from the chosen card's onsets", () => { // rescan
-    time = 1500; // 1.1 s after the best guess's expected press: far from every option's
+    time = BOUNDARY; // between the two best guesses: about 0.76 and 0.22
     conversation.press(time); // no commit
     expect(selections).toHaveLength(0); // nothing chosen
     expect(conversation.engine.scanAt(time)).toEqual({ items: [0, 1], epoch: time, end: time + 3000 }); // the two best guesses
-    expect(select(1)).toBe(1); // the second best guess, 2 s into the rescan
+    expect(select(1)).toBe(2); // the second best guess, chosen in its rescan window (0.94, then above theta)
     expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[1]); // "Tea, please"
-    expect(selections[0]!.offsetsMs[0]).toBeCloseTo(-500, 6); // the first press: 500 ms before its onset at 2 s
-    expect(selections[0]!.offsetsMs[1]).toBeCloseTo(CONFIG.biasMs, 6); // the second: one reaction time after its rescan onset
+    const aimed = expect.closeTo(AIM_MS + CONFIG.biasMs, 6); // an aimed press's offset
+    expect(selections[0]!.offsetsMs).toEqual([expect.closeTo(50, 6), aimed, aimed]); // 50 ms after its onset, then aimed
   }); // end of the case
 
   it('logs offsets only for the presses whose scan showed the chosen card', () => { // K2 log during rescans
-    time = 1500; // far from every expected press
+    time = BOUNDARY; // too close to call
     conversation.press(time); // a rescan of the two best guesses
-    time += 1500; // mid-rescan, far from both
+    time += BOUNDARY; // at the same boundary inside the rescan
     conversation.press(time); // the same two again; reply 5 is not shown
-    select(5); // reply 5, once the full scan is back
-    expect(selections[0]!.offsetsMs).toHaveLength(2); // the first press and the committing one
-    expect(selections[0]!.offsetsMs[0]).toBeCloseTo(-4500, 6); // the first: 4.5 s before reply 5's onset at 6 s
-    expect(selections[0]!.offsetsMs[1]).toBeCloseTo(CONFIG.biasMs, 6); // the committing press
+    const presses = select(5); // reply 5, once the full scan is back
+    expect(selections[0]!.offsetsMs).toHaveLength(1 + presses); // every press but the one in the rescan without it
+    expect(selections[0]!.offsetsMs[0]).toBeCloseTo(BOUNDARY - 6000, 6); // the first: before reply 5's onset at 6 s
   }); // end of the case
 
   it("logs each selection's own presses only, also after a cancel", () => { // K2 log across selections
-    time = 1500; // far from every expected press
+    const aimed = expect.closeTo(AIM_MS + CONFIG.biasMs, 6); // an aimed press's offset
+    time = BOUNDARY; // too close to call
     conversation.press(time); // a press that does not commit
-    select(1); // committed by its second press: offsets -500 and 400
+    select(1); // committed in its rescans
     conversation.press((time += 500)); // cancel in the window
-    select(2); // one press on the restarted scan
-    expect(selections[1]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs, 6)]); // its own press only
+    const second = select(2); // presses on the restarted scan
+    expect(selections[1]!.offsetsMs).toEqual(Array(second).fill(aimed)); // its own presses only
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(SAY_MS); // the next question
-    select(3); // one press there
-    expect(selections[2]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs, 6)]); // again only its own
+    const third = select(3); // presses there
+    expect(selections[2]!.offsetsMs).toEqual(Array(third).fill(aimed)); // again only its own
   }); // end of the case
 
   it("reports each accepted press's offset from the chosen card's highlight onset", () => { // K2 log
-    select(2, 30); // every press 30 ms later than the reaction time
-    expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[2]); // the intended reply
-    expect(selections[0]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs + 30, 6)]); // one press, 430 ms after its onset
+    select(1, 30); // every press 30 ms later than aimed
+    expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[1]); // the intended reply
+    expect(selections[0]!.offsetsMs).toEqual([expect.closeTo(AIM_MS + CONFIG.biasMs + 30, 6)]); // one press, 680 ms in
   }); // end of the case
 
   it('ignores a press within 150 ms of the last one, in any state', () => { // the engine's debounce
@@ -180,16 +183,16 @@ describe('Conversation', () => { // the state machine
     time += CONFIG.debounceMs; // 150 ms after the committing press
     conversation.press(time); // cancels; the scan restarts from it
     expect(conversation.snapshot().mode).toBe('asking'); // Asking again
-    conversation.press(time + CONFIG.debounceMs - 1); // a bounce, near enough the first card's expected press to commit it
-    expect(selections).toHaveLength(1); // is ignored
+    conversation.press(time + CONFIG.debounceMs - 1); // a bounce on the restarted scan
+    expect(conversation.engine.scanAt(time + CONFIG.debounceMs).items).toHaveLength(10); // is ignored: still the full scan
     conversation.press(time + CONFIG.debounceMs); // 150 ms after the cancel
-    expect(selections).toHaveLength(2); // counts, and commits the first card
+    expect(conversation.engine.scanAt(time + CONFIG.debounceMs).items).toEqual([0, 1]); // counts: a rescan of the two
   }); // end of the case
 
   it('notifies the screen of every change and only then', () => { // useSyncExternalStore contract
     const listener = jest.fn(); // the screen's re-render callback
     const unsubscribe = conversation.subscribe(listener); // subscribe
-    time = 1500; // a press that does not commit
+    time = BOUNDARY; // a press that does not commit
     conversation.press(time); // a rescan: the frame loop draws it, the snapshot stays
     expect(listener).not.toHaveBeenCalled(); // no re-render needed
     select(1); // a commit: Saying

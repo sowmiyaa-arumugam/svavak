@@ -7,10 +7,10 @@ import { DEFAULT_SCAN_CONFIG, ScanEngine, type ScanConfig } from '../src/core/sc
 import { mulberry32 } from '../sim/random.ts'; // seeded generator
 import { draw, nextOnset, scanPressTime, simulateScan, simulateScanSelection } from '../sim/scan.ts'; // units under test
 
-const CFG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, noiseMs: 100 }; // defaults with sigma = 100 ms
+const CFG: ScanConfig = DEFAULT_SCAN_CONFIG; // mu = 150 ms, sigma = 120 ms, eps = 0.05, theta = 0.97
 const ABC = [{ id: 'a', score: 0.5 }, { id: 'b', score: 0.5 }, { id: 'c', score: 0.5 }]; // three equally likely replies
 const FIVE = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, score: 0.5 })); // five equally likely replies
-const SHARP = { biasMs: 400, noiseMs: 10, spuriousRate: 0 }; // a very precise synthetic user
+const SHARP = { biasMs: 150, noiseMs: 10, spuriousRate: 0 }; // a very precise synthetic user
 
 describe('draw', () => { // weighted target choice
   it('draws in proportion to the weights and never a zero weight', () => { // frequencies
@@ -44,36 +44,47 @@ describe('nextOnset', () => { // when the synthetic user's target lights up next
     let time = 0; // the injected clock: options set at 0
     const engine = new ScanEngine(CFG, () => time); // engine on the test clock
     engine.setOptions(ABC); // cycle 4 s
-    time = 3650; // the non-committing press of the engine tests
-    engine.click(time); // starts the rescan of a and c, from 3.65 s to 6.65 s
-    expect(nextOnset(engine, CFG, 2, time)).toBe(5650); // c: second in the rescan, 2 s in
-    expect(nextOnset(engine, CFG, 1, time)).toBe(8650); // b: not in it; 2 s into the full scan from 6.65 s
-    expect(nextOnset(engine, CFG, 0, time + 1)).toBe(6650); // a: its rescan onset has passed; the full scan opens with it
+    time = 3100; // the non-committing boundary press of the engine tests
+    engine.click(time); // starts the rescan of b and c, from 3.1 s to 6.1 s
+    expect(nextOnset(engine, CFG, 2, time)).toBe(5100); // c: second in the rescan, 2 s in
+    expect(nextOnset(engine, CFG, 0, time)).toBe(6100); // a: not in it; the full scan from 6.1 s opens with it
+    expect(nextOnset(engine, CFG, 1, time + 1)).toBe(8100); // b: its rescan onset has passed; 2 s into the full scan
+    const user = { biasMs: 150, noiseMs: 0, spuriousRate: 0 }; // aiming at a, which the rescan leaves out
+    const rng = mulberry32(7); // seeded stream
+    const presses = Array.from({ length: 100 }, () => scanPressTime(user, rng, engine, CFG, 0, time)); // aimed at a
+    for (const t of presses) expect(t >= 6250 && t < 8250).toBe(true); // a's 2 s window in the full scan, plus the delay
+    expect(Math.max(...presses) - Math.min(...presses)).toBeGreaterThan(1800); // its full-scan window, not a 1 s one
   }); // end of the case
 }); // end of nextOnset
 
 describe('scan synthetic user', () => { // press timing
-  it('aims a reaction time after the onset, or presses uniformly over a cycle when spurious', () => { // the two press kinds
+  it('presses while the target is lit plus the reaction delay, or uniformly over a cycle when spurious', () => { // two kinds
     const engine = new ScanEngine(CFG, () => 0); // options set at 0
     engine.setOptions(FIVE); // cycle 6 s; c lights up at 3 s
     const rng = mulberry32(1); // seeded stream
-    expect(scanPressTime({ biasMs: 400, noiseMs: 0, spuriousRate: 0 }, rng, engine, CFG, 2, 500)).toBe(3400); // 3 s + 400 ms
+    const aimed = Array.from({ length: 200 }, () => scanPressTime({ biasMs: 150, noiseMs: 0, spuriousRate: 0 }, rng, engine, CFG, 2, 500)); // presses
+    for (const t of aimed) expect(t >= 3150 && t < 4150).toBe(true); // c is lit from 3 s to 4 s; plus 150 ms
+    expect(Math.max(...aimed) - Math.min(...aimed)).toBeGreaterThan(900); // spread over the whole window
+    const first = Array.from({ length: 200 }, () => scanPressTime({ biasMs: 150, noiseMs: 0, spuriousRate: 0 }, rng, engine, CFG, 0, 0)); // a
+    for (const t of first) expect(t >= 150 && t < 2150).toBe(true); // a is lit for 2 s from 0
+    expect(Math.max(...first) - Math.min(...first)).toBeGreaterThan(1800); // over the whole 2 s window
+    const noisy = Array.from({ length: 200 }, () => scanPressTime({ biasMs: 150, noiseMs: 120, spuriousRate: 0 }, rng, engine, CFG, 2, 500)); // c
+    expect(noisy.some((t) => t < 3150 || t >= 4150)).toBe(true); // the delay's spread reaches past the window
     for (let i = 0; i < 100; i++) { // spurious presses
-      const t = scanPressTime({ biasMs: 400, noiseMs: 0, spuriousRate: 1 }, rng, engine, CFG, 2, 500); // always spurious
+      const t = scanPressTime({ biasMs: 150, noiseMs: 0, spuriousRate: 1 }, rng, engine, CFG, 2, 500); // always spurious
       expect(t >= 500 && t < 6500).toBe(true); // within the cycle after 500
     } // end of the presses
   }); // end of the case
 }); // end of scan synthetic user
 
 describe('scan simulator', () => { // trials through the real engine
-  it('selects the target with one press for a precise user', () => { // a single trial
-    const trial = simulateScanSelection(CFG, FIVE, 'd', SHARP, mulberry32(3)); // aim at d, lit from 4 s
+  it('selects the target for a precise user', () => { // a single trial
+    const trial = simulateScanSelection(CFG, FIVE, 'd', SHARP, mulberry32(3)); // aim at d, lit from 4 s to 5 s
     expect(trial.committed).toBe('d'); // reached the target
-    expect(trial.presses).toBe(1); // one press
-    expect(trial.durationMs).toBeCloseTo(4400, -2); // about 400 ms after d lit up
+    expect(trial.durationMs).toBeGreaterThan(4000 + 150 - 50); // not before d lit up, plus the delay
   }); // end of the case
   it('counts errors, presses and seconds exactly as the trials it runs', () => { // the summary arithmetic
-    const user = { biasMs: 400, noiseMs: 300, spuriousRate: 0.1 }; // a sloppy user, so some commits are wrong
+    const user = { biasMs: 150, noiseMs: 300, spuriousRate: 0.1 }; // a sloppy user, so some commits are wrong
     const weights = [1, 1, 1, 1, 1]; // targets uniform over the five options
     const rng = mulberry32(4); // the stream simulateScan will use for seed 4
     let errors = 0; // replayed wrong commits
@@ -91,7 +102,7 @@ describe('scan simulator', () => { // trials through the real engine
     expect(summary).toEqual({ trials: 200, errorRate: errors / 200, meanClicks: presses / 200, meanSeconds: ms / 200 / 1000 }); // exact
   }); // end of the case
   it('gives the same summary for the same seed', () => { // reproducible from a seed (FR-22)
-    const user = { biasMs: 400, noiseMs: 150, spuriousRate: 0.1 }; // a noisy user
+    const user = { biasMs: 150, noiseMs: 150, spuriousRate: 0.1 }; // a noisy user
     const run = { config: CFG, options: FIVE, targetWeights: [1, 1, 1, 1, 1], user, trials: 300 }; // a short run
     expect(simulateScan({ ...run, seed: 9 })).toEqual(simulateScan({ ...run, seed: 9 })); // identical
   }); // end of the case

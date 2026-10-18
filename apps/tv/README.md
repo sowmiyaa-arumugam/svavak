@@ -11,11 +11,17 @@ second case of gate K1-scan. There is no server and no audio yet.
 
 - **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A press in that window
   cancels it and scans the same question again; otherwise the next question appears.
-- **Not sure yet.** When a press leaves no option at θ = 0.95, only the top two are scanned once more and the other
+- **Not sure yet.** When a press leaves no option at θ = 0.97, only the top two are scanned once more and the other
   cards dim. If nobody presses, the full scan resumes.
 - **Something else** loads the next fixture question and its replies.
 - **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, shows "Help is coming". A press
   dismisses it and the scan starts again.
+
+A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
+delay of about 150 ms (the engine's window model). Every card and both pills carry an accessibility label and the
+button role; nothing is announced aloud. The Android TV launcher banner is
+[assets/tv-banner.png](assets/tv-banner.png) (320 × 180), applied at prebuild; Fire TV takes its banner from the
+Appstore submission instead.
 
 Started from the `expo-multi-tv` app of Amazon's React Native multi-TV sample (MIT-0; see [NOTICE](../../NOTICE)):
 Expo SDK 54, react-native-tvos 0.81 on React Native's legacy architecture, the TV config plugin, and key events
@@ -26,7 +32,8 @@ through react-native-keyevent. Android package `dev.saywhen.tv`, minSdk 28 (Fire
 The switch is Select: Enter on the emulator's keyboard, or the centre button on a remote. Press when your answer
 lights up; hold for 2 s for Help. Each press is timestamped at key-down, when the key handler is entered, on the same
 clock the engine and the highlight use; whether it was a press or a hold is decided at key-up. Key auto-repeat is
-ignored, and a press within 150 ms of the last one is ignored (the engine's debounce, kept across every state). A press
+ignored, a press within 150 ms of the last one is ignored (the engine's debounce, kept across every state), and so is
+a key-down within 150 ms after any release, so a bounce after a hold or a long press does nothing. A press
 whose key went down inside the 2 s "Saying it" window cancels the reply even if the key comes up after the window, and
 a hold that began there drops the reply and opens Help on that question.
 
@@ -60,8 +67,10 @@ The Metro terminal (and `adb logcat -s ReactNativeJS`) shows:
 3. Make 20 selections with the switch alone, pressing when the intended option lights up. A selection counts when the
    first commit is the intended option; a wrong commit is a miss, even if a press in the 2 s window then cancels it.
 4. Note the lowest `[K2] fps` value of the session.
-5. Note the last `[K2] session` line. Its mean is the measured reaction time and its SD the timing jitter, including
-   key-handler and rendering delay; compare them with the engine's μ = 400 ms and σ = 120 ms.
+5. Note the last `[K2] session` line. Under the window model an aimed press lands between μ = 150 ms after the
+   card lights up and μ after it goes dark (1150 ms on a 1 s card, 2150 ms on the 2 s first card), give or take
+   σ = 120 ms. Offsets well outside that range mean the real delay or jitter, including key-handler and rendering
+   delay, is larger than the engine assumes.
 6. Check once each: holding the switch for 2 s opens "Help is coming" and a press dismisses it; a press during
    "Saying it" cancels the reply and restarts the scan of the same question.
 

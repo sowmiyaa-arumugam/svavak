@@ -8,7 +8,7 @@ import type { Selection } from './conversation'; // one committed selection
 export function meanSd(xs: readonly number[]): { mean: number; sd: number } { // summary statistics
   const mean = xs.reduce((s, x) => s + x, 0) / xs.length; // arithmetic mean
   const squares = xs.reduce((s, x) => s + (x - mean) ** 2, 0); // sum of squared deviations
-  return { mean, sd: Math.sqrt(squares / (xs.length - 1)) }; // n - 1: an estimate of the press timing noise
+  return { mean, sd: Math.sqrt(squares / (xs.length - 1)) }; // n - 1: the sample SD (window spread plus timing noise)
 } // end of meanSd
 
 /** Counts animation frames and reports the rate once per window. */
