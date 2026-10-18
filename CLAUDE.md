@@ -22,7 +22,8 @@ comment syntax:
 // SPDX-License-Identifier: Apache-2.0
 ```
 
-The pre-commit hook rejects source files that lack either line.
+"Source file" includes Dockerfiles and every YAML file. The pre-commit hook rejects source files that
+lack either line.
 
 ## A comment on every source line (non-negotiable)
 
@@ -65,4 +66,6 @@ compliance, engine and MCP tests, the secret guardrails, the video and the produ
 
 - Yarn 4.5 workspaces (`apps/*`, `services/*`, `packages/*`) through Corepack; `nodeLinker: node-modules`.
 - Enable the hook once per clone: `git config core.hooksPath .githooks` (needs gitleaks on PATH).
+  It also blocks UTF-16 files and any file over 1 MiB (`yarn.lock` excepted).
 - Log every tool problem in `docs/friction-log.md`, with the fields of plan §11.4.
+- Before any git push, complete docs/private/pre-push.md.

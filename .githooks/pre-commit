@@ -4,8 +4,9 @@
 #
 # Pre-commit guardrail (plan §6.3, layer L3). Blocks the commit when the staged changes contain
 # (a) a secret found by gitleaks, or a UTF-16 file that gitleaks cannot scan,
-# (b) a .env file other than .env.example (any letter case), or
-# (c) a source file without the licence header in its first 10 lines.
+# (b) a .env file other than .env.example (any letter case),
+# (c) a source file (code, Dockerfile or YAML) without the licence header in its first 10 lines, or
+# (d) a file over 1 MiB (1,048,576 bytes), except the generated yarn.lock.
 # Enable once per clone: git config core.hooksPath .githooks
 
 spdx='SPDX-License-Identifier: Apache-2.0'  # first required header line
@@ -24,6 +25,13 @@ while IFS= read -r -d '' path; do  # one staged path per iteration
       failed=1 ;;  # record the failure and keep checking
   esac  # end of the .env check
 
+  # (d) large files (plan §6.3 L3): measured in the index, which holds what will be committed
+  size=$(git cat-file -s ":$path" 2>/dev/null || echo 0)  # staged blob size in bytes
+  if [ "$name" != yarn.lock ] && [ "$size" -gt 1048576 ]; then  # over 1 MiB, and not the lockfile
+    echo "pre-commit: file over 1 MiB ($size bytes; limit 1048576): $path" >&2  # name the file and its size
+    failed=1  # record the failure
+  fi  # end of the size check
+
   # (a) UTF-16 text is binary to git, so gitleaks never sees it (Windows PowerShell 5.1 writes UTF-16 by default)
   case $(git cat-file blob ":$path" 2>/dev/null | od -An -tx1 -N2) in  # first two bytes of the staged blob, as hex
     *'ff fe'*|*'fe ff'*)  # a UTF-16 byte-order mark (little- or big-endian)
@@ -31,9 +39,9 @@ while IFS= read -r -d '' path; do  # one staged path per iteration
       failed=1 ;;  # record the failure
   esac  # end of the UTF-16 check
 
-  # (c) licence header: source files by extension (any letter case), Dockerfiles, and everything in .githooks/
+  # (c) licence header: source files by extension (any letter case), Dockerfiles, YAML, and everything in .githooks/
   case ${path,,} in  # match on the lower-cased full path
-    *.js|*.jsx|*.mjs|*.cjs|*.ts|*.tsx|*.mts|*.cts|*.py|*.sh|*.bash|*.ps1|*.kt|*.kts|*.java|*.css|*.html|dockerfile|*/dockerfile|dockerfile.*|*/dockerfile.*|.githooks/*)  # source files
+    *.js|*.jsx|*.mjs|*.cjs|*.ts|*.tsx|*.mts|*.cts|*.py|*.sh|*.bash|*.ps1|*.kt|*.kts|*.java|*.css|*.html|*.yml|*.yaml|dockerfile|*/dockerfile|dockerfile.*|*/dockerfile.*|.githooks/*)  # source files
       top=$(git cat-file blob ":$path" 2>/dev/null | head -n 10)  # first 10 lines of the staged (not working-tree) content
       if [[ $top != *"$spdx"* || $top != *"$copyright"* ]]; then  # either header line is missing
         echo "pre-commit: licence header missing (needs '$copyright' and '$spdx'): $path" >&2  # name the file
