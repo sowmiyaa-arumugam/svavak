@@ -1,0 +1,13 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+// Portions derived from AmazonAppDev/react-native-multi-tv-app-sample (MIT-0)
+{ // TypeScript settings for the TV app and its tests
+  "extends": "expo/tsconfig.base", // Expo's base: bundler resolution, react-native condition, no emit
+  "compilerOptions": { // overrides
+    "jsx": "react-jsx", // automatic JSX runtime, as in the sample
+    "strict": true, // all strict type checks
+    "noUncheckedIndexedAccess": true, // array reads may be undefined, as in the engine
+    "allowImportingTsExtensions": true // the engine's source names its .ts files in imports
+  }, // end of overrides
+  "include": ["**/*.ts", "**/*.tsx"] // the app, the tests and, through imports, the engine source
+} // end of the config

@@ -8,5 +8,17 @@
     "apps/*",
     "services/*",
     "packages/*"
-  ]
+  ],
+  "scripts": {
+    "lint": "eslint apps/tv packages/switchclock"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "8.58.1",
+    "@typescript-eslint/parser": "8.58.1",
+    "eslint": "9.39.4",
+    "eslint-plugin-prettier": "5.5.5",
+    "eslint-plugin-react": "7.37.5",
+    "prettier": "3.8.2",
+    "typescript": "5.9.3"
+  }
 }

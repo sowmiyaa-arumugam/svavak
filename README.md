@@ -1,6 +1,4 @@
-# Aloud
-
-> Working name; the final name is still to be chosen.
+# Say When
 
 A single-switch AAC (augmentative and alternative communication) communicator for Fire TV, built for the
 Amazon Developer Hackathon 2026.

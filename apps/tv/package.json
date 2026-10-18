@@ -1,0 +1,46 @@
+{
+  "name": "tv",
+  "version": "0.1.0",
+  "description": "Say When TV app for Fire TV: the conversation screen",
+  "license": "Apache-2.0",
+  "author": "Sowmiya Arumugam",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "EXPO_TV=1 expo start",
+    "android": "EXPO_TV=1 expo run:android",
+    "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "ios": "expo run:ios"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "modulePaths": [
+      "<rootDir>/node_modules"
+    ]
+  },
+  "dependencies": {
+    "expo": "54.0.37",
+    "expo-build-properties": "1.0.10",
+    "react": "19.1.0",
+    "react-native": "npm:react-native-tvos@0.81.5-2",
+    "react-native-keyevent": "0.3.2",
+    "switchclock": "workspace:*"
+  },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@react-native-tvos/config-tv": "0.1.7",
+    "@types/jest": "29.5.14",
+    "@types/react": "19.1.17",
+    "jest": "29.7.0",
+    "jest-expo": "54.0.18",
+    "typescript": "5.9.3"
+  },
+  "expo": {
+    "install": {
+      "exclude": [
+        "react-native"
+      ]
+    }
+  }
+}

@@ -1,7 +1,8 @@
-# CLAUDE.md: Aloud
+# CLAUDE.md: Say When
 
 Single-switch AAC communicator for Fire TV, entered in the Amazon Developer Hackathon 2026
-(deadline Fri 23 Oct 2026, 21:00 CEST). "Aloud" is a working name. Author and owner: Sowmiya Arumugam.
+(deadline Fri 23 Oct 2026, 21:00 CEST). The product is "Say When" (decision D1), replacing the working name
+"Aloud", which folder and package names still use. Author and owner: Sowmiya Arumugam.
 Licence: Apache-2.0.
 
 ## Plan (source of truth)
