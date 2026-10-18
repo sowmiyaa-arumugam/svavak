@@ -166,3 +166,59 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** open; see the B6 hand-over.
 - **Suggestion:** the format hook should respect a project's opt-out (for example a missing format script) and skip
   files that the protection hook guards. *(proposed)*
+
+## 2026-10-18: Vitest hides the K1 report lines when an AI agent runs the tests
+
+- **Tool:** Vitest 5.0.3, run from Claude Code
+- **Task attempted:** read the measured K1 and K1-scan values that the gate tests print.
+- **Steps:** ran `yarn workspace switchclock test` in a Claude Code session.
+- **Expected:** the `console.log` lines of the gate tests appear in the output, as in a terminal. *(proposed)*
+- **Actual:** no report line appeared. With the `AI_AGENT` and `CLAUDECODE` environment variables unset, the same
+  command printed them, so the agent detection in Vitest's `std-env` dependency hides the console output of passing
+  tests.
+- **Severity:** low, since the tests still pass or fail correctly. *(proposed)*
+- **Workaround:** `npx vitest run --silent=false` shows the lines; the switchclock README says so.
+- **Suggestion:** Vitest should print one line saying that console output was hidden and how to show it. *(proposed)*
+
+## 2026-10-18: `expo run:android` rejects `--port` together with `--no-bundler`
+
+- **Tool:** Expo CLI (SDK 54) `expo run:android`
+- **Task attempted:** rebuild and install the TV app while its Metro server was already running on port 8082.
+- **Steps:** ran `yarn workspace tv android --no-bundler --port 8082`.
+- **Expected:** a build that targets the already-running server on 8082. *(proposed)*
+- **Actual:** `CommandError: --port and --no-bundler are mutually exclusive arguments`. Without `--port`, the run
+  waited on `localhost:8081`, where another project's Metro was running.
+- **Severity:** low, since the app keeps its own debug server setting (`10.0.2.2:8082`). *(proposed)*
+- **Workaround:** ran it with `--no-bundler` only.
+- **Suggestion:** allow `--port` with `--no-bundler` to name the server that is already running. *(proposed)*
+
+## 2026-10-18: No adb way to hold a key for 2 s on the Android TV emulator (API 30)
+
+- **Tool:** Android Emulator with the Android TV (API 30) system image, adb
+- **Task attempted:** test and screenshot the 2 s switch hold that opens Help.
+- **Steps:** tried `adb emu event send EV_KEY:KEY_ENTER:1 EV_SYN:0:0`, `adb shell sendevent` and
+  `adb shell input keyevent`.
+- **Expected:** one of them can hold a key down for a chosen time. *(proposed)*
+- **Actual:** the console's `event send` answered `OK`, but `getevent` showed no event on any input device;
+  `sendevent` failed with `Permission denied` (SELinux, although the shell user is in the `input` group); and
+  `input keyevent` on API 30 has only `--longpress`, with no hold duration.
+- **Severity:** medium, since the Help hold could not be checked on the emulator by adb alone. *(proposed)*
+- **Workaround:** the system's `hid` shell tool registered a virtual USB keyboard through `/dev/uhid` and sent an
+  Enter report, a 2,500 ms delay and a release. On API 30 its JSON `register` command needs a `bus` field; without it
+  the tool fails with a `NullPointerException` in `Event.getBus`.
+- **Suggestion:** document a supported way to hold a key for a set time on emulators (for example an `input keyevent`
+  duration on every API level), and make the console's `event send` report when no device receives the event.
+  *(proposed)*
+
+## 2026-10-18: A Claude Code plugin hook asks for facts before the first edit of every file
+
+- **Tool:** Claude Code with the ecc plugin's GateGuard fact-forcing hook
+- **Task attempted:** build the Smart Scan change across about 25 files in one session.
+- **Steps:** created and edited source, test, documentation and scratchpad files with the Write and Edit tools.
+- **Expected:** a one-time check per session or per folder. *(proposed)*
+- **Actual:** the hook blocked the first Bash command and the first edit of each file, including throwaway scratchpad
+  files, until the session restated the callers, the purpose and the user's instruction: about 20 blocks in one session.
+- **Severity:** low; each block costs one retry. *(proposed)*
+- **Workaround:** stated the facts and retried each time.
+- **Suggestion:** exempt the session's scratchpad directory by default, and accept one statement for a batch of related
+  files. *(proposed)*

@@ -1,12 +1,21 @@
 # Say When TV app
 
-The Fire TV conversation screen (plan §4.2 and §5.2). A question band, a 2 × 4 grid of reply cards and a bar of four
-control pills (Undo, More, Spell, Help). Every card and pill is a clock option of one
-[switchclock](../../packages/switchclock) engine: 8 replies with equal priors and 4 controls, as in gate K1.
+The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It shows a question band, a 2 × 4 grid of
+reply cards and two control pills (Something else, Help). All ten are options of one
+[switchclock](../../packages/switchclock) `ScanEngine`. One thick teal highlight steps through the cards, best guess
+first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 
-Questions and replies are mock fixtures ([src/questions.ts](src/questions.ts)); there is no server and no audio yet.
-A committed reply is shown in very large text for 3 s, then the next question appears. A committed control only shows
-its name in the hint line for now.
+Questions and replies are mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first. The replies
+get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04) and each control 1%, as in the
+second case of gate K1-scan. There is no server and no audio yet.
+
+- **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A press in that window
+  cancels it and scans the same question again; otherwise the next question appears.
+- **Not sure yet.** When a press leaves no option at θ = 0.95, only the top two are scanned once more and the other
+  cards dim. If nobody presses, the full scan resumes.
+- **Something else** loads the next fixture question and its replies.
+- **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, shows "Help is coming". A press
+  dismisses it and the scan starts again.
 
 Started from the `expo-multi-tv` app of Amazon's React Native multi-TV sample (MIT-0; see [NOTICE](../../NOTICE)):
 Expo SDK 54, react-native-tvos 0.81 on React Native's legacy architecture, the TV config plugin, and key events
@@ -14,24 +23,46 @@ through react-native-keyevent. Android package `dev.saywhen.tv`, minSdk 28 (Fire
 
 ## Input
 
-The switch is Select: Enter on the emulator's keyboard, or the centre button on a remote. Press when your option's
-hand reaches the amber mark at twelve. Each press is timestamped when the key handler is entered, on the same clock
-the engine and the dials use. Key auto-repeat is ignored, and a press within 150 ms of the last one is ignored (the
-engine's debounce, kept across new selections and question changes).
+The switch is Select: Enter on the emulator's keyboard, or the centre button on a remote. Press when your answer
+lights up; hold for 2 s for Help. Each press is timestamped at key-down, when the key handler is entered, on the same
+clock the engine and the highlight use; whether it was a press or a hold is decided at key-up. Key auto-repeat is
+ignored, and a press within 150 ms of the last one is ignored (the engine's debounce, kept across every state). A press
+whose key went down inside the 2 s "Saying it" window cancels the reply even if the key comes up after the window, and
+a hold that began there drops the reply and opens Help on that question.
 
 ## Develop
 
 ```bash
 yarn workspace tv start       # Metro dev server
 yarn workspace tv android     # prebuild, build and install the debug app on the emulator, then start it
-yarn workspace tv test        # Jest: state machine, dial angles against engine phases, key handling, K2 maths
+yarn workspace tv test        # Jest: state machine, key handling, K2 maths
 yarn workspace tv typecheck   # strict tsc over the app, the tests and the engine source it imports
 ```
 
-## Gate K2 instrumentation (dev builds only)
+## Gate K2 (scan mode)
 
-The Metro terminal shows:
+Pass condition (plan §10.4): 19 of 20 intended selections, at least 50 fps, timing jitter recorded.
 
-- `[K2] fps …` every 5 s: the rate of the animation frames that turn the dials.
-- `[K2] selection …` after each committed selection: each press's offset from the chosen dial's noon, with their
-  mean and standard deviation. A `[K2] session: …` line follows with the running totals.
+### Instrumentation (dev builds only)
+
+The Metro terminal (and `adb logcat -s ReactNativeJS`) shows:
+
+- `[K2] fps …` every 5 s: the rate of the animation frames that drive the highlight.
+- `[K2] selection …` after each committed selection: each press's offset from the chosen card's highlight onset, with
+  their mean and standard deviation. Presses made while a rescan did not show the chosen card are left out. A
+  `[K2] session: …` line follows with the running totals.
+
+### Protocol
+
+1. Start Metro and install the debug build on the emulator or a Fire TV device, with the Metro terminal in view.
+2. Before each selection, write down the intended option. Spread the 20 targets over the grid, and include Something
+   else and Help at least once each.
+3. Make 20 selections with the switch alone, pressing when the intended option lights up. A selection counts when the
+   first commit is the intended option; a wrong commit is a miss, even if a press in the 2 s window then cancels it.
+4. Note the lowest `[K2] fps` value of the session.
+5. Note the last `[K2] session` line. Its mean is the measured reaction time and its SD the timing jitter, including
+   key-handler and rendering delay; compare them with the engine's μ = 400 ms and σ = 120 ms.
+6. Check once each: holding the switch for 2 s opens "Help is coming" and a press dismisses it; a press during
+   "Saying it" cancels the reply and restarts the scan of the same question.
+
+K2 passes with at least 19 of 20 intended selections, a lowest frame rate of at least 50 fps, and the jitter recorded.

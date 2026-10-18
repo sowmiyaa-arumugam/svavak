@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Mock questions and replies for the conversation screen: a synthetic persona, no real personal data.
 
-/** A question with its eight reply candidates, in grid order (two rows of four). */
+/** A question with its eight reply candidates, best guess first, in grid order (two rows of four). */
 export interface Question { // one fixture entry
   speaker: string; // who asks, shown as "<speaker> asks"
   text: string; // the question

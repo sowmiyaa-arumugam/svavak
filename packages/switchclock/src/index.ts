@@ -6,3 +6,4 @@ export { DEFAULT_CONFIG, Engine, type ClickResult, type EngineConfig } from './c
 export { logLikelihood, offsetMs, type ClickModel } from './core/model.ts'; // the click model
 export { phasesByRank, vanDerCorput } from './core/phases.ts'; // the phase layout
 export { priors, type Option, type PriorConfig } from './core/priors.ts'; // the priors
+export { cycleMs, DEFAULT_SCAN_CONFIG, onsetMs, ScanEngine, type Scan, type ScanClickResult, type ScanConfig } from './core/scan.ts'; // scan mode

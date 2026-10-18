@@ -1,39 +1,39 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2): Asking, then Speaking for 3 s, then Asking the next question.
+// The conversation screen's state machine (plan §5.2) in scan mode: Asking, Saying (2 s to cancel), and Help.
 
-import { Engine, offsetMs, type EngineConfig, type Option } from 'switchclock'; // the engine and its clock model
+import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
 
-/** The control options, always on screen after the eight replies (plan §5.1, principle 3). */
-export const CONTROLS = ['Undo', 'More', 'Spell', 'Help'] as const; // labels, in pill order
+/** The control options, scanned after the eight replies. */
+export const CONTROLS = ['Something else', 'Help'] as const; // labels, in scan order
 
 export const REPLY_COUNT = 8; // replies per question: the 2 x 4 grid
-export const SPEAK_MS = 3000; // a committed reply stays on screen this long
-export const FLASH_MS = 150; // dials whose phase changed keep their outline flash this long
+export const SAY_MS = 2000; // a committed reply fills the screen this long; a press in that time cancels it
+
+/** Mock AI-like reply scores by rank: the fixture lists each question's replies best guess first. */
+export const MOCK_SCORES = [0.35, 0.2, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04] as const; // as in gate K1-scan
+
+/** Engine parameters: the scan defaults, with the 2% the mock scores leave split over the two controls. */
+export const CONFIG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, controlShare: 0.01 }; // so the priors equal the scores
 
 /** What the screen shows. Replaced as a whole on every change. */
 export interface Snapshot { // the screen state
-  mode: 'asking' | 'speaking'; // the state of plan §5.2
+  mode: 'asking' | 'saying' | 'help'; // scanning the options; the reply and its cancel window; the Help screen
   question: Question; // the current question
-  reply: string | null; // the committed reply, while speaking
-  hint: string | null; // the last committed control's name, until the next question
-  posterior: readonly number[]; // P(option) in option order: 8 replies, then 4 controls
-  flash: readonly boolean[]; // options whose dial just jumped (empty or all false when none)
+  reply: string | null; // the committed reply, while it is being said
 } // end of Snapshot
 
 /** One committed selection, for the K2 log. */
 export interface Selection { // reported on every commit
   label: string; // what was chosen
-  offsetsMs: number[]; // each accepted press's offset from the chosen dial's nearest noon
+  offsetsMs: number[]; // each accepted press's offset from the chosen card's highlight onset, where the scan showed it
 } // end of Selection
 
-const NO_FLASH: readonly boolean[] = []; // no dial is flashing
-
-/** The 12 engine options: 8 replies with equal scores and 4 controls, exactly as in gate K1. */
+/** The 10 engine options: 8 replies at the mock scores, then Something else and Help, in scan order. */
 export function optionsFor(question: Question): Option[] { // engine options for one question
-  const replies = question.replies.map((_, i) => ({ id: `reply${i}`, score: 0.5 })); // uniform reply priors
-  const controls = CONTROLS.map((label) => ({ id: label.toLowerCase(), score: 0, control: true })); // 3% each
+  const replies = question.replies.map((_, i) => ({ id: `reply${i}`, score: MOCK_SCORES[i]! })); // best guess first
+  const controls = CONTROLS.map((label) => ({ id: label.toLowerCase(), score: 0, control: true })); // 1% each
   return [...replies, ...controls]; // the grid's cards, then the pills
 } // end of optionsFor
 
@@ -42,27 +42,28 @@ function labelOf(question: Question, i: number): string { // option index to lab
   return (i < REPLY_COUNT ? question.replies[i] : CONTROLS[i - REPLY_COUNT])!; // i is always a valid option index
 } // end of labelOf
 
-/** Runs the screen: owns the engine, turns presses into states and reports each committed selection. */
+/** Runs the screen: owns the engine, turns presses and holds into states and reports each committed selection. */
 export class Conversation { // one per screen
-  readonly engine: Engine; // the dials read its phases and t0 on every frame
-  private readonly periodMs: number; // T, for the offset log
+  readonly engine: ScanEngine; // the screen reads its highlight on every frame
+  private readonly now: () => number; // the shared clock
   private readonly debounceMs: number; // the engine's debounce, applied here too so it survives setOptions
   private readonly questions: readonly Question[]; // the fixture
   private readonly onSelection: (selection: Selection) => void; // K2 log hook
   private readonly listeners = new Set<() => void>(); // the screen's change callbacks
   private index = 0; // current question
-  private lastPress = -Infinity; // time of the last press that was not debounced, in any state
-  private presses: { t: number; phases: number[] }[] = []; // accepted presses of this selection, with their phases
-  private timer: ReturnType<typeof setTimeout> | undefined; // pending flash end or speaking time-out
+  private askedAt = 0; // when the current selection's scan started
+  private lastPress = -Infinity; // key-down time of the last press that was not debounced, in any state
+  private presses: (number | null)[][] = []; // accepted presses of this selection: offsets from each option's onset
+  private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window
   private snap: Snapshot; // what the screen shows now
 
-  constructor(config: EngineConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void) { // start
-    this.engine = new Engine(config, now); // engine on the shared clock
-    this.periodMs = config.periodMs; // T
+  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void) { // start
+    this.engine = new ScanEngine(config, now); // engine on the shared clock
+    this.now = now; // the clock
     this.debounceMs = config.debounceMs; // 150 ms by default
     this.questions = questions; // fixture
     this.onSelection = onSelection; // log hook
-    this.snap = this.ask(0, null); // Asking the first question
+    this.snap = this.ask(0); // Asking the first question
   } // end of constructor
 
   /** The current snapshot: the same object until something changes (for useSyncExternalStore). */
@@ -75,20 +76,27 @@ export class Conversation { // one per screen
   }; // end of subscribe
 
   /**
-   * A switch press at time t on the shared clock. The engine's debounce restarts with every setOptions, so it is
-   * applied here as well: a press within debounceMs of the last one is ignored even across a new selection or a
-   * question change. The engine's own check then always passes.
+   * A short press whose key went down at time t on the shared clock. The engine's debounce restarts with every
+   * setOptions, so it is applied here as well: a press within debounceMs of the last one is ignored in any state.
    */
-  press(t: number): void { // from the key handler
+  press(t: number): void { // from the switch input, at key-up
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
-    if (this.snap.mode !== 'asking') return; // nothing to choose while a reply is shown
-    const before = this.engine.phases(); // the phases this press is scored against
-    const result = this.engine.click(t); // Bayes update, commit check, re-phasing
-    this.presses.push({ t, phases: before }); // keep it for the offset log
-    if (result.committed !== null) return this.commit(result.committed); // a selection was made
-    this.show({ ...this.snap, posterior: result.posterior }, before); // new posterior and layout, with a flash
+    if (this.snap.mode !== 'asking') return this.set(this.ask(this.index)); // cancels "Saying it" or closes Help: scan again
+    if (t < this.askedAt) return this.set(this.ask(this.nearby(-1))); // the key went down before "Saying it" ended: cancel
+    const offsets = this.engine.offsets(t); // where this press falls against each option's highlight, for K2
+    const result = this.engine.click(t); // Bayes update; commit, or a rescan of the top two that the screen draws
+    this.presses.push(offsets); // keep it for the offset log
+    if (result.committed !== null) this.commit(result.committed); // a selection was made
   } // end of press
+
+  /** A hold of 2 s or more whose key went down at time t, in any state: the Help screen. */
+  help(t: number): void { // from the switch input, at key-up
+    if (this.snap.mode === 'help') return; // already shown
+    clearTimeout(this.timer); // a reply still in its "Saying it" window is not said
+    if (t < this.askedAt) this.snap = this.ask(this.nearby(-1)); // the hold began in "Saying it": back to that question
+    this.set({ ...this.snap, mode: 'help', reply: null }); // "Help is coming"
+  } // end of help
 
   /** Cancels the pending timer; the screen calls this when it unmounts. */
   dispose(): void { // clean-up
@@ -99,32 +107,27 @@ export class Conversation { // one per screen
     const question = this.snap.question; // the question it answers
     const chosen = optionsFor(question).findIndex((o) => o.id === id); // its option index
     const label = labelOf(question, chosen); // its text
-    const offsetsMs = this.presses.map((p) => offsetMs(p.t, this.engine.t0, this.periodMs, p.phases[chosen]!)); // from its noon
+    const offsetsMs = this.presses.map((p) => p[chosen]).filter((d): d is number => typeof d === 'number'); // where shown
     this.onSelection({ label, offsetsMs }); // K2 log
-    // A control shows only its name, in the hint. Its new selection restarts the clocks, so every dial jumps.
-    if (chosen >= REPLY_COUNT) return this.show(this.ask(this.index, label), []); // an empty "before" flashes them all
-    this.set({ ...this.snap, mode: 'speaking', reply: label, flash: NO_FLASH }); // a reply: very large text
-    this.later(SPEAK_MS, () => this.set(this.ask((this.index + 1) % this.questions.length, null))); // then the next question
+    if (label === 'Help') return this.set({ ...this.snap, mode: 'help' }); // the same screen as a hold
+    if (label === 'Something else') return this.set(this.ask(this.nearby(1))); // the next fixture set
+    this.set({ ...this.snap, mode: 'saying', reply: label }); // the reply fills the screen
+    this.timer = setTimeout(() => this.set(this.ask(this.nearby(1))), SAY_MS); // then the next question, unless cancelled
   } // end of commit
 
-  private ask(index: number, hint: string | null): Snapshot { // a new selection on question `index`
+  private nearby(step: number): number { // index of the question `step` places from the current one, wrapping round
+    return (this.index + step + this.questions.length) % this.questions.length; // after the last comes the first
+  } // end of nearby
+
+  private ask(index: number): Snapshot { // a new selection on question `index`
+    clearTimeout(this.timer); // a pending "Saying it" window is over
     const question = this.questions[index]!; // the question
     this.index = index; // remember it
-    this.engine.setOptions(optionsFor(question)); // priors; clocks restart now; phases by prior rank
+    this.engine.setOptions(optionsFor(question)); // priors from the mock scores; a full scan from now
+    this.askedAt = this.now(); // presses whose key went down before this belong to the state before
     this.presses = []; // no presses yet
-    return { mode: 'asking', question, reply: null, hint, posterior: this.engine.posterior(), flash: NO_FLASH }; // Asking
+    return { mode: 'asking', question, reply: null }; // Asking
   } // end of ask
-
-  private show(next: Snapshot, before: readonly number[]): void { // a state whose dials may have jumped
-    const after = this.engine.phases(); // the new layout, applied instantly
-    this.set({ ...next, flash: after.map((p, i) => p !== before[i]) }); // with t0 unchanged, a new phase is a jump
-    this.later(FLASH_MS, () => this.set({ ...this.snap, flash: NO_FLASH })); // then end the flash
-  } // end of show
-
-  private later(ms: number, action: () => void): void { // one pending timer at a time
-    clearTimeout(this.timer); // a newer timer replaces an older one
-    this.timer = setTimeout(action, ms); // schedule
-  } // end of later
 
   private set(next: Snapshot): void { // replace the snapshot and notify
     this.snap = next; // the new state

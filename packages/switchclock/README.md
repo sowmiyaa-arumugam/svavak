@@ -24,6 +24,22 @@ dependencies, so the same source runs in React Native (Hermes via Metro), in the
 
 Not yet built (P1): calibration and adaptation, undo, snapshot and restore, the benchmark sweep.
 
+## Scan mode
+
+`ScanEngine` keeps the click model, the log-space posterior and the priors, without clocks. One highlight steps
+through the options in their fixed order, `stepMs` each (1 s by default). The first option of every cycle gets
+`firstExtraMs` more (1 s), and the scan repeats.
+
+- **Click model.** A press at time t is scored from each option's highlight onset:
+  L_k = (1 − ε)·N(t − onset_k; μ, σ) + ε/C, where C is the cycle length and μ is the reaction time (400 ms by
+  default). The offset is measured from the onset whose expected press (onset + μ) is nearest.
+- **Commit and rescan.** The engine commits once P(i*) ≥ θ. Otherwise it rescans only the top two, in scan order,
+  for one cycle from when the press is handled. An option outside the pair has no onset, so a press gives it only
+  ε/C. If nobody presses during that cycle, the full scan resumes from the top and the posterior is kept. There is
+  no re-phasing: the scan order never changes.
+- **Simulator** (`switchclock/sim/scan`). A seeded synthetic user aims at its target's next onset (reaction time
+  μ, noise σ), or with probability ε presses at a uniform time within the running cycle.
+
 ## Use
 
 ```ts
@@ -33,6 +49,17 @@ const engine = new Engine(DEFAULT_CONFIG, () => performance.now()); // injected 
 engine.setOptions([{ id: 'yes', score: 0.6 }, { id: 'no', score: 0.3 }, { id: 'undo', score: 0, control: true }]);
 // Draw option i's hand at (now - engine.t0) / periodMs + engine.phases()[i] turns.
 const r = engine.click(pressTimestampMs); // { accepted, posterior, committed, confirm }
+```
+
+Scan mode:
+
+```ts
+import { DEFAULT_SCAN_CONFIG, ScanEngine } from 'switchclock';
+
+const scan = new ScanEngine(DEFAULT_SCAN_CONFIG, () => performance.now()); // injected clock, in ms
+scan.setOptions([{ id: 'yes', score: 0.6 }, { id: 'no', score: 0.3 }, { id: 'help', score: 0, control: true }]);
+// Highlight option scan.highlighted(now); dim the options missing from scan.scanAt(now).items.
+const r = scan.click(pressTimestampMs); // { accepted, posterior, committed }
 ```
 
 The package exports its TypeScript source directly, with no build step. Node 24 runs it through type stripping,
@@ -57,12 +84,35 @@ measured by the simulator, not taken from trials with users.
 Simulator assumption: the synthetic user aims at the first noon at least 500 ms after its previous press
 (`REACTION_LEAD_MS`).
 
+## Gate K1-scan result
+
+Setup:
+- The engine and the synthetic user both use μ = 400 ms, σ = 100 ms and ε = 0.05, with θ = 0.95 and s = 1 s
+  (2 s for the first option of each cycle).
+- There are 10 options: 8 replies, then Something else and Help.
+- 10,000 trials per case with seed 20261014 ([test/k1scan.test.ts](test/k1scan.test.ts)).
+
+| Reply priors | Targets | Error rate | Mean presses | Mean seconds per selection |
+|---|---|---|---|---|
+| Uniform; controls 3% each | uniform over the 8 replies | **1.39%** | 1.107 | 5.12 |
+| AI-like 0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04; controls 1% each | drawn from the priors | **0.87%** | 1.126 | 3.56 |
+
+Both cases are gated at an error rate of at most 2%, and the test asserts that a second run with the same seed gives
+identical results. Seconds are counted from the start of the scan to the committing press. The figures are measured
+by the simulator, not taken from trials with users.
+
+Simulator assumption: the synthetic user aims at the first onset of its target at or after its previous press; the
+reaction time μ is its only lead.
+
 ## Develop
 
 ```bash
 yarn workspace switchclock test       # Vitest with coverage gates (90% lines, 85% branches), then the Node smoke test
 yarn workspace switchclock typecheck  # strict tsc: engine without DOM or Node types, then the tests
 ```
+
+The K1 and K1-scan tests print their measured values. When Vitest detects an AI coding agent it hides the console
+output of passing tests; `npx vitest run --silent=false` (in this folder) shows it.
 
 ## Licence
 

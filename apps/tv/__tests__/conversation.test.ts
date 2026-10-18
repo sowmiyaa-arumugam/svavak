@@ -1,22 +1,26 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The screen state machine: Asking -> Speaking (3 s) -> next question; controls; the outline flash; K2 offsets.
+// The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2.
 
-import { DEFAULT_CONFIG } from 'switchclock'; // engine parameters
-import { CONTROLS, Conversation, FLASH_MS, REPLY_COUNT, SPEAK_MS, type Selection } from '../src/conversation'; // tested
+import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
+import { CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Selection } from '../src/conversation'; // tested
 import { QUESTIONS } from '../src/questions'; // the fixture
+import { HOLD_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
 
-const T = DEFAULT_CONFIG.periodMs; // clock period
+const ENTER = { keyCode: 66 }; // KEYCODE_ENTER: the switch
+
+const SOMETHING_ELSE = REPLY_COUNT; // option index of Something else, scanned after the replies
+const HELP = REPLY_COUNT + 1; // option index of Help, scanned last
 
 let time = 0; // the fake shared clock, in ms
 let selections: Selection[] = []; // what the K2 hook received
 let conversation: Conversation; // the instance under test
 
 beforeEach(() => { // a fresh conversation at time 0
-  jest.useFakeTimers(); // control the 3 s and 150 ms timers
-  time = 0; // clocks start at 0
+  jest.useFakeTimers(); // control the 2 s window
+  time = 0; // the scan starts at 0
   selections = []; // nothing logged yet
-  conversation = new Conversation(DEFAULT_CONFIG, () => time, QUESTIONS, (s) => selections.push(s)); // under test
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s)); // under test
 }); // end of set-up
 
 afterEach(() => { // tidy up
@@ -24,18 +28,11 @@ afterEach(() => { // tidy up
   jest.useRealTimers(); // back to real timers
 }); // end of tidy-up
 
-/** Time of option i's first noon at least 500 ms from now (the simulator's reaction lead). */
-function nextNoon(i: number): number { // noon finder on the engine's clock
-  const { engine } = conversation; // t0 and phases
-  const phase = engine.phases()[i]!; // option i's phase
-  return engine.t0 + (Math.ceil((time + 500 - engine.t0) / T + phase) - phase) * T; // whole turns back to time
-} // end of nextNoon
-
-/** Presses at option i's noon (plus `lateMs`) until something is committed; returns the number of presses. */
-function select(i: number, lateMs = 0): number { // a simulated selection
+/** Presses one reaction time (plus `lateMs`) after option i next lights up, until something is committed. */
+function select(i: number, lateMs = 0): number { // a simulated selection; returns the number of presses
   const logged = selections.length; // commits so far
-  for (let presses = 1; presses <= 10; presses++) { // the engine commits within K_max + 1 presses
-    time = nextNoon(i) + lateMs; // aim at the noon
+  for (let presses = 1; presses <= 10; presses++) { // an aimed press commits, or rescans with i in the pair
+    time = nextOnset(conversation.engine, CONFIG, i, time) + CONFIG.biasMs + lateMs; // aim at its next onset
     conversation.press(time); // press
     if (selections.length > logged) return presses; // committed
   } // end of the presses
@@ -48,127 +45,160 @@ describe('Conversation', () => { // the state machine
     for (const q of QUESTIONS) expect(q.replies).toHaveLength(REPLY_COUNT); // eight replies each
   }); // end of the case
 
-  it('starts Asking the first question, with 12 options in one engine and no hint', () => { // initial state
-    const s = conversation.snapshot(); // the first snapshot
-    expect(s.mode).toBe('asking'); // Asking
-    expect(s.question).toBe(QUESTIONS[0]); // the first question
-    expect(s.hint).toBeNull(); // default hint
-    expect(s.posterior).toHaveLength(REPLY_COUNT + CONTROLS.length); // 8 replies and 4 controls
-    expect(s.posterior.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 12); // a distribution
+  it('starts Asking the first question: a full scan of 10 options, best guess first, at the mock priors', () => { // start
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // Asking
+    expect(conversation.engine.scanAt(0)).toEqual({ items: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], epoch: 0, end: Infinity }); // all
+    const p = conversation.engine.posterior(); // the priors
+    [...MOCK_SCORES, 0.01, 0.01].forEach((x, i) => expect(p[i]).toBeCloseTo(x, 12)); // the scores, then 1% per control
   }); // end of the case
 
-  it('commits a reply, shows it for 3 s, then asks the next question', () => { // Asking -> Speaking -> Asking
+  it('commits a reply, fills the screen with it for 2 s, then asks the next question', () => { // Asking -> Saying -> Asking
     select(1); // "Tea, please"
-    const speaking = conversation.snapshot(); // after the commit
-    expect(speaking.mode).toBe('speaking'); // Speaking
-    expect(speaking.reply).toBe(QUESTIONS[0]!.replies[1]); // the chosen reply
-    const listener = jest.fn(); // the screen's re-render callback
-    conversation.subscribe(listener); // subscribed from here on
-    conversation.press(time + 1000); // a press while speaking
-    expect(conversation.snapshot()).toBe(speaking); // is ignored
-    jest.advanceTimersByTime(SPEAK_MS - 1); // just under 3 s
-    expect(conversation.snapshot().mode).toBe('speaking'); // still speaking
-    expect(listener).not.toHaveBeenCalled(); // no change so far, so no re-render
-    time += SPEAK_MS; // the clock at the switch-over
-    jest.advanceTimersByTime(1); // 3 s reached
-    expect(listener).toHaveBeenCalledTimes(1); // the screen is told about the next question
-    const next = conversation.snapshot(); // after the time-out
-    expect(next.mode).toBe('asking'); // Asking again
-    expect(next.question).toBe(QUESTIONS[1]); // the next question
-    expect(next.reply).toBeNull(); // no reply shown
-    expect(conversation.engine.t0).toBe(time); // the clocks restarted for it
+    const saying = conversation.snapshot(); // after the commit
+    expect(saying).toEqual({ mode: 'saying', question: QUESTIONS[0], reply: QUESTIONS[0]!.replies[1] }); // Saying
+    jest.advanceTimersByTime(SAY_MS - 1); // just under 2 s
+    expect(conversation.snapshot()).toBe(saying); // still saying it
+    time += SAY_MS; // the clock at the switch-over
+    jest.advanceTimersByTime(1); // 2 s reached
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // the next question
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // a fresh scan from the top
   }); // end of the case
 
-  it('comes back to the first question after the last', () => { // wrap-around
-    for (let q = 0; q < QUESTIONS.length; q++) { // answer every question
-      select(0); // the first reply
-      jest.advanceTimersByTime(SPEAK_MS); // let it be shown
-    } // end of the questions
+  it('cancels the reply with a press in its 2 s window and scans the same question again', () => { // cancel
+    select(2); // "Coffee with milk": Saying
+    time += 500; // half a second into the window
+    conversation.press(time); // a press cancels
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // its scan restarted from the top
+    jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
+    expect(conversation.snapshot().question).toBe(QUESTIONS[0]); // it did not move on
+  }); // end of the case
+
+  it('cancels when the key went down inside the window but came up after it closed', () => { // straddling press
+    select(0); // "Coffee, please": Saying
+    const down = time + SAY_MS - 50; // key-down 50 ms before the window closes
+    time += SAY_MS; // the window closes
+    jest.advanceTimersByTime(SAY_MS); // and the next question appears
+    expect(conversation.snapshot().question).toBe(QUESTIONS[1]); // before the key came up
+    time += 100; // key-up, when the press is handed over
+    conversation.press(down); // stamped at key-down
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the reply is cancelled
+    expect(selections).toHaveLength(1); // and nothing was chosen on the next question
+  }); // end of the case
+
+  it('loads the next fixture set when Something else is chosen, and wraps after the last', () => { // Something else
+    select(SOMETHING_ELSE); // choose it
+    expect(selections[0]!.label).toBe('Something else'); // it was committed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // straight to the next set
+    for (let q = 1; q < QUESTIONS.length; q++) select(SOMETHING_ELSE); // through the rest
     expect(conversation.snapshot().question).toBe(QUESTIONS[0]); // the first again
   }); // end of the case
 
-  it('shows a committed control only by name in the hint and restarts the selection', () => { // controls
-    const help = REPLY_COUNT + CONTROLS.indexOf('Help'); // the Help option
-    select(help); // choose it
-    const s = conversation.snapshot(); // after the commit
-    expect(selections[0]!.label).toBe('Help'); // Help was committed
-    expect(s.mode).toBe('asking'); // still Asking
-    expect(s.question).toBe(QUESTIONS[0]); // the same question
-    expect(s.hint).toBe('Help'); // its name in the hint line
-    expect(conversation.engine.t0).toBe(time); // a new selection started at the commit
-    expect(s.posterior[help]).toBeCloseTo(DEFAULT_CONFIG.controlShare, 12); // back to the prior
-    expect(s.flash).toEqual(s.posterior.map(() => true)); // the clocks restarted, so every dial flashes
-    const presses = select(3, 20); // a reply on the same question, every press 20 ms late
-    expect(selections[1]!.offsetsMs).toHaveLength(presses); // only this selection's presses are logged
-    for (const d of selections[1]!.offsetsMs) expect(d).toBeCloseTo(20, 6); // against its own t0 and phases
-    jest.advanceTimersByTime(SPEAK_MS); // shown, then the next question
-    expect(conversation.snapshot().hint).toBeNull(); // the hint is back to the default
+  it('opens Help when Help is chosen, and a press dismisses it', () => { // Help by scan
+    expect(select(HELP)).toBe(2); // at 1%, the first press leaves Help short of theta; its rescan settles it
+    expect(selections[0]!.label).toBe('Help'); // it was committed
+    expect(conversation.snapshot().mode).toBe('help'); // "Help is coming"
+    time += 1000; // later
+    conversation.press(time); // a press dismisses it
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // scanned again from the top
   }); // end of the case
 
-  it('flashes exactly the dials whose phase changed, for 150 ms', () => { // phase changes
-    const before = conversation.engine.phases(); // layout before the press
-    time = nextNoon(5); // one press at option 5's noon
-    conversation.press(time); // press
-    expect(selections).toHaveLength(0); // one press does not commit from uniform priors
-    const after = conversation.engine.phases(); // new layout, applied at once
-    const s = conversation.snapshot(); // after the press
-    expect(s.flash).toEqual(after.map((p, i) => p !== before[i])); // flash marks the changed dials
-    expect(s.flash).toContain(true); // and some did change
-    jest.advanceTimersByTime(FLASH_MS - 1); // just under 150 ms
-    expect(conversation.snapshot().flash).toEqual(s.flash); // still flashing
-    jest.advanceTimersByTime(1); // 150 ms reached
-    expect(conversation.snapshot().flash.some(Boolean)).toBe(false); // the flash is over
+  it('opens Help on a hold while Asking; another hold changes nothing and a press dismisses it', () => { // Help by hold
+    time = 700; // the hold's key-down
+    conversation.help(time); // handed over at its key-up
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help
+    const listener = jest.fn(); // the screen's re-render callback
+    conversation.subscribe(listener); // subscribed from here on
+    conversation.help((time += 3000)); // another hold
+    expect(listener).not.toHaveBeenCalled(); // changes nothing
+    conversation.press((time += 1000)); // dismiss
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // scanned again
+  }); // end of the case
+
+  it('drops the reply and opens Help on its question when a hold starts in the Saying window', () => { // hold across its end
+    const input = new SwitchInput(() => time, (t) => conversation.press(t), (t) => conversation.help(t)); // wired as on screen
+    select(0); // "Coffee, please": Saying from `time`
+    time += 300; // 300 ms into the window
+    input.keyDown(ENTER); // the hold starts
+    time += SAY_MS - 300; // the window closes while the key is down
+    jest.advanceTimersByTime(SAY_MS); // and the next question appears
+    expect(conversation.snapshot().question).toBe(QUESTIONS[1]); // before the key came up
+    time += HOLD_MS; // released well after 2 s
+    input.keyUp(ENTER); // a hold
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // on the reply's question
+    conversation.press((time += 1000)); // dismiss
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // that question again
+  }); // end of the case
+
+  it("rescans the top two after a press that does not commit, and logs offsets from the chosen card's onsets", () => { // rescan
+    time = 1500; // 1.1 s after the best guess's expected press: far from every option's
+    conversation.press(time); // no commit
+    expect(selections).toHaveLength(0); // nothing chosen
+    expect(conversation.engine.scanAt(time)).toEqual({ items: [0, 1], epoch: time, end: time + 3000 }); // the two best guesses
+    expect(select(1)).toBe(1); // the second best guess, 2 s into the rescan
+    expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[1]); // "Tea, please"
+    expect(selections[0]!.offsetsMs[0]).toBeCloseTo(-500, 6); // the first press: 500 ms before its onset at 2 s
+    expect(selections[0]!.offsetsMs[1]).toBeCloseTo(CONFIG.biasMs, 6); // the second: one reaction time after its rescan onset
+  }); // end of the case
+
+  it('logs offsets only for the presses whose scan showed the chosen card', () => { // K2 log during rescans
+    time = 1500; // far from every expected press
+    conversation.press(time); // a rescan of the two best guesses
+    time += 1500; // mid-rescan, far from both
+    conversation.press(time); // the same two again; reply 5 is not shown
+    select(5); // reply 5, once the full scan is back
+    expect(selections[0]!.offsetsMs).toHaveLength(2); // the first press and the committing one
+    expect(selections[0]!.offsetsMs[0]).toBeCloseTo(-4500, 6); // the first: 4.5 s before reply 5's onset at 6 s
+    expect(selections[0]!.offsetsMs[1]).toBeCloseTo(CONFIG.biasMs, 6); // the committing press
+  }); // end of the case
+
+  it("logs each selection's own presses only, also after a cancel", () => { // K2 log across selections
+    time = 1500; // far from every expected press
+    conversation.press(time); // a press that does not commit
+    select(1); // committed by its second press: offsets -500 and 400
+    conversation.press((time += 500)); // cancel in the window
+    select(2); // one press on the restarted scan
+    expect(selections[1]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs, 6)]); // its own press only
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // the next question
+    select(3); // one press there
+    expect(selections[2]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs, 6)]); // again only its own
+  }); // end of the case
+
+  it("reports each accepted press's offset from the chosen card's highlight onset", () => { // K2 log
+    select(2, 30); // every press 30 ms later than the reaction time
+    expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[2]); // the intended reply
+    expect(selections[0]!.offsetsMs).toEqual([expect.closeTo(CONFIG.biasMs + 30, 6)]); // one press, 430 ms after its onset
+  }); // end of the case
+
+  it('ignores a press within 150 ms of the last one, in any state', () => { // the engine's debounce
+    select(0); // committed at `time`: Saying
+    const s = conversation.snapshot(); // the window
+    conversation.press(time + CONFIG.debounceMs - 1); // a bounce
+    expect(conversation.snapshot()).toBe(s); // is not a cancel
+    time += CONFIG.debounceMs; // 150 ms after the committing press
+    conversation.press(time); // cancels; the scan restarts from it
+    expect(conversation.snapshot().mode).toBe('asking'); // Asking again
+    conversation.press(time + CONFIG.debounceMs - 1); // a bounce, near enough the first card's expected press to commit it
+    expect(selections).toHaveLength(1); // is ignored
+    conversation.press(time + CONFIG.debounceMs); // 150 ms after the cancel
+    expect(selections).toHaveLength(2); // counts, and commits the first card
   }); // end of the case
 
   it('notifies the screen of every change and only then', () => { // useSyncExternalStore contract
     const listener = jest.fn(); // the screen's re-render callback
     const unsubscribe = conversation.subscribe(listener); // subscribe
-    time = nextNoon(5); // a press
-    conversation.press(time); // new posterior and flash
+    time = 1500; // a press that does not commit
+    conversation.press(time); // a rescan: the frame loop draws it, the snapshot stays
+    expect(listener).not.toHaveBeenCalled(); // no re-render needed
+    select(1); // a commit: Saying
     expect(listener).toHaveBeenCalledTimes(1); // one re-render
-    conversation.press(time + 10); // debounced
-    expect(listener).toHaveBeenCalledTimes(1); // no re-render
-    jest.advanceTimersByTime(FLASH_MS); // the flash ends
-    expect(listener).toHaveBeenCalledTimes(2); // one more re-render
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // the next question
+    expect(listener).toHaveBeenCalledTimes(2); // one more
     unsubscribe(); // the screen unmounts
-    time = nextNoon(5); // another press
-    conversation.press(time); // a change
+    select(0); // another commit
     expect(listener).toHaveBeenCalledTimes(2); // not delivered after unsubscribing
-  }); // end of the case
-
-  it('ignores a press within 150 ms of the last one', () => { // the engine's debounce
-    time = nextNoon(2); // a press
-    conversation.press(time); // accepted
-    const s = conversation.snapshot(); // after it
-    conversation.press(time + DEFAULT_CONFIG.debounceMs - 1); // too soon
-    expect(conversation.snapshot()).toBe(s); // nothing changed
-  }); // end of the case
-
-  it('keeps the debounce across the new selection a control starts', () => { // setOptions resets the engine's own
-    select(REPLY_COUNT + CONTROLS.indexOf('Undo')); // a committed control restarts the selection
-    const s = conversation.snapshot(); // the new selection
-    conversation.press(time + 50); // a bounce 50 ms after the committing press
-    expect(conversation.snapshot()).toBe(s); // ignored
-    conversation.press(time + DEFAULT_CONFIG.debounceMs); // 150 ms after it
-    expect(conversation.snapshot()).not.toBe(s); // accepted
-  }); // end of the case
-
-  it('debounces the first press on a new question against a press made while speaking', () => { // straddling presses
-    select(0); // a reply: Speaking
-    time += SPEAK_MS - 20; // just before the next question
-    conversation.press(time); // ignored while speaking, but it counts for the debounce
-    jest.advanceTimersByTime(SPEAK_MS); // the next question appears
-    const s = conversation.snapshot(); // Asking again
-    expect(s.mode).toBe('asking'); // on the next question
-    conversation.press(time + 50); // a bounce 50 ms after that press
-    expect(conversation.snapshot()).toBe(s); // ignored
-  }); // end of the case
-
-  it("reports each accepted press's offset from the chosen dial's noon", () => { // K2 log
-    const presses = select(2, 30); // every press 30 ms late
-    expect(selections).toHaveLength(1); // one selection
-    expect(selections[0]!.label).toBe(QUESTIONS[0]!.replies[2]); // the intended reply
-    expect(selections[0]!.offsetsMs).toHaveLength(presses); // one offset per accepted press
-    for (const d of selections[0]!.offsetsMs) expect(d).toBeCloseTo(30, 6); // each 30 ms after noon
   }); // end of the case
 }); // end of Conversation
