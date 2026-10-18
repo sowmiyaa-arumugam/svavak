@@ -1,0 +1,6 @@
+# Normalise text files to LF in the repository, whatever each clone's core.autocrlf says
+* text=auto
+
+# Shell scripts and git hooks keep LF in the working tree too, so bash can run them on Windows
+*.sh text eol=lf
+.githooks/* text eol=lf

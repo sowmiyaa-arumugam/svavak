@@ -1,0 +1,95 @@
+# Ignore rules: guardrail layer L2 of plan §6.3. The pre-commit hook (L3) backs these up.
+
+# Private planning documents: never committed
+docs/private/
+
+# Environment files: secrets live only in a local .env; the example file is the one exception
+.env*
+*.env
+!.env.example
+
+# AWS: credentials come from SSO only, cached outside the repo; never commit a local config folder
+.aws/
+
+# Private keys, certificates and keystores
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+
+# Android local SDK paths (machine-specific)
+local.properties
+
+# SQLite databases, including WAL and journal side files
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Audio caches and recordings (synthesised speech, demo footage)
+audio-cache/
+.audio-cache/
+recordings/
+*.mp4
+*.mov
+*.mkv
+*.webm
+
+# Logs
+logs/
+*.log
+
+# Test coverage and test reports
+coverage/
+.nyc_output/
+.coverage
+.coverage.*
+htmlcov/
+test-results/
+playwright-report/
+blob-report/
+
+# Build output
+dist/
+build/
+out/
+web-build/
+.expo/
+*.tsbuildinfo
+*.apk
+*.aab
+.gradle/
+apps/*/android/
+apps/*/ios/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Dependencies and Yarn 4 state (Yarn docs, "Which files should be gitignored?", no Zero-Installs)
+node_modules/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# IDE, editor, OS and local agent settings
+.idea/
+.vscode/
+*.iml
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+desktop.ini

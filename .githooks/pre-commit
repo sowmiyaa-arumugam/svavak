@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Copyright 2026 Sowmiya Arumugam
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pre-commit guardrail (plan §6.3, layer L3). Blocks the commit when the staged changes contain
+# (a) a secret found by gitleaks, or a UTF-16 file that gitleaks cannot scan,
+# (b) a .env file other than .env.example (any letter case), or
+# (c) a source file without the licence header in its first 10 lines.
+# Enable once per clone: git config core.hooksPath .githooks
+
+spdx='SPDX-License-Identifier: Apache-2.0'  # first required header line
+copyright='Copyright 2026 Sowmiya Arumugam'  # second required header line
+failed=0  # set to 1 by any failed check; the verdict comes after all checks have run
+
+# Walk the staged added, copied, modified and renamed paths (NUL-separated, so any file name is safe)
+while IFS= read -r -d '' path; do  # one staged path per iteration
+  name=${path##*/}  # base name, without the directories
+
+  # (b) environment files: block .env, .env.* and *.env anywhere, except the placeholder example
+  case ${name,,} in  # match on the lower-cased base name, because Windows opens .ENV as .env
+    .env.example) ;;  # the committed example is allowed
+    .env*|*.env)  # any other environment file
+      echo "pre-commit: .env file staged: $path" >&2  # name the file
+      failed=1 ;;  # record the failure and keep checking
+  esac  # end of the .env check
+
+  # (a) UTF-16 text is binary to git, so gitleaks never sees it (Windows PowerShell 5.1 writes UTF-16 by default)
+  case $(git cat-file blob ":$path" 2>/dev/null | od -An -tx1 -N2) in  # first two bytes of the staged blob, as hex
+    *'ff fe'*|*'fe ff'*)  # a UTF-16 byte-order mark (little- or big-endian)
+      echo "pre-commit: UTF-16 file staged; gitleaks cannot scan it, so re-save it as UTF-8: $path" >&2  # name the file
+      failed=1 ;;  # record the failure
+  esac  # end of the UTF-16 check
+
+  # (c) licence header: source files by extension (any letter case), Dockerfiles, and everything in .githooks/
+  case ${path,,} in  # match on the lower-cased full path
+    *.js|*.jsx|*.mjs|*.cjs|*.ts|*.tsx|*.mts|*.cts|*.py|*.sh|*.bash|*.ps1|*.kt|*.kts|*.java|*.css|*.html|dockerfile|*/dockerfile|dockerfile.*|*/dockerfile.*|.githooks/*)  # source files
+      top=$(git cat-file blob ":$path" 2>/dev/null | head -n 10)  # first 10 lines of the staged (not working-tree) content
+      if [[ $top != *"$spdx"* || $top != *"$copyright"* ]]; then  # either header line is missing
+        echo "pre-commit: licence header missing (needs '$copyright' and '$spdx'): $path" >&2  # name the file
+        failed=1  # record the failure
+      fi ;;  # end of the header test
+  esac  # end of the source-file match
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)  # staged paths from the index
+
+# (a) secrets: gitleaks scans the staged diff. It can exit 0 with "no leaks found" after scanning nothing:
+# when colour is forced on, it cannot parse its git diff, and when that git writes to stderr it logs ERR.
+if command -v gitleaks >/dev/null 2>&1; then  # gitleaks is on PATH
+  out=$(  # run gitleaks in a subshell, so the overrides below stay local to it
+    unset GIT_CONFIG_PARAMETERS  # drop "git -c" options, which would outrank the overrides below
+    export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=never  # colour off for gitleaks' own git diff
+    export GIT_CONFIG_KEY_1=color.diff GIT_CONFIG_VALUE_1=never  # the diff-specific colour setting too
+    gitleaks git --staged --redact --no-banner --no-color --verbose 2>&1  # scan the staged diff; capture log and findings
+  )  # end of the subshell
+  rc=$?  # gitleaks' exit code: 1 when it found a leak
+  printf '%s\n' "$out" >&2  # show gitleaks' report
+  if [ "$rc" -ne 0 ] || grep -qE '^[^ ]+ ERR ' <<<"$out"; then  # a leak, or an error logged despite exit 0
+    echo "pre-commit: gitleaks reported a secret or a scan error in the staged changes" >&2  # explain the block
+    failed=1  # record the failure
+  fi  # end of the scan result
+else  # gitleaks is not installed
+  echo "pre-commit: gitleaks not found on PATH; install it (see README) before committing" >&2  # explain the block
+  failed=1  # a missing scanner must not let secrets through (fail closed)
+fi  # end of the secrets check
+
+if [ "$failed" -ne 0 ]; then  # at least one check failed
+  echo "pre-commit: commit blocked. Fix the files above; do not bypass with --no-verify." >&2  # final verdict
+  exit 1  # a non-zero exit makes git abort the commit
+fi  # end of the verdict
+exit 0  # all checks passed
