@@ -1,0 +1,19 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+{ // TypeScript settings for the engine and simulator
+  "compilerOptions": { // compiler options
+    "strict": true, // all strict type checks
+    "noUncheckedIndexedAccess": true, // array reads may be undefined, so out-of-range bugs surface at compile time
+    "target": "ES2022", // modern syntax; Metro's Babel lowers it for Hermes
+    "lib": ["ES2022"], // no DOM: the engine must not depend on browser APIs
+    "types": [], // no @types/node either, so a Node-only API in src fails the typecheck
+    "module": "ESNext", // ES modules everywhere
+    "moduleResolution": "Bundler", // resolve like Metro, Vite and Vitest do
+    "allowImportingTsExtensions": true, // imports name the .ts file, which Node's type stripping needs
+    "verbatimModuleSyntax": true, // type-only imports must say so, so stripping them is safe
+    "erasableSyntaxOnly": true, // no enums or parameter properties: Node can only strip erasable syntax
+    "noEmit": true, // no build step: consumers import the TypeScript source
+    "skipLibCheck": true // do not type-check dependencies' declaration files
+  }, // end of compiler options
+  "include": ["src", "sim"] // engine and simulator; the tests have their own config in test/
+} // end of the config

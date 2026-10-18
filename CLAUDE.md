@@ -36,6 +36,8 @@ Test every change before handing it over. Report the exact commands run and thei
 
 ## Working style (karpathy guidelines)
 
+Every code change follows the karpathy-guidelines skill (`/andrej-karpathy-skills:karpathy-guidelines`).
+
 - State assumptions. When something is unclear, ask instead of guessing.
 - Write the simplest code that works. Nothing speculative: no unrequested features, options or abstractions.
 - Make surgical changes: touch only what the task needs; no drive-by refactors or reformatting.

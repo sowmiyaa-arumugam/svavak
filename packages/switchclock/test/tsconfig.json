@@ -1,0 +1,9 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+{ // TypeScript settings for the tests
+  "extends": "../tsconfig.json", // same strict settings as the engine
+  "compilerOptions": { // overrides
+    "lib": ["ES2022", "DOM"] // adds console for the K1 report; the engine itself stays without DOM
+  }, // end of overrides
+  "include": ["."] // the test files
+} // end of the config
