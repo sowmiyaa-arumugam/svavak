@@ -1,0 +1,42 @@
+# Copyright 2026 Sowmiya Arumugam
+# SPDX-License-Identifier: Apache-2.0
+# The Say When sim agent (plan §4.5): a Strands agent over the server's MCP tools, managed with uv.
+
+[project]  # package metadata
+name = "say-when-agent"  # the service's name
+version = "0.1.0"  # first version
+description = "Say When sim agent: a Strands agent over the server's MCP tools, streaming its turns over SSE"  # what it is
+license = "Apache-2.0"  # SPDX licence expression
+authors = [{ name = "Sowmiya Arumugam" }]  # the author
+requires-python = "==3.12.*"  # Python 3.12, as in the agent's Compose image (plan Table 21)
+dependencies = [  # exact pins
+  "strands-agents==1.61.1",  # the agent loop, its MCP client and the Bedrock model
+  "mcp==1.30.0",  # MCP SDK: protocol 2025-11-25, as the server; 2.x drops the initialize handshake and sessions
+  "boto3[crt]==1.43.114",  # AWS SDK for live mode; the crt extra is needed for `aws login` profiles
+  "starlette==1.9.0",  # the HTTP app and its streaming (SSE) response
+  "uvicorn==0.54.0",  # the ASGI server
+  "python-dotenv==1.2.4",  # reads the repository's .env
+]  # end of the dependencies
+
+[dependency-groups]  # uv's development groups
+dev = [  # tests and lint
+  "pytest==9.1.1",  # test runner
+  "pytest-cov==7.1.0",  # coverage and its gate
+  "ruff==0.17.1",  # linter
+]  # end of the dev group
+
+[tool.pytest.ini_options]  # pytest settings
+testpaths = ["tests"]  # where the tests are
+pythonpath = ["."]  # so the tests import say_when_agent from this folder
+addopts = "--cov=say_when_agent --cov-report=term-missing --cov-fail-under=80"  # coverage gate: 80%, as the server's
+filterwarnings = [  # known warnings from the libraries, not from this code (docs/friction-log.md); anything else still shows
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",  # Starlette 1.9's TestClient
+  "ignore:Use `streamable_http_client` instead:DeprecationWarning",  # Strands' MCPClient(url=...) calls mcp's deprecated helper
+  "ignore:coroutine 'MCPClient.stop.<locals>._set_close_event' was never awaited:RuntimeWarning",  # Strands' stop() after a failed start
+]  # end of the filters
+
+[tool.ruff]  # ruff's settings
+line-length = 160  # room for the trailing comment on every line, so import lines are not wrapped
+
+[tool.ruff.lint]  # ruff's rules
+extend-select = ["B", "I"]  # the defaults plus bugbear and import order

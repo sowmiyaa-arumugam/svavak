@@ -18,12 +18,16 @@ Amazon Developer Hackathon 2026.
   memory.
   - An MCP endpoint (`/mcp`, Streamable HTTP) gives caregiver agents `ask_question`, `get_answer`,
     `get_recent_messages` and `add_profile_fact`, with its own agent token (gate K4: conformance suite and Inspector).
+- **Agent** ([services/agent](services/agent)): the simulated Alexa+, a Python Strands agent over the server's MCP tools
+  that streams each caregiver turn as SSE on `127.0.0.1:8790`, mock-first (live mode: Nova 2 Lite, tested only with a
+  stub model).
 - **Not built yet:** the studio, SQLite storage and Docker.
 
 ## Contributing set-up
 
 Requirements: Node.js 24 with Corepack (Yarn 4.5), Git (Git for Windows on Windows) and
-[gitleaks](https://github.com/gitleaks/gitleaks) on `PATH`.
+[gitleaks](https://github.com/gitleaks/gitleaks) on `PATH`, and [uv](https://docs.astral.sh/uv/) for the agent
+([services/agent](services/agent)).
 
 Enable the pre-commit guardrail once per clone:
 

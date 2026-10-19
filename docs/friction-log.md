@@ -224,6 +224,7 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Expected:** a one-time check per session or per folder. *(proposed)*
 - **Actual:** the hook blocked the first Bash command and the first edit of each file, including throwaway scratchpad
   files, until the session restated the callers, the purpose and the user's instruction: about 20 blocks in one session.
+  Met again on 2026-10-19 (B4): the first Bash command of the session was blocked once.
 - **Severity:** low; each block costs one retry. *(proposed)*
 - **Workaround:** stated the facts and retried each time. Since 2026-10-18 the git-ignored `.claude/settings.local.json`
   sets `GATEGUARD_EXEMPT_GLOBS=**`, which exempts edits to the repository's own paths; destructive-command checks stay
@@ -286,6 +287,9 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Expected:** `a\\b` and `c\\d`, since bash keeps backslashes inside single quotes and quoted heredocs.
 - **Actual:** `a\b` and `c\d`: each doubled backslash reaches bash as one, so the script's search text did not match.
   The script checked for a match before writing, so no file was damaged.
+  Met again on 2026-10-19 (B4), twice, in Python scripts passed through a quoted heredoc:
+  - `\\x21-\\x7e` reached Python as `\x21-\x7e`, so a regular expression was written as the equivalent `[!-~]`.
+  - `\\b` became a backspace, and the script's match check stopped it.
 - **Severity:** low; it costs a retry, but a script without that check could write the wrong text. *(proposed)*
 - **Workaround:** used the Edit tool for any text with backslashes, or wrote the script to a file first.
 - **Suggestion:** pass commands to the shell unchanged, or document the escaping the tool applies. *(proposed)*
@@ -304,6 +308,9 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** a short shell script on the device takes screenshots with `screencap`, reads the card's pixel with
   `dd` and `od`, and runs `input keyevent 66` there as soon as the card lights up; it arrived about 0.75 s into the
   2 s window and committed with one press. (`sendevent` is still refused, as in the 2026-10-18 entry.)
+  Met again on 2026-10-19 (B4). In one of three runs, the press from the same script landed at the end of Tea's window,
+  and the TV asked to confirm between Tea and Coffee ("Not sure yet") instead of committing. The B4 end-to-end script
+  now waits 3 s after a press and presses again if nothing was committed; it committed with one press in the run kept.
 - **Suggestion:** a low-latency key-injection command for emulators (for example a console `event send` that reaches
   the app), or an `input` daemon that does not start a new process per key. *(proposed)*
 
@@ -333,3 +340,96 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   *(proposed)*
 - **Workaround:** import from subpaths only.
 - **Suggestion:** ship the root files, or drop the `"."` entry from `exports`. *(proposed)*
+
+## 2026-10-19: Strands' MCPClient hides why its start-up failed
+
+- **Tool:** Strands Agents 1.61.1 (`strands.tools.mcp.MCPClient`) with `mcp` 1.30.0
+- **Task attempted:** stop the B4 agent at start-up with a clear message when the MCP server is down or refuses the
+  token.
+- **Steps:** called `MCPClient(url=..., headers=...).start()` against a closed port, and against a server answering 401.
+- **Expected:** an error that says "connection refused" or "401 Unauthorized". *(proposed)*
+- **Actual:** both raised `MCPClientInitializationError('the client initialization failed: unhandled errors in a
+  TaskGroup (1 sub-exception)')`. The cause, `httpx.ConnectError` or `httpx.HTTPStatusError` (401), is only inside
+  `__cause__.exceptions[0]`. A closed loopback port also takes about 2.1 s to fail on Windows.
+- **Severity:** low; the cause can be found by walking the chain. *(proposed)*
+- **Workaround:** the agent walks `__cause__` and `ExceptionGroup.exceptions` for an HTTP status or a transport error.
+- **Suggestion:** put the innermost cause in the message (for example "401 Unauthorized from <url>"), or raise it
+  directly. *(proposed)*
+
+## 2026-10-19: Strands' MCPClient warns about its own calls to the MCP SDK
+
+- **Tool:** Strands Agents 1.61.1 with `mcp` 1.30.0
+- **Task attempted:** run the B4 agent's tests without warnings.
+- **Steps:** created `MCPClient(url=..., headers=...)`, started it, stopped it, and also started it against a server
+  that refused it.
+- **Expected:** no warnings from the documented way to connect over Streamable HTTP. *(proposed)*
+- **Actual:**
+  - Every start warned `DeprecationWarning: Use streamable_http_client instead`. On `mcp` 1.x, Strands' `url=` form
+    calls the deprecated `streamablehttp_client`.
+  - A failed start also warned `RuntimeWarning: coroutine 'MCPClient.stop.<locals>._set_close_event' was never
+    awaited`.
+- **Severity:** low; nothing fails. *(proposed)*
+- **Workaround:** the agent's pytest configuration ignores exactly these two messages.
+- **Suggestion:** call `streamable_http_client` with an `httpx.AsyncClient` on `mcp` 1.x, and close the event without
+  creating the coroutine when the loop has already stopped. *(proposed)*
+
+## 2026-10-19: Strands prints and logs conversation content by default
+
+- **Tool:** Strands Agents 1.61.1
+- **Task attempted:** run the B4 agent as a service whose logs never hold caregiver text or answers.
+- **Steps:** read the `Agent` constructor and the event loop's log calls, then ran a turn whose model wrote broken tool
+  JSON.
+- **Expected:** a library that prints nothing unless asked, and logs no message content above DEBUG. *(proposed)*
+- **Actual:**
+  - The default `callback_handler` (`PrintingCallbackHandler`) prints the model's text and each tool name to stdout,
+    also during `stream_async`.
+  - When the model's tool input is not valid JSON, `strands.event_loop.streaming` logs up to 200 characters of it at
+    WARNING. Python's last-resort handler then prints it to stderr, because Strands installs no handler.
+- **Severity:** medium for services handling personal messages; nothing warns about it. *(proposed)*
+- **Workaround:** `Agent(..., callback_handler=None)`, and the `strands` logger set to CRITICAL, since its ERROR lines
+  also print a full traceback on every failed MCP start-up and name tools the model made up. Tests check that broken
+  tool input, a made-up tool name and a start-up traceback never reach the logs.
+- **Suggestion:** default to no printing outside interactive use, and log only the tool name and the input's length.
+  *(proposed)*
+
+## 2026-10-19: uvicorn runs a bound method as an ASGI2 app
+
+- **Tool:** uvicorn 0.54.0
+- **Task attempted:** serve the B4 tests' stub MCP server, an `async def asgi(self, scope, receive, send)` method,
+  with uvicorn.
+- **Steps:** passed `self.asgi` to `uvicorn.Config(...)` and started the server in a thread.
+- **Expected:** uvicorn detects the ASGI3 signature, as it does for a plain `async def` function. *(proposed)*
+- **Actual:** lifespan start-up failed with `TypeError: StubServer.asgi() missing 2 required positional arguments:
+  'receive' and 'send'`. The interface check looks at `__call__` of a bound method, which is not a coroutine function,
+  so uvicorn treated the app as ASGI2.
+- **Severity:** low; the error names the missing arguments. *(proposed)*
+- **Workaround:** `uvicorn.Config(..., interface="asgi3")`.
+- **Suggestion:** unwrap bound methods (`inspect.ismethod`) before the coroutine check. *(proposed)*
+
+## 2026-10-19: Starlette 1.9's TestClient deprecates httpx
+
+- **Tool:** Starlette 1.9.0 (`starlette.testclient`) with httpx 0.28.1
+- **Task attempted:** test the B4 agent's HTTP interface with Starlette's TestClient.
+- **Steps:** imported `starlette.testclient.TestClient`.
+- **Expected:** no warning with the httpx release that the MCP SDK already installs. *(proposed)*
+- **Actual:** `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead`.
+- **Severity:** low; the tests run. *(proposed)*
+- **Workaround:** the agent's pytest configuration ignores this message; httpx2 was not added.
+- **Suggestion:** name the Starlette release that will drop httpx support in the warning. *(proposed)*
+
+## 2026-10-19: boto3 sends a Bedrock API key from the environment even when an SSO profile is named
+
+- **Tool:** boto3 and botocore 1.43.114, through Strands Agents 1.61.1's `BedrockModel`
+- **Task attempted:** make the B4 agent's live mode sign in only with the IAM Identity Center (SSO) profile in
+  `AWS_PROFILE`.
+- **Steps:** a review experiment built `BedrockModel(boto_session=boto3.Session(profile_name=...))` with a synthetic
+  `AWS_BEARER_TOKEN_BEDROCK` in the environment, then called `converse_stream` against a stub.
+- **Expected:** an explicitly named profile decides the credentials, as it does for access keys in the environment
+  (botocore skips its environment-variable provider when a profile is named). *(proposed)*
+- **Actual:** the request went out with `Authorization: Bearer <the API key>` and no SigV4 signature, and nothing
+  warned about it. botocore prefers bearer auth for Bedrock whenever `AWS_BEARER_TOKEN_BEDROCK` is set and no
+  signature version is configured in code.
+- **Severity:** medium; a long-term key silently replaces short-lived SSO credentials. *(proposed)*
+- **Workaround:** live mode refuses to start while `AWS_BEARER_TOKEN_BEDROCK` is set. A test checks this.
+- **Suggestion:** let an explicitly named profile take precedence over the bearer token, or log a warning when the
+  bearer token overrides a named profile. *(proposed)*
