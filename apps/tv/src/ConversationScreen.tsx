@@ -6,9 +6,12 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // h
 import { StyleSheet, Text, View } from 'react-native'; // primitives
 import KeyEvent from 'react-native-keyevent'; // Android key events, forwarded by plugins/withKeyEvent.js
 import { now } from './clock'; // the shared clock
-import { CONFIG, CONTROLS, Conversation, REPLY_COUNT } from './conversation'; // the state machine
+import { CONFIG, CONTROLS, Conversation, REPLY_COUNT, type Reply } from './conversation'; // the state machine
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
+import { postUtterance, SERVER } from './server'; // the server, if this build has one
+import { playSpeech } from './speech'; // MP3 playback
+import { StreamClient } from './stream'; // the server's question stream
 import { SwitchInput } from './switchInput'; // the single switch
 import { colors, px } from './theme'; // tokens and scale
 
@@ -17,10 +20,20 @@ const CANCEL = 'Saying it — press to cancel'; // under a committed reply
 const FPS_WINDOW_MS = 5000; // K2: frames per second, logged every 5 s
 const HIGHLIGHT = px(12); // the scan highlight's border width
 
+/** Posts a reply that stood through its cancel window, then plays its speech if the server made any. */
+function say(reply: Reply): void { // the conversation's reply hook
+  if (!SERVER) return; // a build without a server: the reply was shown on screen only
+  const server = SERVER; // narrowed for the callbacks
+  postUtterance(server, reply).then( // POST /v1/utterances
+    (audioUrl) => { if (audioUrl) playSpeech(audioUrl, server.token); }, // null in mock mode: nothing to play
+    (error) => { if (__DEV__) console.log(`[server] reply not posted: ${String(error)}`); }, // offline: nothing more to do
+  ); // end of the post
+} // end of say
+
 /** The only screen so far. Every card and pill is an option of one scan engine: 8 replies and 2 controls. */
 export function ConversationScreen() { // the screen
   const conversation = useMemo( // one conversation for the screen's lifetime
-    () => new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}), // K2 log in dev
+    () => new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say), // K2 log in dev
     [], // created once
   ); // end of the conversation
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change
@@ -35,6 +48,16 @@ export function ConversationScreen() { // the screen
       KeyEvent.removeKeyUpListener(); // and key up
       conversation.dispose(); // cancel pending timers
     }; // end of clean-up
+  }, [conversation]); // once
+
+  useEffect(() => { // the server's questions while it can be reached; the fixtures keep the app working without it
+    if (!SERVER) return; // built without a token: fixtures only
+    const stream = new StreamClient(SERVER.url, SERVER.token, (event) => { // connects now, reconnects with back-off
+      if (event.type === 'question.created') conversation.receive(event.question); // a new question, defaults first
+      else conversation.update(event.questionId, event.replies, event.scores); // the model's replies for it
+    }); // end of the stream
+    stream.start(); // connect
+    return () => stream.stop(); // hang up on unmount
   }, [conversation]); // once
 
   useEffect(() => { // one animation clock: each frame checks what the engine highlights now

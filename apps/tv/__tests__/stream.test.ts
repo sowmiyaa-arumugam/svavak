@@ -1,0 +1,113 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+// The stream client (plan §4.2): event parsing, back-off and reconnects, with a fake socket and fake timers.
+
+import { backoffMs, parseEvent, StreamClient, type SocketLike, type StreamEvent } from '../src/stream'; // tested
+
+const candidate = (text: string, prior: number) => ({ text, intent: 'yes', score: prior, prior, source: 'default' }); // a wire candidate
+const EIGHT = Array.from({ length: 8 }, (_, i) => candidate(`Reply ${i}`, (8 - i) / 36)); // eight, best first
+const QUESTION = { id: 'q1', text: 'Tea?', asked_by: 'Alex', status: 'pending', created_at: '2026-10-19T10:00:00.000Z', answered_utterance_id: null, candidates: EIGHT }; // a wire question
+const SCREEN = { id: 'q1', speaker: 'Alex', text: 'Tea?', replies: EIGHT.map((c) => c.text), scores: EIGHT.map((c) => c.prior) }; // as the screen needs it
+
+describe('parseEvent', () => { // server JSON to screen events
+  it('turns question.created into a question with its replies and priors', () => { // new question
+    expect(parseEvent(JSON.stringify({ type: 'question.created', question: QUESTION }))).toEqual({ type: 'question.created', question: SCREEN }); // mapped
+  }); // end of the case
+
+  it('turns question.candidates into replies and priors for a question id', () => { // model replies
+    expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: EIGHT }))).toEqual({ type: 'question.candidates', questionId: 'q1', replies: SCREEN.replies, scores: SCREEN.scores }); // mapped
+  }); // end of the case
+
+  it('drops pings, unknown types, malformed JSON and lists that do not fill the grid', () => { // ignored input
+    expect(parseEvent('{"type":"ping","at":"2026-10-19T10:00:00.000Z"}')).toBeNull(); // keep-alive
+    expect(parseEvent('{"type":"question.cancelled","question_id":"q1"}')).toBeNull(); // not handled yet
+    expect(parseEvent('not json')).toBeNull(); // malformed
+    expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, candidates: EIGHT.slice(0, 7) } }))).toBeNull(); // seven
+    expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, asked_by: 7 } }))).toBeNull(); // wrong type
+    expect(parseEvent(JSON.stringify({ type: 'question.candidates', candidates: EIGHT }))).toBeNull(); // no question id
+    expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: [...EIGHT.slice(1), { text: 'x' }] }))).toBeNull(); // no prior
+  }); // end of the case
+}); // end of parseEvent
+
+describe('backoffMs', () => { // plan §4.2: 0.5 to 8 s, jittered
+  it('starts between 0.5 and 1 s, doubles its ceiling, and never exceeds 8 s', () => { // bounds
+    expect([backoffMs(0, 0), backoffMs(0, 0.999)]).toEqual([500, expect.closeTo(999.5, 6)]); // first retry
+    expect([1, 2, 3].map((a) => backoffMs(a, 0))).toEqual([1000, 2000, 4000]); // ceilings 2, 4, 8 s
+    expect(backoffMs(3, 1)).toBe(8000); // the cap
+    expect(backoffMs(20, 0.999)).toBeLessThan(8000); // still capped much later
+  }); // end of the case
+}); // end of backoffMs
+
+/** A socket the test drives by calling its handlers. */
+class FakeSocket implements SocketLike { // records how it was opened and closed
+  onopen: (() => void) | null = null; // set by the client
+  onmessage: ((message: { data: unknown }) => void) | null = null; // set by the client
+  onclose: (() => void) | null = null; // set by the client
+  closed = false; // close() called?
+  readonly url: string; // where it dialled
+  readonly headers: Record<string, string>; // with which headers
+
+  constructor(url: string, headers: Record<string, string>) { // as the factory receives them
+    this.url = url; // keep the URL
+    this.headers = headers; // keep the headers
+  } // end of constructor
+
+  close(): void { // the client hangs up
+    this.closed = true; // remember it
+  } // end of close
+} // end of FakeSocket
+
+describe('StreamClient', () => { // connection handling
+  let sockets: FakeSocket[]; // every socket opened
+  let events: StreamEvent[]; // every event handed over
+  let client: StreamClient; // under test
+
+  beforeEach(() => { // a fresh client with jitter fixed at 0
+    jest.useFakeTimers(); // control the back-off
+    sockets = []; // none yet
+    events = []; // none yet
+    const connect = (url: string, headers: Record<string, string>) => { const s = new FakeSocket(url, headers); sockets.push(s); return s; }; // fake factory
+    client = new StreamClient('http://10.0.2.2:8787', 'test-token', (e) => events.push(e), connect, () => 0); // shortest delays
+  }); // end of set-up
+
+  afterEach(() => { // tidy up
+    client.stop(); // no timers left
+    jest.useRealTimers(); // back to real timers
+  }); // end of tidy-up
+
+  it('dials the stream with the device token in a header and hands over parsed events only', () => { // happy path
+    client.start(); // connect
+    expect(sockets.map((s) => [s.url, s.headers])).toEqual([['ws://10.0.2.2:8787/v1/stream', { Authorization: 'Bearer test-token' }]]); // never in the URL
+    sockets[0]!.onopen!(); // connected
+    sockets[0]!.onmessage!({ data: JSON.stringify({ type: 'question.created', question: QUESTION }) }); // a question
+    sockets[0]!.onmessage!({ data: '{"type":"ping","at":"2026-10-19T10:00:00.000Z"}' }); // a ping
+    expect(events).toEqual([{ type: 'question.created', question: SCREEN }]); // only the question
+  }); // end of the case
+
+  it('retries with growing delays while the server is unreachable, and starts over after a good connection', () => { // back-off
+    client.start(); // first attempt
+    sockets[0]!.onclose!(); // refused
+    jest.advanceTimersByTime(499); // just under 0.5 s
+    expect(sockets).toHaveLength(1); // still waiting
+    jest.advanceTimersByTime(1); // 0.5 s
+    expect(sockets).toHaveLength(2); // second attempt
+    sockets[1]!.onclose!(); // refused again
+    jest.advanceTimersByTime(999); // just under 1 s
+    expect(sockets).toHaveLength(2); // still waiting
+    jest.advanceTimersByTime(1); // 1 s
+    expect(sockets).toHaveLength(3); // third attempt
+    sockets[2]!.onopen!(); // connected
+    sockets[2]!.onclose!(); // then dropped
+    jest.advanceTimersByTime(500); // 0.5 s again
+    expect(sockets).toHaveLength(4); // reconnected at the shortest delay
+  }); // end of the case
+
+  it('hangs up and stops retrying on stop()', () => { // unmount
+    client.start(); // connect
+    client.stop(); // the screen goes away
+    expect(sockets[0]!.closed).toBe(true); // hung up
+    sockets[0]!.onclose!(); // the close event arrives
+    jest.advanceTimersByTime(10_000); // a long time
+    expect(sockets).toHaveLength(1); // no new attempt
+  }); // end of the case
+}); // end of StreamClient

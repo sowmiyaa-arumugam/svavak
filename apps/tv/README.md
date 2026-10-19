@@ -5,12 +5,22 @@ reply cards and two control pills (Something else, Help). All ten are options of
 [switchclock](../../packages/switchclock) `ScanEngine`. One thick teal highlight steps through the cards, best guess
 first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 
-Questions and replies are mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first. The replies
-get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04) and each control 1%, as in the
-second case of gate K1-scan. There is no server and no audio yet.
+Questions come from the [server](../../services/server) when it can be reached, and otherwise from mock fixtures
+([src/questions.ts](src/questions.ts)), listed best guess first.
+- **A server question** takes over at once while the scan runs. If it arrives during "Saying it" or Help, it waits
+  until that window ends or Help is dismissed.
+- It shows the server's default replies first. When the model's replies arrive, the scan restarts on them, best
+  guess first, using the server's priors.
+- Once it is answered, the fixtures resume.
+
+Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04) and each control
+1%, as in the second case of gate K1-scan.
 
 - **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A press in that window
-  cancels it and scans the same question again; otherwise the next question appears.
+  cancels it and scans the same question again. Otherwise the reply is posted to `POST /v1/utterances`, its MP3 is
+  played with Expo's audio module (mock mode makes none), and the next question appears. A cancelled reply never
+  leaves the TV. One exception: a press whose key goes down in the window but comes up after it still cancels on
+  screen, but the reply has already been posted. Undo (P1) will close that gap.
 - **Not sure yet.** When a press leaves no option at θ = 0.97, only the top two are scanned once more and the other
   cards dim. If nobody presses, the full scan resumes.
 - **Something else** loads the next fixture question and its replies.
@@ -37,12 +47,23 @@ a key-down within 150 ms after any release, so a bounce after a hold or a long p
 whose key went down inside the 2 s "Saying it" window cancels the reply even if the key comes up after the window, and
 a hold that began there drops the reply and opens Help on that question.
 
+## Server connection
+
+- **Where it connects.** The app opens `GET /v1/stream` on `http://10.0.2.2:8787`, the emulator's address for the
+  host, and reconnects with back-off (0.5 to 8 s, jittered).
+- **The token.** The device token is `SAY_WHEN_DEVICE_TOKEN` from the repository's `.env`. `app.config.js` reads it,
+  and expo-constants embeds it in the APK at build time, so changing the token needs a rebuild. A build without a
+  token runs on the fixtures only.
+- **Posting replies.** `POST /v1/utterances` has a 4 s timeout and one retry under the same idempotency key.
+- **Cleartext HTTP.** [plugins/withDebugCleartext.js](plugins/withDebugCleartext.js) allows it only to `10.0.2.2` and
+  only in debug builds, through a network security config. Release builds keep Android's default of HTTPS only.
+
 ## Develop
 
 ```bash
 yarn workspace tv start       # Metro dev server
 yarn workspace tv android     # prebuild, build and install the debug app on the emulator, then start it
-yarn workspace tv test        # Jest: state machine, key handling, K2 maths
+yarn workspace tv test        # Jest: state machine, key handling, K2 maths, stream client, utterance posting
 yarn workspace tv typecheck   # strict tsc over the app, the tests and the engine source it imports
 ```
 

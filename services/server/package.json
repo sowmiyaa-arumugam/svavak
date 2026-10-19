@@ -1,0 +1,32 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "description": "Say When server: REST, WebSocket stream and trace for the TV, with mock and live (Bedrock, Polly) adapters",
+  "license": "Apache-2.0",
+  "author": "Sowmiya Arumugam",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env src/main.ts",
+    "test": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "3.1146.0",
+    "@aws-sdk/client-polly": "3.1146.0",
+    "express": "5.2.1",
+    "switchclock": "workspace:*",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.19.1",
+    "@types/ws": "8.18.2",
+    "@vitest/coverage-v8": "5.0.3",
+    "aws-sdk-client-mock": "4.1.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vitest": "5.0.3"
+  }
+}

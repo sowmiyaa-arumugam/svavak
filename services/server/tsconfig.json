@@ -1,0 +1,19 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+{ // TypeScript settings for the server and its tests: no build step, Node 24 strips the types at run time
+  "compilerOptions": { // compiler options
+    "strict": true, // all strict type checks (plan NFR-07)
+    "noUncheckedIndexedAccess": true, // array reads may be undefined, as in the engine
+    "target": "ES2024", // Node 24 runs it natively
+    "lib": ["ES2024"], // no DOM
+    "types": ["node"], // Node's APIs
+    "module": "NodeNext", // Node's ES module rules
+    "moduleResolution": "NodeNext", // resolve like Node does
+    "allowImportingTsExtensions": true, // imports name the .ts file, which Node's type stripping needs
+    "verbatimModuleSyntax": true, // type-only imports must say so, so stripping them is safe
+    "erasableSyntaxOnly": true, // no enums or parameter properties: Node can only strip erasable syntax
+    "noEmit": true, // Node runs the TypeScript source
+    "skipLibCheck": true // do not type-check dependencies' declaration files
+  }, // end of compiler options
+  "include": ["src", "test", "vitest.config.ts"] // server, tests and test config
+} // end of the config

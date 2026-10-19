@@ -7,10 +7,16 @@ Amazon Developer Hackathon 2026.
 
 - **Engine** ([packages/switchclock](packages/switchclock)): Bayesian single-switch selection with clock mode
   (gate K1: 1.19% error) and Smart Scan mode (gate K1-scan: 0.48% and 1.19% error), and a seeded simulator.
-- **TV app** ([apps/tv](apps/tv)): the conversation screen in Smart Scan mode, with mock questions and replies, a
-  2 s cancel window, a 2 s hold for Help and K2 instrumentation. It runs on the Android TV emulator; gate K2 on a
-  device is still open.
-- **Not built yet:** the server (AI replies and speech), the MCP endpoint, the studio and audio playback.
+- **TV app** ([apps/tv](apps/tv)): the conversation screen in Smart Scan mode.
+  - Questions come from the server's WebSocket stream, with the local fixtures when it can't be reached.
+  - It has a 2 s cancel window, after which the reply is posted and its speech played, a 2 s hold for Help, and K2
+    instrumentation.
+  - It runs on the Android TV emulator; gate K2 on a device is still open.
+- **Server** ([services/server](services/server)): REST, the WebSocket question stream and the SSE trace for flow S1,
+  mock-first. It has default replies at once and model candidates within 3.5 s, idempotent utterances, a device token
+  and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) is tested only against AWS SDK mocks. The store is in
+  memory.
+- **Not built yet:** the MCP endpoint, the studio, SQLite storage and Docker.
 
 ## Contributing set-up
 

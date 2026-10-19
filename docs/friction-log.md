@@ -227,3 +227,49 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   on, and paths outside the repository are still checked.
 - **Suggestion:** exempt the session's scratchpad directory by default, and accept one statement for a batch of related
   files. *(proposed)*
+
+## 2026-10-19: Expo's base tsconfig hides React Native's WebSocket headers argument
+
+- **Tool:** Expo SDK 54 (`expo/tsconfig.base.json`) with React Native 0.81 (react-native-tvos) typings
+- **Task attempted:** open the TV app's WebSocket to the server with the device token in an `Authorization` header.
+- **Steps:** wrote `new WebSocket(url, null, { headers })` in `apps/tv/src/stream.ts` and ran `yarn workspace tv typecheck`.
+- **Expected:** it compiles: React Native's WebSocket takes an options object with `headers` as its third argument
+  (`Libraries/WebSocket/WebSocket.js`), and React Native's own `src/types/globals.d.ts` declares that constructor.
+- **Actual:** `TS2554: Expected 1-2 arguments, but got 3`. Expo's base tsconfig sets `"lib": ["DOM", "ESNext"]`, and the
+  DOM declaration of `WebSocket` wins over React Native's.
+- **Severity:** low, since a cast works around it. *(proposed)*
+- **Workaround:** cast `WebSocket` to a three-argument constructor type in `src/stream.ts`.
+- **Suggestion:** Expo's base tsconfig for React Native projects could leave out the DOM library, or React Native's
+  typings could merge their constructor with the DOM one instead of losing to it. *(proposed)*
+
+## 2026-10-19: Nova 2 documentation disagrees on maxTokens and temperature for tool calls
+
+- **Tool:** Amazon Bedrock documentation (Amazon Nova 2 user guide, Nova 2 Lite model card)
+- **Task attempted:** set `inferenceConfig` and the tool input schema for the server's forced `suggest_replies` call.
+- **Steps:** read the Nova 2 request and response schema page, the Converse page, the troubleshooting page, the tools
+  page and the model card.
+- **Expected:** one range for each parameter, and a statement of which JSON Schema keywords tool calls enforce.
+  *(proposed)*
+- **Actual:** the maximum `maxTokens` is given as 5,000 (schema page), up to 65,000 (Converse page) and 64K (model
+  card). The schema page gives temperature a range of 0.00001 to 1, while the troubleshooting page recommends
+  `temperature: 0` for reliable tool use. No page says whether `minItems`, `maxItems` or `maxLength` in a tool's input
+  schema are honoured.
+- **Severity:** low so far, since live mode has only been tested against SDK mocks. *(proposed)*
+- **Workaround:** `maxTokens` 1,000 (below every figure) and `temperature` 0, as the tool-use guidance says. Count and
+  length limits go in descriptions and are re-validated on the server. All of this is to be confirmed on the first
+  live call.
+- **Suggestion:** one table of inference parameters per model and API, and a list of the schema keywords that tool
+  calls enforce. *(proposed)*
+
+## 2026-10-19: Polly lists neural voices and neural Regions separately
+
+- **Tool:** Amazon Polly documentation
+- **Task attempted:** choose a default neural voice that is available in eu-central-1 (Frankfurt).
+- **Steps:** read the neural-voices and available-voices pages.
+- **Expected:** a list of the voices each Region offers. *(proposed)*
+- **Actual:** one page lists the Regions with neural voices, another lists the neural voices, and neither says whether
+  every voice is offered in every listed Region.
+- **Severity:** low, since a wrong voice fails safe: the reply is committed without audio. *(proposed)*
+- **Workaround:** default `Brian` (British English, neural), configurable as `SAY_WHEN_VOICE`. To be checked with
+  `aws polly describe-voices --engine neural --region eu-central-1` once SSO access exists.
+- **Suggestion:** a table of voices by Region on the neural-voices page. *(proposed)*
