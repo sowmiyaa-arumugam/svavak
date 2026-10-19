@@ -306,6 +306,21 @@ describe('Conversation with the server', () => { // questions from the stream, r
     expect(conversation.engine.scanAt(time).epoch).toBe(900); // the same scan
   }); // end of the case
 
+  it('scans a server question with fewer than eight replies, then Something else and Help right after them', () => { // a question asked with options
+    const options = { id: 'q1', speaker: 'Alex', text: 'Would you like tea or coffee?', replies: ['Tea', 'Coffee', 'Not now', 'Not sure'], scores: [0.366, 0.366, 0.146, 0.122] }; // four replies
+    conversation.receive(options); // question.created
+    conversation.update('q1', options.replies, options.scores); // question.candidates, sent at once: the scan starts
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: options, reply: null }); // Asking
+    expect(conversation.engine.scanAt(time).items).toEqual([0, 1, 2, 3, 4, 5]); // four replies, then the two controls
+    select(4); // the option right after the replies
+    expect(selections.map((s) => s.label)).toEqual(['Something else']); // a control, not a missing reply
+    conversation.press((time += 500)); // cancelled in its window
+    select(0); // "Tea"
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(said).toEqual([expect.objectContaining({ questionId: 'q1', text: 'Tea' })]); // posted
+  }); // end of the case
+
   it('ignores a press while a server question waits, since nothing is lit', () => { // no highlight yet
     conversation.receive(LIVE); // shown at 0, waiting
     const waiting = conversation.snapshot(); // nothing lit

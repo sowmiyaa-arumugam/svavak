@@ -1,10 +1,12 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Use-cases of plan §4.3 for flow S1: AskQuestion, SuggestReplies, CommitUtterance and SynthesizeSpeech.
+// Use-cases of plan §4.3 for flow S1: AskQuestion, SuggestReplies, CommitUtterance and SynthesizeSpeech, plus those
+// behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact.
 
-import { cleanDrafts, defaultCandidates, dropBanned, toCandidates } from '../domain/candidates.ts'; // reply pipeline
+import { EventEmitter, once } from 'node:events'; // wakes a waiting get_answer
+import { cleanDrafts, defaultCandidates, defaultsFor, dropBanned, optionCandidates, toCandidates } from '../domain/candidates.ts'; // reply pipeline
 import type { DailyCap } from '../domain/dailyCap.ts'; // cost guard
-import { DEMO_HOUSEHOLD } from '../domain/facts.ts'; // the one household for now
+import { DEMO_HOUSEHOLD, FACTS_MAX, type ProfileFact } from '../domain/facts.ts'; // the one household for now, and its fact limit
 import type { Question, Utterance } from '../domain/model.ts'; // the model
 import type { LlmPort, Log, NotifierPort, StorePort, SuggestRequest, TracePort, TtsPort } from '../ports/index.ts'; // ports
 
@@ -37,8 +39,27 @@ export interface CommitResult { // what the REST layer returns
   hasAudio: boolean; // whether GET /v1/utterances/{id}/audio has audio
 } // end of CommitResult
 
-/** An utterance names a question that does not exist. */
-export class NotFoundError extends Error {} // mapped to 404 by the REST layer
+/** What get_answer returns (plan Table 16). */
+export interface Answer { // the answer, or why there is none
+  status: Question['status']; // pending, answered or expired
+  answer_text: string | null; // what Sam said, once answered
+  answered_at: string | null; // when it was committed, ISO 8601 UTC
+  clicks: number | null; // presses that made the selection
+} // end of Answer
+
+/** One item of get_recent_messages (plan Table 16). */
+export interface Message { // something Sam said
+  text: string; // the words
+  time: string; // when, ISO 8601 UTC
+  kind: Utterance['kind']; // reply or spontaneous
+  question_text: string | null; // the question it answered, if there is one
+} // end of Message
+
+/** An utterance or get_answer names a question that does not exist. */
+export class NotFoundError extends Error {} // mapped to 404 by the REST layer, to a tool error by MCP
+
+/** The household already has FACTS_MAX facts. */
+export class FactLimitError extends Error {} // mapped to a tool error by MCP
 
 const TURNS = 6; // plan §4.6: up to six recent turns
 const REPLAY_MS = 120_000; // a TV that connects within 2 minutes of a question still gets it; an older one is stale
@@ -47,24 +68,39 @@ const REPLAY_MS = 120_000; // a TV that connects within 2 minutes of a question 
 export function createUseCases(deps: Deps) { // a closure, so CommitUtterance can track its in-flight requests
   const inflight = new Map<string, Promise<CommitResult>>(); // idempotency keys whose commit is still running
   const iso = () => new Date(deps.clock()).toISOString(); // now, as ISO 8601 UTC
+  const settled = new EventEmitter(); // emits a question's id when its answer is stored or it expires
+  settled.setMaxListeners(0); // any number of get_answer calls may wait on one question
 
-  /** AskQuestion: store it, push it with the defaults at once, then let SuggestReplies push the model's candidates. */
-  function askQuestion(text: string, askedBy: string): { question: Question; suggested: Promise<void> } { // S1 steps 1-5
+  /**
+   * AskQuestion: expire the open question, store the new one and push it at once. With options, its replies are final
+   * and question.candidates follows at once; without, the defaults that fit it go first and SuggestReplies pushes the
+   * model's candidates. `delivered` says whether a TV was connected to receive it.
+   */
+  function askQuestion(text: string, askedBy: string, extra: { options?: readonly string[]; urgency?: Question['urgency'] } = {}): { question: Question; delivered: boolean; suggested: Promise<void> } { // S1 steps 1-5
     const turns = deps.store.recentTurns(TURNS); // the six latest, question then reply
+    const open = deps.store.newestPending(); // the household's open question; asking expires it, so there is at most one
+    if (open) { // never answered
+      deps.store.saveQuestion({ ...open, status: 'expired' }); // replaced by the new one
+      settled.emit(open.id); // a get_answer waiting on it returns now
+    } // end of the expiry
     const question: Question = { // a new pending question
       id: deps.newId(), // random id
       text, // the question
       asked_by: askedBy, // who asked
+      urgency: extra.urgency ?? 'normal', // as asked
       status: 'pending', // not answered yet
       created_at: iso(), // now
       answered_utterance_id: null, // no answer yet
-      candidates: defaultCandidates(), // plan §4.3 step 1: defaults immediately
+      candidates: extra.options ? optionCandidates(extra.options) : defaultCandidates(text), // plan §4.3 step 1: replies immediately
     }; // end of the question
     deps.store.saveQuestion(question); // persist
-    deps.notifier.publish({ type: 'question.created', question }); // to the TV, before any model call
+    const delivered = deps.notifier.publish({ type: 'question.created', question }) > 0; // to the TV, before any model call
     deps.trace.span({ hop: 'server→tv', operation: 'question.created', duration_ms: 0, mode: deps.mode }); // pushed now
-    deps.log('question.created', { question_id: question.id }); // no text in logs
-    return { question, suggested: suggestReplies(question, turns) }; // the caller does not wait for the model
+    deps.log('question.created', { question_id: question.id, options: extra.options?.length ?? 0 }); // no text in logs
+    if (!extra.options) return { question, delivered, suggested: suggestReplies(question, turns) }; // the caller does not wait for the model
+    deps.notifier.publish({ type: 'question.candidates', question_id: question.id, candidates: question.candidates }); // the final list now, so the TV starts its scan without waiting out the budget
+    deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 0, mode: deps.mode }); // pushed now
+    return { question, delivered, suggested: Promise.resolve() }; // no model call
   } // end of askQuestion
 
   /** SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. */
@@ -85,7 +121,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       const current = deps.store.getQuestion(question.id); // it may have been answered meanwhile
       if (drafts.length === 0) outcome = 'suggest.invalid'; // nothing usable: defaults stay
       else if (current?.status === 'pending') { // still on the TV
-        const updated = { ...current, candidates: toCandidates(drafts) }; // merged with defaults, priors computed
+        const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text)) }; // merged with the defaults that fit, priors computed
         deps.store.saveQuestion(updated); // persist
         deps.notifier.publish({ type: 'question.candidates', question_id: updated.id, candidates: updated.candidates }); // to the TV
         deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - started, mode: deps.mode }); // since asked
@@ -143,9 +179,41 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       created_at: iso(), // now
     }; // end of the record
     deps.store.addUtterance(utterance, key, audio); // persist with its audio
+    if (question) settled.emit(question.id); // the answer is stored: a get_answer waiting on it returns now
     deps.log('utterance.committed', { utterance_id: utterance.id, question_id: utterance.question_id, kind: utterance.kind, clicks: utterance.clicks, duration_ms: utterance.duration_ms, chars: utterance.text.length, audio: audio !== null }); // no text
     return { utterance, created: true, hasAudio: audio !== null }; // new
   } // end of commit
+
+  /** GetAnswer: the question's answer once it is stored; waits up to `waitMs` for it, or until `signal` aborts. */
+  async function getAnswer(id: string, waitMs: number, signal?: AbortSignal): Promise<Answer> { // get_answer (long-poll)
+    const current = answerOf(id); // throws for an unknown id
+    if (current.status !== 'pending' || waitMs <= 0) return current; // settled, or no wait asked for
+    const stop = AbortSignal.any([AbortSignal.timeout(waitMs), ...(signal ? [signal] : [])]); // the wait ends, or the agent cancels
+    while (answerOf(id).status === 'pending' && !stop.aborted) await once(settled, id, { signal: stop }).catch(() => {}); // a wake-up for another commit of the same question waits on
+    return answerOf(id); // as it is now
+  } // end of getAnswer
+
+  function answerOf(id: string): Answer { // the question's state as get_answer reports it
+    const question = deps.store.getQuestion(id); // by id
+    if (!question) throw new NotFoundError('question not found'); // never issued
+    const utterance = question.answered_utterance_id === null ? undefined : deps.store.getUtterance(question.answered_utterance_id); // stored once its speech is done
+    if (question.status === 'pending' || !utterance) return { status: question.status === 'expired' ? 'expired' : 'pending', answer_text: null, answered_at: null, clicks: null }; // no stored answer
+    return { status: 'answered', answer_text: utterance.text, answered_at: utterance.created_at, clicks: utterance.clicks }; // Sam's words
+  } // end of answerOf
+
+  /** GetRecentMessages: the last `limit` utterances after `since`, oldest first. */
+  function recentMessages(since: string | null, limit: number): Message[] { // get_recent_messages
+    return deps.store.recentUtterances(limit, since).map((u) => ({ text: u.text, time: u.created_at, kind: u.kind, question_text: u.question_text })); // what Sam said
+  } // end of recentMessages
+
+  /** AddProfileFact: a fact for the household's later questions; refused once it has FACTS_MAX. Returns its id. */
+  function addProfileFact(fact: ProfileFact): string { // add_profile_fact
+    if (deps.store.profileFacts(DEMO_HOUSEHOLD).length >= FACTS_MAX) throw new FactLimitError(`the profile already has ${FACTS_MAX} facts`); // plan §6.1 limit
+    const id = deps.newId(); // random id
+    deps.store.addProfileFact(DEMO_HOUSEHOLD, { ...fact, id }); // SuggestReplies reads it for the next question
+    deps.log('fact.added', { fact_id: id, category: fact.category }); // never the text
+    return id; // fact_id
+  } // end of addProfileFact
 
   /** The audio of an utterance, if it has one. */
   function utteranceAudio(id: string): Uint8Array | undefined { // GET /v1/utterances/{id}/audio
@@ -158,7 +226,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     return question && deps.clock() - Date.parse(question.created_at) <= REPLAY_MS ? question : undefined; // recent enough, or nothing
   } // end of openQuestion
 
-  return { askQuestion, commitUtterance, utteranceAudio, openQuestion }; // the public use-cases
+  return { askQuestion, commitUtterance, utteranceAudio, openQuestion, getAnswer, recentMessages, addProfileFact }; // the public use-cases
 } // end of createUseCases
 
 /** The use-cases object, for typing the REST layer. */

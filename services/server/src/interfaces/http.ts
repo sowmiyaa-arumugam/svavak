@@ -1,20 +1,25 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Interfaces of plan §4.3 for flow S1: REST (Express 5), the WebSocket stream (ws) and the trace stream (SSE).
+// Interfaces of plan §4.3 for flow S1: REST (Express 5), the WebSocket stream (ws) and the trace stream (SSE), plus
+// the MCP endpoint of plan §4.4 (mcp.ts) on the same port.
 
 import { createHash, timingSafeEqual } from 'node:crypto'; // token comparison
 import { createServer as createHttpServer, STATUS_CODES, type Server } from 'node:http'; // the HTTP server
-import express, { type NextFunction, type Request, type Response } from 'express'; // REST
+import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express'; // REST
 import type { WebSocketServer } from 'ws'; // the WebSocket server (noServer mode)
 import { z } from 'zod'; // request validation at the edge
 import type { SseTraceSink } from '../adapters/traceSink.ts'; // the trace buffer
 import { NotFoundError, type UseCases } from '../application/useCases.ts'; // use-cases
 import { ASKED_BY_MAX_CHARS, QUESTION_MAX_CHARS, UTTERANCE_MAX_CHARS, type Span, type StreamEvent } from '../domain/model.ts'; // limits
 import type { Log, NotifierPort } from '../ports/index.ts'; // ports
+import { mcpHandlers } from './mcp.ts'; // the MCP endpoint
 
 /** What the interfaces need. */
 export interface HttpOptions { // wired by compose.ts or a test
-  token: string; // the static device token
+  token: string; // the static device token: the TV's routes only
+  agentToken: string; // the caregiver or agent token: /mcp only
+  mcpAllowedHosts: string[]; // Host names /mcp accepts
+  mcpAllowedOrigins: string[]; // Origins /mcp accepts; a request without one is allowed
   mode: 'mock' | 'live'; // for the request spans
   useCases: UseCases; // the application layer
   trace: SseTraceSink; // spans, for GET /v1/trace
@@ -24,7 +29,7 @@ export interface HttpOptions { // wired by compose.ts or a test
   pingMs: number; // ping interval on the stream
 } // end of HttpOptions
 
-/** POST /v1/questions: the temporary dev endpoint until the MCP server's ask_question exists. */
+/** POST /v1/questions: the dev endpoint (tools/smoke-stream.mjs); agents use ask_question on /mcp. */
 const questionBody = z.object({ // request body
   text: z.string().trim().min(1).max(QUESTION_MAX_CHARS), // the question
   asked_by: z.string().trim().min(1).max(ASKED_BY_MAX_CHARS), // who asks
@@ -41,8 +46,21 @@ const utteranceBody = z.object({ // request body
 
 /** The HTTP server with all routes and the WebSocket upgrade; the caller decides where it listens. */
 export function createServer(o: HttpOptions): Server { // build, do not listen
-  const tokenHash = sha256(o.token); // compared in constant time
-  const authorized = (header: string | undefined) => timingSafeEqual(sha256(header?.startsWith('Bearer ') ? header.slice(7) : ''), tokenHash); // bearer check
+  const deviceHash = sha256(o.token); // compared in constant time
+  const agentHash = sha256(o.agentToken); // likewise
+  const caller = (header: string | undefined): 'device' | 'agent' | null => { // whose bearer token this is
+    const hash = sha256(header?.startsWith('Bearer ') ? header.slice(7) : ''); // fixed length, whatever was sent
+    const device = timingSafeEqual(hash, deviceHash); // both comparisons always run
+    const agent = timingSafeEqual(hash, agentHash); // constant time each
+    return device ? 'device' : agent ? 'agent' : null; // the two tokens differ (config.ts)
+  }; // end of caller
+  const allow = (role: 'device' | 'agent'): RequestHandler => (req, res, next) => { // one token per route group
+    const who = caller(req.get('authorization')); // the caller
+    if (who === role) return next(); // allowed
+    if (who !== null) return problem(res, 403, `the ${who} token cannot use this route`); // a known token on the wrong routes
+    res.set('WWW-Authenticate', 'Bearer'); // RFC 6750
+    problem(res, 401, `missing or wrong ${role} token`); // refused
+  }; // end of allow
   const app = express(); // the REST app
   app.disable('x-powered-by'); // do not advertise the framework
 
@@ -55,11 +73,9 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     next(); // carry on
   }); // end of the span middleware
 
-  app.use((req, res, next) => { // the device token on every call below
-    if (authorized(req.get('authorization'))) return next(); // allowed
-    res.set('WWW-Authenticate', 'Bearer'); // RFC 6750
-    problem(res, 401, 'missing or wrong device token'); // refused
-  }); // end of authentication
+  app.all('/mcp', ...mcpHandlers({ useCases: o.useCases, trace: o.trace, mode: o.mode, log: o.log, allowedHosts: o.mcpAllowedHosts, allowedOrigins: o.mcpAllowedOrigins, authorize: allow('agent') })); // MCP: Host, Origin and the agent token; no Host check on the TV's routes (the emulator calls the host 10.0.2.2)
+
+  app.use(allow('device')); // the device token on every call below; the agent token gets 403
 
   app.use(express.json({ limit: '32kb' })); // plan §6.2: 32 KB JSON limit; parsed only after authentication
 
@@ -108,7 +124,8 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
   server.on('upgrade', (req, socket, head) => { // GET /v1/stream (WebSocket)
     const path = new URL(req.url ?? '/', 'http://localhost').pathname; // the path, without a query
     if (path !== '/v1/stream') return refuse(socket, 404); // the only WebSocket route
-    if (!authorized(req.headers.authorization)) return refuse(socket, 401); // the device token here too
+    const who = caller(req.headers.authorization); // the device token here too
+    if (who !== 'device') return refuse(socket, who === null ? 401 : 403); // the agent token gets 403, as on the REST routes
     o.wss.handleUpgrade(req, socket, head, (ws) => { // accepted
       o.log('stream.connected', { clients: o.wss.clients.size }); // a TV connected
       ws.on('close', () => o.log('stream.closed', { clients: o.wss.clients.size })); // and left

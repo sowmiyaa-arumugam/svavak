@@ -16,7 +16,9 @@ Amazon Developer Hackathon 2026.
   mock-first. It has default replies at once and model candidates within 3.5 s, idempotent utterances, a device token
   and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) is tested only against AWS SDK mocks. The store is in
   memory.
-- **Not built yet:** the MCP endpoint, the studio, SQLite storage and Docker.
+  - An MCP endpoint (`/mcp`, Streamable HTTP) gives caregiver agents `ask_question`, `get_answer`,
+    `get_recent_messages` and `add_profile_fact`, with its own agent token (gate K4: conformance suite and Inspector).
+- **Not built yet:** the studio, SQLite storage and Docker.
 
 ## Contributing set-up
 

@@ -13,17 +13,38 @@ export interface Draft { // one proposed reply
   score: number; // in [0, 1]
 } // end of Draft
 
-/** Shown the instant a question arrives (FR-02: Yes, No and Not now at once), and used to fill the model's list to 8. */
+/**
+ * Shown the instant a question arrives (FR-02: Yes, No and Not now at once), and used to fill the model's list to 8.
+ * Only a yes/no question gets all of them; any other question gets them without Yes and No (defaultsFor).
+ */
 export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess first
   { text: 'Yes, please', intent: 'yes', score: 0.3 }, // yes
   { text: 'No, thanks', intent: 'no', score: 0.25 }, // no
   { text: 'Not now', intent: 'later', score: 0.12 }, // later
-  { text: "I'm not sure", intent: 'clarify', score: 0.1 }, // plan §4.6: always one "not sure"
+  { text: 'Not sure', intent: 'clarify', score: 0.1 }, // plan §4.6: always one "not sure"
   { text: 'Ask me later', intent: 'later', score: 0.08 }, // and one "ask me later"
   { text: 'Tell me more', intent: 'clarify', score: 0.06 }, // ask for detail
   { text: 'Thank you', intent: 'social', score: 0.05 }, // politeness
   { text: 'Maybe', intent: 'clarify', score: 0.04 }, // undecided
 ]; // end of DEFAULT_REPLIES
+
+const NOT_YES_NO = DEFAULT_REPLIES.filter((d) => d.intent !== 'yes' && d.intent !== 'no'); // the defaults of a choice or open question
+const UNSURE_OR_LATER = DEFAULT_REPLIES.filter((d) => d.text === 'Not now' || d.text === 'Not sure'); // added to ask_question's options
+export const OPTION_SCORE = 0.3; // each of ask_question's options is as likely as "Yes, please", the best default
+
+/** Starts with an auxiliary verb, or its negative ("Don't", "Can't"): a question that Yes or No can answer. */
+const AUXILIARY = /^(?:(?:am|is|are|was|were|do|does|did|have|has|had|can|could|will|would|shall|should|may|might|must)(?:n['’]t)?|can['’]t|won['’]t|shan['’]t)\b/i; // whole first word
+
+/** A choice question has " or "; a yes/no question starts with an auxiliary verb; any other question is open. */
+export function questionKind(question: string): 'yesno' | 'choice' | 'open' { // the kind of answer it wants
+  if (/\sor\s/i.test(question)) return 'choice'; // "Tea or coffee?", even after an auxiliary verb
+  return AUXILIARY.test(question.trim()) ? 'yesno' : 'open'; // "Shall I ...?" or "What ...?"
+} // end of questionKind
+
+/** The defaults that fit the question: all eight for a yes/no question, the six without Yes and No for any other. */
+export function defaultsFor(question: string): readonly Draft[] { // Yes, No and Not now only where they make sense
+  return questionKind(question) === 'yesno' ? DEFAULT_REPLIES : NOT_YES_NO; // Not now and Not sure lead the others
+} // end of defaultsFor
 
 /** Plan §4.6 rule "no profanity": the one list of words a candidate may not contain. */
 export const BANNED_TERMS: readonly string[] = ['bastard', 'bitch', 'bollocks', 'crap', 'damn', 'fuck', 'fucking', 'piss', 'shit', 'wanker']; // whole words, any case
@@ -62,18 +83,19 @@ export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = 
 } // end of dropBanned
 
 /**
- * Plan §4.3 step 4: the model's drafts (up to 8) filled up with defaults they do not already contain; without a later
- * reply the weakest gives way to one (plan §4.6); then all eight ordered best guess first, with priors from the scores.
+ * Plan §4.3 step 4: the drafts (up to 8) filled up with the given defaults they do not already contain; without a later
+ * reply the weakest gives way to one (plan §4.6); then all of them (at most eight) ordered best guess first, with priors
+ * from the scores. The drafts are the model's, or ask_question's options.
  */
-export function toCandidates(model: readonly Draft[]): Candidate[] { // drafts to the eight candidates
-  const picked: Omit<Candidate, 'prior'>[] = model.slice(0, REPLY_COUNT).map((d) => ({ ...d, source: 'llm' })); // the model's best eight
-  const seen = new Set(picked.map((c) => c.text.toLowerCase())); // texts already present
-  for (const d of DEFAULT_REPLIES) { // fill up from the defaults, in their order
+export function toCandidates(model: readonly Draft[], defaults: readonly Draft[] = DEFAULT_REPLIES, source: 'llm' | 'option' = 'llm'): Candidate[] { // drafts to candidates
+  const picked: Omit<Candidate, 'prior'>[] = model.slice(0, REPLY_COUNT).map((d) => ({ ...d, source })); // the best eight drafts
+  const said = picked.map((c) => c.text.toLowerCase()); // texts already present
+  for (const d of defaults) { // fill up from the defaults, in their order
     if (picked.length === REPLY_COUNT) break; // full
-    if (!seen.has(d.text.toLowerCase())) picked.push({ ...d, source: 'default' }); // not a duplicate
+    if (!said.some((t) => t.includes(d.text.toLowerCase()))) picked.push({ ...d, source: 'default' }); // not already said, even inside a longer reply ("I'm not sure" has "Not sure")
   } // end of the fill
   if (!picked.some((c) => c.intent === 'later')) { // Sam can always say "later"
-    const later = DEFAULT_REPLIES.find((d) => d.intent === 'later' && !picked.some((c) => c.text.toLowerCase() === d.text.toLowerCase())); // "Not now", else "Ask me later"
+    const later = defaults.find((d) => d.intent === 'later' && !picked.some((c) => c.text.toLowerCase() === d.text.toLowerCase())); // "Not now", else "Ask me later"
     const weakest = picked.reduce((w, c, i) => (c.score <= picked[w]!.score ? i : w), 0); // the lowest score; of equals, the one listed last
     if (later) picked[weakest] = { ...later, source: 'default' }; // gives way
   } // end of the later rule
@@ -82,7 +104,13 @@ export function toCandidates(model: readonly Draft[]): Candidate[] { // drafts t
   return picked.map((c, i) => ({ ...c, prior: p[i]! })); // one prior per candidate
 } // end of toCandidates
 
-/** The eight default candidates, pushed with every new question. */
-export function defaultCandidates(): Candidate[] { // no model output yet
-  return toCandidates([]); // all defaults
+/** The default candidates that fit the question, pushed with every new question asked without options. */
+export function defaultCandidates(question: string): Candidate[] { // no model output yet
+  return toCandidates([], defaultsFor(question)); // all the fitting defaults
 } // end of defaultCandidates
+
+/** ask_question's options, in their order and without repeats, then Not now and Not sure: no model call. */
+export function optionCandidates(options: readonly string[]): Candidate[] { // options to candidates
+  const drafts = cleanDrafts({ candidates: options.map((text) => ({ text, intent: 'choice', score: OPTION_SCORE })) }); // trimmed, de-duplicated, order kept
+  return toCandidates(drafts, UNSURE_OR_LATER, 'option'); // at most 6 options, so at most eight candidates
+} // end of optionCandidates

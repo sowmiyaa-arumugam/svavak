@@ -5,10 +5,10 @@
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
 
-/** The control options, scanned after the eight replies. */
+/** The control options, scanned after the replies. */
 export const CONTROLS = ['Something else', 'Help'] as const; // labels, in scan order
 
-export const REPLY_COUNT = 8; // replies per question: the 2 x 4 grid
+export const REPLY_COUNT = 8; // most replies per question: the 2 x 4 grid; a server question may have fewer
 export const SAY_MS = 2000; // a committed reply fills the screen this long; a press in that time cancels it
 export const BUDGET_MS = 3500; // the server's budget for the model's replies (plan §4.3): a server question's scan starts by then
 
@@ -40,7 +40,7 @@ export interface Selection { // reported on every commit
   offsetsMs: number[]; // each accepted press's offset from the chosen card's highlight onset, where the scan showed it
 } // end of Selection
 
-/** The 10 engine options: 8 replies at the server's priors (or the mock scores), then Something else and Help. */
+/** The engine options: the replies (8 on a fixture) at the server's priors (or the mock scores), then Something else and Help. */
 export function optionsFor(question: Question): Option[] { // engine options for one question
   const replies = question.replies.map((_, i) => ({ id: `reply${i}`, score: question.scores?.[i] ?? MOCK_SCORES[i]! })); // best guess first
   const controls = CONTROLS.map((label) => ({ id: label.toLowerCase(), score: 0, control: true })); // 1% each
@@ -49,7 +49,8 @@ export function optionsFor(question: Question): Option[] { // engine options for
 
 /** Text of option i: a reply, or a control after the replies. */
 function labelOf(question: Question, i: number): string { // option index to label
-  return (i < REPLY_COUNT ? question.replies[i] : CONTROLS[i - REPLY_COUNT])!; // i is always a valid option index
+  const n = question.replies.length; // the controls follow the replies, however many there are
+  return (i < n ? question.replies[i] : CONTROLS[i - n])!; // i is always a valid option index
 } // end of labelOf
 
 /**
@@ -146,7 +147,7 @@ export class Conversation { // one per screen
     else this.pending = question; // the next question, ahead of the fixtures
   } // end of receive
 
-  /** The model's candidates for server question `id`: they replace its replies only within its budget, before its scan. */
+  /** The final candidates for server question `id` (the model's, or its options): they replace its replies only within its budget, before its scan. */
   update(id: string, replies: readonly string[], scores: readonly number[]): void { // from the stream's question.candidates
     const end = this.budgets.get(id); // when its budget ends; none once its scan has started
     if (end === undefined || this.now() >= end) return; // too late: the list stays as it is

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import { MemoryStore } from '../src/adapters/memoryStore.ts'; // the real in-memory store
 import { MockLlm } from '../src/adapters/mockLlm.ts'; // the real mock model
 import { MockTts } from '../src/adapters/mockTts.ts'; // the real mock speech
-import { createUseCases, NotFoundError, type Deps } from '../src/application/useCases.ts'; // tested
+import { createUseCases, FactLimitError, NotFoundError, type Deps } from '../src/application/useCases.ts'; // tested
 import { BANNED_TERMS } from '../src/domain/candidates.ts'; // the banned-term list
 import { DailyCap } from '../src/domain/dailyCap.ts'; // cost guard
 import { DEMO_FACTS, DEMO_HOUSEHOLD, type ProfileFact } from '../src/domain/facts.ts'; // profile facts
@@ -16,7 +16,7 @@ import type { LlmPort, SuggestRequest, TtsPort } from '../src/ports/index.ts'; /
 const TEA = { candidates: [{ text: 'Tea, please', intent: 'choice', score: 0.6 }, { text: 'Coffee, please', intent: 'choice', score: 0.4 }] }; // a model answer
 
 /** Use-cases over fake ports that record what they receive. */
-function setup(patch: { llm?: Partial<Deps['llm']>; tts?: Partial<Deps['tts']>; facts?: Record<string, readonly ProfileFact[]> } = {}) { // fresh world per test
+function setup(patch: { llm?: Partial<Deps['llm']>; tts?: Partial<Deps['tts']>; facts?: Record<string, readonly ProfileFact[]>; tvs?: number } = {}) { // fresh world per test
   let now = Date.parse('2026-10-19T10:00:00Z'); // fixed time, moved on by advance()
   let n = 0; // id counter
   const events: StreamEvent[] = []; // pushed to the TV
@@ -27,7 +27,7 @@ function setup(patch: { llm?: Partial<Deps['llm']>; tts?: Partial<Deps['tts']>; 
   const deps: Deps = { // the ports
     mode: 'mock', // server mode
     store, // store
-    notifier: { publish: (e) => events.push(e) }, // records events
+    notifier: { publish: (e) => { events.push(e); return patch.tvs ?? 1; } }, // records events; one TV connected unless the test says otherwise
     trace: { span: (s) => spans.push(s) }, // records spans
     log: (msg, fields) => logs.push({ msg, ...fields }), // records logs
     clock, // time
@@ -51,7 +51,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     const { uc, events, store, spans } = setup(); // mock model
     const { question, suggested } = uc.askQuestion('Would you like tea or coffee?', 'Alex'); // ask
     expect(events).toEqual([{ type: 'question.created', question }]); // before the model has answered
-    expect(question.candidates.map((c) => c.text).slice(0, 3)).toEqual(['Yes, please', 'No, thanks', 'Not now']); // defaults
+    expect(question.candidates.map((c) => c.text).slice(0, 3)).toEqual(['Not now', 'Not sure', 'Ask me later']); // the defaults of a choice question
     await suggested; // the model's turn
     const pushed = events[1]; // the second event
     expect(pushed?.type).toBe('question.candidates'); // candidates follow
@@ -209,15 +209,13 @@ describe('openQuestion', () => { // the question a TV that connects late should 
     expect(uc.openQuestion()).toBeUndefined(); // too old to replay
   }); // end of the case
 
-  it('skips an answered question', async () => { // answered is not open
+  it('replays only the newest question: nothing once it is answered, not an older one', async () => { // answered is not open
     const { uc } = setup(); // fresh
-    const older = uc.askQuestion('Tea?', 'Alex'); // the older question
+    const older = uc.askQuestion('Tea?', 'Alex'); // the older question, never answered
     const newer = uc.askQuestion('Coffee?', 'Alex'); // the newer question
     await Promise.all([older.suggested, newer.suggested]); // both settled
     await uc.commitUtterance('k1', { ...commit, question_id: newer.question.id }); // the newer one is answered
-    expect(uc.openQuestion()?.id).toBe(older.question.id); // the newest still pending
-    await uc.commitUtterance('k2', { ...commit, question_id: older.question.id }); // now both are answered
-    expect(uc.openQuestion()).toBeUndefined(); // nothing open
+    expect(uc.openQuestion()).toBeUndefined(); // nothing open: the older one expired when the newer one was asked
   }); // end of the case
 
   it('skips a question whose reply is still being committed', async () => { // speech can take a while
@@ -232,7 +230,7 @@ describe('openQuestion', () => { // the question a TV that connects late should 
     await committing; // committed
   }); // end of the case
 
-  it('returns the newer of two pending questions', async () => { // newest first
+  it('returns the newer of two questions asked', async () => { // newest first
     const { uc, advance } = setup(); // fresh
     await uc.askQuestion('Tea?', 'Alex').suggested; // the older question
     advance(1000); // a second later
@@ -241,3 +239,165 @@ describe('openQuestion', () => { // the question a TV that connects late should 
     expect(uc.openQuestion()?.id).toBe(newer.question.id); // the newer one
   }); // end of the case
 }); // end of openQuestion
+
+describe('askQuestion with options', () => { // ask_question's options: no model call
+  it('pushes exactly the options, Not now and Not sure, then question.candidates at once, without calling the model', async () => { // the TV starts its scan at once
+    const calls: SuggestRequest[] = []; // model requests
+    const { uc, events, spans } = setup({ llm: { mock: fakeLlm(TEA, calls) } }); // a recording model
+    const { question, delivered, suggested } = uc.askQuestion('Would you like tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'], urgency: 'high' }); // ask
+    expect(question.candidates.map((c) => c.text)).toEqual(['Tea', 'Coffee', 'Not now', 'Not sure']); // four replies
+    expect(question.urgency).toBe('high'); // stored as asked
+    expect(events).toEqual([{ type: 'question.created', question }, { type: 'question.candidates', question_id: question.id, candidates: question.candidates }]); // both events now
+    expect(delivered).toBe(true); // a TV received it
+    await suggested; // nothing to wait for
+    expect(calls).toEqual([]); // no model call
+    expect(events).toHaveLength(2); // and no later candidates
+    expect(spans.filter((s) => s.hop === 'server→llm')).toEqual([]); // no model hop
+  }); // end of the case
+
+  it('reports delivered false when no TV is connected, and stores urgency normal by default', () => { // delivered
+    const { uc } = setup({ tvs: 0 }); // no TV
+    const { question, delivered } = uc.askQuestion('Tea?', 'Alex'); // ask
+    expect([delivered, question.urgency]).toEqual([false, 'normal']); // nobody saw it yet
+  }); // end of the case
+}); // end of askQuestion with options
+
+describe('question lifecycle', () => { // one open question per household
+  it('expires an earlier unanswered question when a new one is asked, and leaves an answered one answered', async () => { // expiry
+    const { uc, store } = setup(); // fresh
+    const first = uc.askQuestion('Tea?', 'Alex'); // answered below
+    await uc.commitUtterance('k1', { ...commit, question_id: first.question.id }); // answered
+    const second = uc.askQuestion('Coffee?', 'Alex'); // never answered
+    const third = uc.askQuestion('Milk?', 'Alex'); // the newest
+    await Promise.all([first.suggested, second.suggested, third.suggested]); // all settled
+    expect([first, second, third].map((q) => store.getQuestion(q.question.id)?.status)).toEqual(['answered', 'expired', 'pending']); // one open question
+    expect(await uc.getAnswer(second.question.id, 0)).toEqual({ status: 'expired', answer_text: null, answered_at: null, clicks: null }); // get_answer says so
+  }); // end of the case
+
+  it('keeps an expired question expired when a late reply to it arrives', async () => { // a TV still saying the old reply
+    const { uc, store } = setup(); // fresh
+    const older = uc.askQuestion('Tea?', 'Alex'); // replaced below
+    uc.askQuestion('Coffee?', 'Alex'); // the newer question expires it
+    const late = await uc.commitUtterance('k1', { ...commit, question_id: older.question.id }); // the reply to the older one
+    expect(late.utterance).toMatchObject({ kind: 'reply', question_id: older.question.id, question_text: 'Tea?' }); // still recorded with its question
+    expect(store.getQuestion(older.question.id)?.status).toBe('expired'); // but the question stays expired
+  }); // end of the case
+}); // end of question lifecycle
+
+describe('getAnswer', () => { // get_answer
+  const PENDING = { status: 'pending', answer_text: null, answered_at: null, clicks: null }; // no answer yet
+
+  it('reports pending, then the answer with its time and clicks once committed', async () => { // fetch without waiting
+    const { uc } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    expect(await uc.getAnswer(question.id, 0)).toEqual(PENDING); // not yet
+    await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the TV commits
+    expect(await uc.getAnswer(question.id, 0)).toEqual({ status: 'answered', answer_text: 'Tea, please', answered_at: '2026-10-19T10:00:00.000Z', clicks: 2 }); // the answer
+  }); // end of the case
+
+  it('returns as soon as the answer is committed while it waits', async () => { // long-poll
+    const { uc } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const started = performance.now(); // real time
+    const waiting = uc.getAnswer(question.id, 5000); // waits up to 5 s
+    setTimeout(() => void uc.commitUtterance('k1', { ...commit, question_id: question.id }), 20); // the TV commits 20 ms later
+    expect(await waiting).toMatchObject({ status: 'answered', answer_text: 'Tea, please' }); // the answer
+    expect(performance.now() - started).toBeLessThan(1000); // long before the wait ended
+  }); // end of the case
+
+  it('returns pending when the wait ends without an answer', async () => { // timeout
+    const { uc } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const started = performance.now(); // real time
+    expect(await uc.getAnswer(question.id, 50)).toEqual(PENDING); // still nothing
+    expect(performance.now() - started).toBeGreaterThanOrEqual(45); // it did wait (timer granularity aside)
+  }); // end of the case
+
+  it('returns expired as soon as a newer question replaces it while it waits', async () => { // expiry wakes the wait
+    const { uc } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const waiting = uc.getAnswer(question.id, 5000); // waits
+    uc.askQuestion('Coffee?', 'Alex'); // a newer question
+    expect(await waiting).toMatchObject({ status: 'expired' }); // at once
+  }); // end of the case
+
+  it('stops waiting when its signal aborts', async () => { // the agent cancelled the call
+    const { uc } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const controller = new AbortController(); // the request's signal
+    const waiting = uc.getAnswer(question.id, 5000, controller.signal); // waits
+    controller.abort(); // cancelled
+    expect(await waiting).toEqual(PENDING); // the state at that moment
+  }); // end of the case
+
+  it('reports pending while the reply is still being spoken, and answered once it is stored', async () => { // commit = stored
+    let release: (audio: Uint8Array | null) => void = () => {}; // resolves the synthesis
+    const slow: TtsPort = { synthesize: () => new Promise((r) => { release = r; }) }; // waits for release
+    const { uc } = setup({ tts: { mock: slow } }); // slow speech
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const committing = uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the TV has answered; speech is on its way
+    expect(await uc.getAnswer(question.id, 0)).toEqual(PENDING); // no stored answer yet
+    const waiting = uc.getAnswer(question.id, 5000); // waits
+    release(null); // the speech is done
+    await committing; // stored
+    expect(await waiting).toMatchObject({ status: 'answered', answer_text: 'Tea, please' }); // woken by the commit
+  }); // end of the case
+
+  it('keeps waiting when another reply to the same question is stored before the answer', async () => { // two TVs answering
+    const releases: ((audio: Uint8Array | null) => void)[] = []; // one per synthesis, in commit order
+    const slow: TtsPort = { synthesize: () => new Promise((r) => { releases.push(r); }) }; // waits for release
+    const { uc } = setup({ tts: { mock: slow } }); // slow speech
+    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const first = uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the answer; its speech is still running
+    const second = uc.commitUtterance('k2', { ...commit, question_id: question.id, text: 'Coffee, please' }); // another TV's reply
+    const waiting = uc.getAnswer(question.id, 5000); // waits
+    releases[1]!(null); // the second reply's speech ends first
+    await second; // stored, which wakes the wait
+    releases[0]!(null); // then the answer's
+    await first; // stored
+    expect(await waiting).toMatchObject({ status: 'answered', answer_text: 'Tea, please' }); // the answer, not an early pending
+  }); // end of the case
+
+  it('refuses an unknown question id', async () => { // not found
+    const { uc } = setup(); // fresh
+    await expect(uc.getAnswer('nope', 0)).rejects.toBeInstanceOf(NotFoundError); // an id that was never issued
+  }); // end of the case
+}); // end of getAnswer
+
+describe('recentMessages', () => { // get_recent_messages
+  it('lists what was said, oldest first, with time, kind and the question text when there is one; since and limit narrow it', async () => { // the list
+    const { uc, advance } = setup(); // fresh, with an adjustable clock
+    const { question } = uc.askQuestion('Tea or coffee?', 'Alex'); // a server question
+    await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // its reply, at 10:00:00
+    advance(1000); // a second later
+    await uc.commitUtterance('k2', { ...commit, text: 'Hello' }); // something said on its own
+    advance(1000); // a second later
+    await uc.commitUtterance('k3', { ...commit, text: 'The cricket', question_text: 'What shall we watch?' }); // a reply to a fixture question
+    expect(uc.recentMessages(null, 20)).toEqual([ // everything, oldest first
+      { text: 'Tea, please', time: '2026-10-19T10:00:00.000Z', kind: 'reply', question_text: 'Tea or coffee?' }, // a reply
+      { text: 'Hello', time: '2026-10-19T10:00:01.000Z', kind: 'spontaneous', question_text: null }, // no question
+      { text: 'The cricket', time: '2026-10-19T10:00:02.000Z', kind: 'spontaneous', question_text: 'What shall we watch?' }, // the fixture question
+    ]); // end of the list
+    expect(uc.recentMessages(null, 2).map((m) => m.text)).toEqual(['Hello', 'The cricket']); // the latest two
+    expect(uc.recentMessages('2026-10-19T10:00:00.000Z', 20).map((m) => m.text)).toEqual(['Hello', 'The cricket']); // strictly after since
+    expect(uc.recentMessages('2026-10-19T12:00:01+02:00', 20).map((m) => m.text)).toEqual(['The cricket']); // a time with an offset
+  }); // end of the case
+}); // end of recentMessages
+
+describe('addProfileFact', () => { // add_profile_fact
+  it("adds a fact with an id; the next question's model request carries it", async () => { // facts shape candidates
+    const calls: SuggestRequest[] = []; // model requests
+    const { uc } = setup({ llm: { mock: fakeLlm(TEA, calls) } }); // no facts yet
+    const id = uc.addProfileFact({ text: 'Sam follows cricket', category: 'likes' }); // add one
+    await uc.askQuestion('What shall we watch?', 'Alex').suggested; // the next question
+    expect(calls[0]?.facts).toEqual([{ id, text: 'Sam follows cricket', category: 'likes' }]); // as stored; promptFacts drops the id
+  }); // end of the case
+
+  it('refuses a 21st fact', () => { // plan §6.1: at most 20 facts
+    const nineteen = Array.from({ length: 19 }, (_, i) => ({ text: `Fact ${i}`, category: 'other' as const })); // 19 facts
+    const { uc, store } = setup({ facts: { [DEMO_HOUSEHOLD]: nineteen } }); // seeded
+    uc.addProfileFact({ text: 'Fact 19', category: 'other' }); // the 20th
+    expect(() => uc.addProfileFact({ text: 'Fact 20', category: 'other' })).toThrow(FactLimitError); // the 21st
+    expect(store.profileFacts(DEMO_HOUSEHOLD)).toHaveLength(20); // not stored
+  }); // end of the case
+}); // end of addProfileFact

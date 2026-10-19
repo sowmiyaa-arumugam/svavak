@@ -18,11 +18,17 @@ describe('parseEvent', () => { // server JSON to screen events
     expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: EIGHT }))).toEqual({ type: 'question.candidates', questionId: 'q1', replies: SCREEN.replies, scores: SCREEN.scores }); // mapped
   }); // end of the case
 
-  it('drops pings, unknown types, malformed JSON and lists that do not fill the grid', () => { // ignored input
+  it('takes fewer than eight replies, as for a question asked with options', () => { // Tea, Coffee, Not now, Not sure
+    const four = EIGHT.slice(0, 4); // four candidates
+    expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: four }))).toEqual({ type: 'question.candidates', questionId: 'q1', replies: four.map((c) => c.text), scores: four.map((c) => c.prior) }); // mapped
+  }); // end of the case
+
+  it('drops pings, unknown types, malformed JSON and lists that are empty or do not fit the grid', () => { // ignored input
     expect(parseEvent('{"type":"ping","at":"2026-10-19T10:00:00.000Z"}')).toBeNull(); // keep-alive
     expect(parseEvent('{"type":"question.cancelled","question_id":"q1"}')).toBeNull(); // not handled yet
     expect(parseEvent('not json')).toBeNull(); // malformed
-    expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, candidates: EIGHT.slice(0, 7) } }))).toBeNull(); // seven
+    expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, candidates: [] } }))).toBeNull(); // none
+    expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, candidates: [...EIGHT, candidate('Nine', 0.01)] } }))).toBeNull(); // nine
     expect(parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, asked_by: 7 } }))).toBeNull(); // wrong type
     expect(parseEvent(JSON.stringify({ type: 'question.candidates', candidates: EIGHT }))).toBeNull(); // no question id
     expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: [...EIGHT.slice(1), { text: 'x' }] }))).toBeNull(); // no prior

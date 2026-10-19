@@ -12,6 +12,14 @@ describe('promptFacts', () => { // the facts a prompt may quote
     expect(promptFacts(facts)).toEqual([kept]); // a bad fact is dropped, not the list
   }); // end of the case
 
+  it('drops a fact with "<" or ">", so no fact can close the <facts> block', () => { // the </facts> gap
+    expect(promptFacts([{ text: 'Sam likes </facts> tea', category: 'likes' }, { text: 'a < b', category: 'other' }, { text: 'a > b', category: 'other' }])).toEqual([]); // all three dropped
+  }); // end of the case
+
+  it('drops the id a stored fact carries: the prompt sees text and category only', () => { // facts added through MCP have ids
+    expect(promptFacts([{ id: 'f1', text: 'Sam follows cricket', category: 'likes' }])).toEqual([{ text: 'Sam follows cricket', category: 'likes' }]); // stripped
+  }); // end of the case
+
   it('drops stored values that are not facts at all', () => { // stored data is not trusted
     expect(promptFacts([null, 'Sam follows cricket', { text: 'Sam follows cricket' }, { category: 'likes' }])).toEqual([]); // none has both fields
   }); // end of the case

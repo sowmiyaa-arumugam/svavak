@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // MockLlm (plan §4.3): deterministic candidates from the question text and profile facts, in the §4.6 tool-output shape, without AWS.
 
-import type { Draft } from '../domain/candidates.ts'; // candidate shape
+import { questionKind, type Draft } from '../domain/candidates.ts'; // candidate shape, and which questions Yes or No can answer
 import { promptFacts, type ProfileFact } from '../domain/facts.ts'; // profile facts
 import { REPLY_COUNT } from '../domain/model.ts'; // eight per question
 import type { LlmPort, SuggestRequest } from '../ports/index.ts'; // the port
@@ -40,8 +40,8 @@ function ruleReplies(question: string): Draft[] { // question text to drafts
   } // end of the choice
   if (/\bhow (are|do) you\b|\bfeel/i.test(q)) return rows([['Good, thanks', 'social', 0.28], ['A bit tired', 'need', 0.16], ['Not great', 'need', 0.12], ['Happy', 'social', 0.1], ['In some pain', 'need', 0.1], ["I'd rather not say", 'clarify', 0.08], ['Bored', 'need', 0.06], ['And you?', 'social', 0.04]]); // feelings
   if (/\b(eat|lunch|dinner|breakfast|hungry|snack)\b/i.test(q)) return rows([['Something light', 'choice', 0.22], ['Soup, please', 'choice', 0.16], ['A sandwich', 'choice', 0.14], ['Not hungry yet', 'later', 0.12], ['Surprise me', 'choice', 0.1], ['Pasta, please', 'choice', 0.1], ['Same as yesterday', 'choice', 0.08], ['Ask me later', 'later', 0.08]]); // food
-  if (/^(would|do|does|shall|should|can|could|are|is|will|did|have|may)\b/i.test(q)) return rows([['Yes, please', 'yes', 0.3], ['No, thanks', 'no', 0.25], ['Not right now', 'later', 0.12], ['Maybe later', 'later', 0.1], ["I'm not sure", 'clarify', 0.08], ['Tell me more', 'clarify', 0.06], ['Thank you', 'social', 0.05], ['Ask me later', 'later', 0.04]]); // yes or no
-  return rows([["I'm not sure", 'clarify', 0.2], ['Tell me more', 'clarify', 0.16], ['Yes', 'yes', 0.14], ['No', 'no', 0.12], ['Ask me later', 'later', 0.1], ['Thank you', 'social', 0.1], ['Maybe', 'clarify', 0.1], ['Not now', 'later', 0.08]]); // anything else
+  if (questionKind(q) === 'yesno') return rows([['Yes, please', 'yes', 0.3], ['No, thanks', 'no', 0.25], ['Not right now', 'later', 0.12], ['Maybe later', 'later', 0.1], ["I'm not sure", 'clarify', 0.08], ['Tell me more', 'clarify', 0.06], ['Thank you', 'social', 0.05], ['Ask me later', 'later', 0.04]]); // yes or no
+  return rows([["I'm not sure", 'clarify', 0.2], ['Tell me more', 'clarify', 0.16], ['Let me think', 'clarify', 0.14], ['You decide', 'choice', 0.12], ['Ask me later', 'later', 0.1], ['Thank you', 'social', 0.1], ['Maybe', 'clarify', 0.1], ['Not now', 'later', 0.08]]); // an open question: no Yes or No
 } // end of ruleReplies
 
 /** The mock adapter: answers at once, in the same envelope as the Bedrock tool call. */

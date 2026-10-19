@@ -33,7 +33,7 @@ async function start(options: { tts?: TtsPort; pingMs?: number } = {}) { // the 
   const logs: Record<string, unknown>[] = []; // log lines
   const log = (msg: string, fields?: Record<string, unknown>) => { logs.push({ msg, ...fields }); }; // records them
   const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: options.tts ?? new MockTts(), cap: new DailyCap(100_000, clock) } }; // mock wiring
-  const server = createServer({ token: TOKEN, mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: options.pingMs ?? 60_000 }); // interfaces
+  const server = createServer({ token: TOKEN, agentToken: 'a'.repeat(32), mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: ['http://localhost:5173'], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: options.pingMs ?? 60_000 }); // interfaces
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); // any free port
   running = { server, wss }; // for clean-up
   const port = (server.address() as AddressInfo).port; // the chosen port
@@ -116,7 +116,7 @@ describe('authentication', () => { // the static device token
 }); // end of authentication
 
 describe('POST /v1/questions and GET /v1/stream', () => { // flow S1 on the stream
-  it('pushes question.created with the eight defaults, then question.candidates from the model', async () => { // S1
+  it('pushes question.created with the defaults that fit, then question.candidates from the model', async () => { // S1
     const { http, ws } = await start(); // server
     const tv = await connect(ws); // a connected TV
     const res = await ask(http); // the caregiver asks
@@ -125,7 +125,7 @@ describe('POST /v1/questions and GET /v1/stream', () => { // flow S1 on the stre
     expect(question).toMatchObject({ text: 'Would you like tea or coffee?', asked_by: 'Alex', status: 'pending', answered_utterance_id: null }); // stored as asked
     const created = await until(() => tv.events.find((e) => e.type === 'question.created')); // first event
     expect(created).toEqual({ type: 'question.created', question }); // the same question, with the defaults
-    expect(question.candidates.map((c) => c.source)).toEqual(Array(8).fill('default')); // eight defaults
+    expect(question.candidates.map((c) => c.source)).toEqual(Array(6).fill('default')); // the six defaults of a choice question: no Yes or No
     const update = await until(() => tv.events.find((e) => e.type === 'question.candidates')); // second event
     if (update.type !== 'question.candidates') throw new Error('unreachable'); // narrow the type
     expect(update.question_id).toBe(question.id); // for this question

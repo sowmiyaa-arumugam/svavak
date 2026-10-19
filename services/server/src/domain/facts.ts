@@ -8,6 +8,7 @@ export const FACT_CATEGORIES = ['likes', 'dislikes', 'people', 'routines', 'othe
 export type FactCategory = (typeof FACT_CATEGORIES)[number]; // one of the above
 export const FACT_MAX_CHARS = 120; // plan §6.1: a length limit per fact
 export const FACTS_MAX = 20; // plan §6.1: at most this many facts in one prompt
+export const NO_ANGLE_BRACKETS = /^[^<>]*$/; // no "<" or ">", so no fact can close the prompt's <facts> block
 
 /** One thing known about the person. */
 export interface ProfileFact { // a fact as stored
@@ -25,7 +26,7 @@ export const DEMO_FACTS: readonly ProfileFact[] = [ // seeded by compose.ts
   { text: "Sam has lunch at one o'clock", category: 'routines' }, // a daily routine
 ]; // end of DEMO_FACTS
 
-const factSchema = z.object({ text: z.string().min(1).max(FACT_MAX_CHARS), category: z.enum(FACT_CATEGORIES) }); // one fact
+const factSchema = z.object({ text: z.string().min(1).max(FACT_MAX_CHARS).regex(NO_ANGLE_BRACKETS), category: z.enum(FACT_CATEGORIES) }); // one fact
 
 /** The facts that may enter a prompt: each valid one (a failing fact is dropped, not the list), the first FACTS_MAX in stored order. */
 export function promptFacts(facts: readonly unknown[]): ProfileFact[] { // stored facts to prompt facts

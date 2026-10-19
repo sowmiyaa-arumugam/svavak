@@ -2,8 +2,10 @@
 
 The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It shows a question band, a 2 × 4 grid of
 reply cards and two control pills (Something else, Help). All ten are options of one
-[switchclock](../../packages/switchclock) `ScanEngine`. One thick teal highlight steps through the cards, best guess
-first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
+[switchclock](../../packages/switchclock) `ScanEngine`. A server question may have fewer cards (at least one), for
+example one asked with options; the pills then follow its last card. One thick teal highlight steps through the cards,
+best guess first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan
+repeats.
 
 Questions come from the [server](../../services/server) when it can be reached, and otherwise from mock fixtures
 ([src/questions.ts](src/questions.ts)), listed best guess first.
@@ -12,7 +14,8 @@ Questions come from the [server](../../services/server) when it can be reached, 
 - It shows the question and the server's default replies at once, but the highlight starts only when the model's
   replies arrive (then on them, best guess first, using the server's priors) or when the server's 3.5 s budget for
   them has passed (then on the defaults). Replies that come later are ignored, so the list never changes while the
-  highlight moves.
+  highlight moves. A question asked with options gets its final replies straight after it, so its highlight starts at
+  once; replayed after a reconnect, it waits out the budget like any other question.
 - After a reconnect the server sends the open question again. If the screen already has it (shown, or held until
   "Saying it" or Help ends), new replies in it are the model's, taken within the budget as above, and the same replies
   again change nothing; a running scan never restarts.

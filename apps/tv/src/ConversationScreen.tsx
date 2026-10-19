@@ -1,12 +1,12 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen (plan §5.2) in scan mode: question band, 2 x 4 reply cards, two control pills and a hint.
+// The conversation screen (plan §5.2) in scan mode: question band, up to 2 x 4 reply cards, two control pills and a hint.
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { StyleSheet, Text, View } from 'react-native'; // primitives
 import KeyEvent from 'react-native-keyevent'; // Android key events, forwarded by plugins/withKeyEvent.js
 import { now } from './clock'; // the shared clock
-import { CONFIG, CONTROLS, Conversation, REPLY_COUNT, type Reply } from './conversation'; // the state machine
+import { CONFIG, CONTROLS, Conversation, type Reply } from './conversation'; // the state machine
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
 import { postUtterance, SERVER } from './server'; // the server, if this build has one
@@ -30,7 +30,7 @@ function say(reply: Reply): void { // the conversation's reply hook
   ); // end of the post
 } // end of say
 
-/** The only screen so far. Every card and pill is an option of one scan engine: 8 replies and 2 controls. */
+/** The only screen so far. Every card and pill is an option of one scan engine: up to 8 replies and 2 controls. */
 export function ConversationScreen() { // the screen
   const { conversation, input } = useMemo(() => { // one conversation and its switch for the screen's lifetime
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
@@ -54,7 +54,7 @@ export function ConversationScreen() { // the screen
     if (!SERVER) return; // built without a token: fixtures only
     const stream = new StreamClient(SERVER.url, SERVER.token, (event) => { // connects now, reconnects with back-off
       if (event.type === 'question.created') conversation.receive(event.question); // a new question, or the open one again after a reconnect
-      else conversation.update(event.questionId, event.replies, event.scores); // the model's replies for it
+      else conversation.update(event.questionId, event.replies, event.scores); // its final replies: the model's, or its options
     }); // end of the stream
     stream.start(); // connect
     return () => stream.stop(); // hang up on unmount
@@ -101,7 +101,7 @@ export function ConversationScreen() { // the screen
       <View style={styles.column}>{/* the content column, as wide as the grid */}
         <Text style={styles.speaker}>{snap.question.speaker} asks</Text>{/* speaker label */}
         <Text style={styles.question}>{snap.question.text}</Text>{/* the question */}
-        <View style={styles.grid}>{/* 2 x 4 reply cards, best guess first in reading order */}
+        <View style={styles.grid}>{/* up to 2 x 4 reply cards, best guess first in reading order */}
           {snap.question.replies.map((reply, i) => ( // one card per reply
             <View key={i} style={[styles.card, ...look(i)]} accessible accessibilityRole="button" accessibilityLabel={reply}>{/* card */}
               <Text style={styles.cardText} numberOfLines={2}>{reply}</Text>{/* two-line bold text */}
@@ -110,7 +110,7 @@ export function ConversationScreen() { // the screen
         </View>{/* end of the grid */}
         <View style={styles.controls}>{/* the control bar, scanned after the cards */}
           {CONTROLS.map((label, c) => ( // one pill per control
-            <View key={label} style={[styles.pill, ...look(REPLY_COUNT + c)]} accessible accessibilityRole="button" accessibilityLabel={label}>{/* the pill */}
+            <View key={label} style={[styles.pill, ...look(snap.question.replies.length + c)]} accessible accessibilityRole="button" accessibilityLabel={label}>{/* the pill: its option follows the replies */}
               <Text style={[styles.pillText, label === 'Help' && styles.helpText]}>{label}</Text>{/* its name */}
             </View> // end of the pill
           ))}{/* end of the pills */}

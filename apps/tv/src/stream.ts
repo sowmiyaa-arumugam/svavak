@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // The server's question stream (plan §4.2, Table 13): GET /v1/stream over WebSocket, reconnecting with back-off.
 
-import { REPLY_COUNT } from './conversation'; // the grid takes exactly eight replies
+import { REPLY_COUNT } from './conversation'; // the grid takes at most eight replies
 import type { Question } from './questions'; // the screen's question shape
 
 /** Stream events, in the screen's terms. Pings and anything unknown are dropped. */
 export type StreamEvent = // what the screen acts on
   | { type: 'question.created'; question: Question } // a new question with the default replies
-  | { type: 'question.candidates'; questionId: string; replies: string[]; scores: number[] }; // the model's replies
+  | { type: 'question.candidates'; questionId: string; replies: string[]; scores: number[] }; // the model's replies, or a question's options at once
 
 /** The part of a WebSocket the client uses. */
 export interface SocketLike { // React Native's WebSocket, or a fake in tests
@@ -42,7 +42,7 @@ export function parseEvent(data: string): StreamEvent | null { // the server's J
     if (typeof q?.id !== 'string' || typeof q.text !== 'string' || typeof q.asked_by !== 'string' || !c) return null; // malformed
     return { type: 'question.created', question: { id: q.id, speaker: q.asked_by, text: q.text, ...c } }; // for the screen
   } // end of question.created
-  if (message?.type === 'question.candidates') { // the model's replies
+  if (message?.type === 'question.candidates') { // the final replies: the model's, or a question's options
     const c = candidatesOf(message.candidates); // the replies
     if (typeof message.question_id !== 'string' || !c) return null; // malformed
     return { type: 'question.candidates', questionId: message.question_id, ...c }; // for the screen
@@ -50,8 +50,8 @@ export function parseEvent(data: string): StreamEvent | null { // the server's J
   return null; // ping, or a type this app does not know
 } // end of parseEvent
 
-function candidatesOf(list: unknown): { replies: string[]; scores: number[] } | null { // eight candidates to replies and priors
-  if (!Array.isArray(list) || list.length !== REPLY_COUNT) return null; // the grid needs exactly eight
+function candidatesOf(list: unknown): { replies: string[]; scores: number[] } | null { // one to eight candidates to replies and priors
+  if (!Array.isArray(list) || list.length === 0 || list.length > REPLY_COUNT) return null; // fewer for a question asked with options or the six defaults of a non-yes/no question; never more than the grid
   if (!list.every((c) => typeof c?.text === 'string' && typeof c?.prior === 'number')) return null; // each with text and prior
   return { replies: list.map((c) => c.text), scores: list.map((c) => c.prior) }; // best guess first, as sent
 } // end of candidatesOf

@@ -30,15 +30,18 @@ export interface StorePort { // repository port
   getQuestion(id: string): Question | undefined; // by id
   newestPending(): Question | undefined; // the most recently created question still pending
   addUtterance(utterance: Utterance, idempotencyKey: string, audio: Uint8Array | null): void; // a commit and its audio
+  getUtterance(id: string): Utterance | undefined; // by id
   utteranceByKey(idempotencyKey: string): Utterance | undefined; // an earlier commit with the same key
   getAudio(utteranceId: string): Uint8Array | undefined; // the audio of an utterance, if it has one
   recentTurns(limit: number): { question: string | null; reply: string }[]; // the last `limit` utterances with their questions, oldest first
+  recentUtterances(limit: number, since: string | null): Utterance[]; // the last `limit` utterances created after `since` (any ISO 8601 time), oldest first
   profileFacts(household: string): ProfileFact[]; // the household's facts as stored; [] for an unknown household
+  addProfileFact(household: string, fact: ProfileFact & { id: string }): void; // appended to the household's facts
 } // end of StorePort
 
 /** Pushes events to connected TVs (WsNotifier). */
 export interface NotifierPort { // fan-out
-  publish(event: StreamEvent): void; // to every connected client
+  publish(event: StreamEvent): number; // to every connected client; returns how many it went to
 } // end of NotifierPort
 
 /** Receives one span per hop (SseTraceSink). */

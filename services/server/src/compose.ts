@@ -48,6 +48,6 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
     llm: { live: live ? new BedrockLlm(new BedrockRuntimeClient(aws), config.modelId) : null, mock: new MockLlm(), cap: new DailyCap(LLM_CALLS_PER_DAY, clock), budgetMs: BUDGET_MS }, // replies
     tts: { live: live ? new PollyTts(new PollyClient(aws), config.voice) : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock) }, // speech
   }; // end of deps
-  const server = createServer({ token: config.deviceToken, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS }); // interfaces
+  const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS }); // interfaces
   return { server, deps }; // the caller listens
 } // end of compose

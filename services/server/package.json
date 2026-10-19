@@ -1,7 +1,7 @@
 {
   "name": "server",
   "version": "0.1.0",
-  "description": "Say When server: REST, WebSocket stream and trace for the TV, with mock and live (Bedrock, Polly) adapters",
+  "description": "Say When server: REST, WebSocket stream and trace for the TV, and an MCP endpoint for agents, with mock and live (Bedrock, Polly) adapters",
   "license": "Apache-2.0",
   "author": "Sowmiya Arumugam",
   "private": true,
@@ -14,6 +14,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1146.0",
     "@aws-sdk/client-polly": "3.1146.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "express": "5.2.1",
     "switchclock": "workspace:*",
     "ws": "8.22.0",

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Mock questions and replies for the conversation screen: a synthetic persona, no real personal data.
 
-/** A question with its eight reply candidates, best guess first, in grid order (two rows of four). */
+/** A question with its reply candidates, best guess first, in grid order (two rows of four). */
 export interface Question { // one fixture entry, or a question from the server
   id?: string; // the server's question id; fixtures have none
   speaker: string; // who asks, shown as "<speaker> asks"
   text: string; // the question
-  replies: readonly string[]; // eight replies
+  replies: readonly string[]; // eight replies; a server question may have fewer, down to one
   scores?: readonly number[]; // the server's priors, one per reply; fixtures use the mock scores by position
 } // end of Question
 

@@ -3,7 +3,7 @@
 // Reply pipeline post-processing (plan §4.6): validation, trimming, length cap, de-duplication, merge and priors.
 
 import { describe, expect, it } from 'vitest'; // test API
-import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, dropBanned, toCandidates } from '../src/domain/candidates.ts'; // tested
+import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, dropBanned, optionCandidates, questionKind, toCandidates } from '../src/domain/candidates.ts'; // tested
 import { REPLY_COUNT } from '../src/domain/model.ts'; // eight per question
 
 describe('cleanDrafts', () => { // raw model output to drafts
@@ -55,7 +55,7 @@ describe('dropBanned', () => { // plan §4.6: no profanity
 
 describe('toCandidates', () => { // merge with defaults and priors
   it('returns the eight defaults, Yes, No and Not now first, when the model gave nothing', () => { // FR-02
-    const c = defaultCandidates(); // no model output
+    const c = defaultCandidates('Shall I open the window?'); // no model output, for a yes/no question
     expect(c).toHaveLength(REPLY_COUNT); // a full grid
     expect(c.slice(0, 3).map((x) => x.text)).toEqual(['Yes, please', 'No, thanks', 'Not now']); // shown at once
     expect(c.every((x) => x.source === 'default')).toBe(true); // all defaults
@@ -107,4 +107,56 @@ describe('toCandidates', () => { // merge with defaults and priors
     const model = Array.from({ length: 8 }, (_, i) => ({ text: `Reply ${i}`, intent: i === 7 ? ('later' as const) : ('choice' as const), score: 0.9 - i / 10 })); // the weakest is later
     expect(toCandidates(model).map((x) => x.text)).toEqual(model.map((d) => d.text)); // the model's eight, as they were
   }); // end of the case
+
+  it("skips a default that a picked reply already says, such as Not sure next to \"I'm not sure\"", () => { // near-duplicates
+    const c = toCandidates([{ text: "I'm not sure", intent: 'clarify', score: 0.5 }], DEFAULT_REPLIES.slice(2, 4)); // Not now and Not sure to fill from
+    expect(c.map((x) => x.text)).toEqual(["I'm not sure", 'Not now']); // one "not sure", not two
+  }); // end of the case
+
+  it('fills up only from the defaults it is given', () => { // the defaults that fit the question
+    const c = toCandidates([{ text: 'Tea, please', intent: 'choice', score: 0.6 }], DEFAULT_REPLIES.slice(2, 4)); // two defaults to fill from
+    expect(c.map((x) => x.text)).toEqual(['Tea, please', 'Not now', 'Not sure']); // three candidates, not eight
+  }); // end of the case
 }); // end of toCandidates
+
+describe('defaults that fit the question', () => { // Yes, No and Not now only for yes/no questions
+  const texts = (question: string) => defaultCandidates(question).map((c) => c.text); // the defaults pushed at once
+  const intents = (question: string) => defaultCandidates(question).map((c) => c.intent); // and their intents
+
+  it('offers Yes, No and Not now first for a yes/no question: one starting with an auxiliary verb, without " or "', () => { // yes/no
+    for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?"]) { // yes/no questions
+      expect(questionKind(q)).toBe('yesno'); // classified
+      expect(texts(q)).toEqual(DEFAULT_REPLIES.map((d) => d.text)); // all eight defaults, Yes, No and Not now first
+    } // end of the questions
+  }); // end of the case
+
+  it('offers Not now and Not sure, and neither Yes nor No, for a choice question: one with " or "', () => { // choice
+    for (const q of ['Would you like tea or coffee?', 'Tea or coffee?', 'Shall we watch a film or the news?']) { // choice questions, two starting with an auxiliary verb
+      expect(questionKind(q)).toBe('choice'); // classified
+      expect(texts(q).slice(0, 2)).toEqual(['Not now', 'Not sure']); // first
+      expect(intents(q)).not.toContain('yes'); // no Yes
+      expect(intents(q)).not.toContain('no'); // no No
+    } // end of the questions
+  }); // end of the case
+
+  it('offers Not now and Not sure, and neither Yes nor No, for an open question: any other question', () => { // open
+    for (const q of ['What shall we watch tonight?', 'Where shall we go?', 'Who called?', 'When shall we eat?', 'How was your day?', 'Why not?', 'Tell me about your day.']) { // open questions
+      expect(questionKind(q)).toBe('open'); // classified
+      expect(texts(q)).toEqual(['Not now', 'Not sure', 'Ask me later', 'Tell me more', 'Thank you', 'Maybe']); // six defaults, best first
+    } // end of the questions
+  }); // end of the case
+}); // end of defaults that fit the question
+
+describe('optionCandidates', () => { // ask_question with options
+  it('returns exactly the options, in their order, then Not now and Not sure, with priors that sum to 1', () => { // no model call
+    const c = optionCandidates(['Tea', 'Coffee']); // two options
+    expect(c.map((x) => [x.text, x.source])).toEqual([['Tea', 'option'], ['Coffee', 'option'], ['Not now', 'default'], ['Not sure', 'default']]); // four candidates
+    expect(c[0]!.prior).toBeCloseTo(c[1]!.prior, 12); // the options are equally likely
+    expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // a distribution
+  }); // end of the case
+
+  it('keeps six options and both defaults, and drops a repeated option or default', () => { // limits and duplicates
+    expect(optionCandidates(['A', 'B', 'C', 'D', 'E', 'F'])).toHaveLength(8); // a full grid
+    expect(optionCandidates(['Tea', 'tea', 'Not now']).map((x) => x.text)).toEqual(['Tea', 'Not now', 'Not sure']); // case-insensitive
+  }); // end of the case
+}); // end of optionCandidates

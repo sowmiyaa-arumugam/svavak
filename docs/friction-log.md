@@ -289,3 +289,47 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Severity:** low; it costs a retry, but a script without that check could write the wrong text. *(proposed)*
 - **Workaround:** used the Edit tool for any text with backslashes, or wrote the script to a file first.
 - **Suggestion:** pass commands to the shell unchanged, or document the escaping the tool applies. *(proposed)*
+
+## 2026-10-19: `adb shell input keyevent` lands about 0.85 s after it is sent
+
+- **Tool:** adb with the Android TV (API 30) emulator
+- **Task attempted:** select an option on the TV for the B3 MCP smoke test by pressing Enter while it is lit.
+- **Steps:** took a screenshot to see the lit card, then sent `adb shell input keyevent 66` from the host; timed both
+  commands.
+- **Expected:** a key press that arrives within about 100 ms, like a remote's.
+- **Actual:** each `input keyevent` took 800 to 900 ms (the tool starts a Java process on the device for every call),
+  and a raw `adb exec-out screencap` took 800 to 1,000 ms. Presses aimed at the first card arrived at the end of its
+  2 s window, so the engine scanned the top two again instead of committing; four presses committed nothing.
+- **Severity:** medium, since timed presses from the host select the wrong moment. *(proposed)*
+- **Workaround:** a short shell script on the device takes screenshots with `screencap`, reads the card's pixel with
+  `dd` and `od`, and runs `input keyevent 66` there as soon as the card lights up; it arrived about 0.75 s into the
+  2 s window and committed with one press. (`sendevent` is still refused, as in the 2026-10-18 entry.)
+- **Suggestion:** a low-latency key-injection command for emulators (for example a console `event send` that reaches
+  the app), or an `input` daemon that does not start a new process per key. *(proposed)*
+
+## 2026-10-19: Git Bash rewrites device paths in `adb push`
+
+- **Tool:** Git for Windows (Git Bash, MSYS2 path conversion) with adb
+- **Task attempted:** copy a script to `/data/local/tmp` on the emulator.
+- **Steps:** ran `adb push script.sh /data/local/tmp/script.sh` in Git Bash.
+- **Expected:** the file is copied to that path on the device.
+- **Actual:** Git Bash turned the device path into `C:/Program Files/Git/data/local/tmp/...`, and adb failed with
+  `remote secure_mkdirs failed`.
+- **Severity:** low; the error names the rewritten path. *(proposed)*
+- **Workaround:** `MSYS_NO_PATHCONV=1 adb push ...`; a device path inside a quoted `adb shell "..."` string is left
+  alone.
+- **Suggestion:** Git Bash could skip path conversion for arguments of known device tools such as adb, or warn when it
+  rewrites one. *(proposed)*
+
+## 2026-10-19: The MCP TypeScript SDK's root import fails
+
+- **Tool:** `@modelcontextprotocol/sdk` 1.32.1 (npm)
+- **Task attempted:** check the SDK's entry points before writing the B3 MCP server.
+- **Steps:** ran `import('@modelcontextprotocol/sdk')` in Node 24.
+- **Expected:** the package root loads, as its `exports` map lists a `"."` entry.
+- **Actual:** `ERR_MODULE_NOT_FOUND`: the `"."` entry points at `dist/esm/index.js` (and `dist/cjs/index.js`), and
+  neither file is in the package.
+- **Severity:** low, since every documented import uses a subpath such as `@modelcontextprotocol/sdk/server/mcp.js`.
+  *(proposed)*
+- **Workaround:** import from subpaths only.
+- **Suggestion:** ship the root files, or drop the `"."` entry from `exports`. *(proposed)*

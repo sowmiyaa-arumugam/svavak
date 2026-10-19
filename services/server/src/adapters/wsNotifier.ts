@@ -14,8 +14,10 @@ export class WsNotifier implements NotifierPort { // fan-out adapter
     this.wss = wss; // keep it
   } // end of constructor
 
-  publish(event: StreamEvent): void { // to every open connection
+  publish(event: StreamEvent): number { // to every open connection
     const data = JSON.stringify(event); // one JSON message
-    for (const client of this.wss.clients) if (client.readyState === WebSocket.OPEN) client.send(data); // skip closing ones
+    let sent = 0; // connections it went to
+    for (const client of this.wss.clients) if (client.readyState === WebSocket.OPEN) { client.send(data); sent++; } // skip closing ones
+    return sent; // 0 when no TV is connected
   } // end of publish
 } // end of WsNotifier
