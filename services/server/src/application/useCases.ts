@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Use-cases of plan §4.3 for flow S1: AskQuestion, SuggestReplies, CommitUtterance and SynthesizeSpeech.
 
-import { cleanDrafts, defaultCandidates, toCandidates } from '../domain/candidates.ts'; // reply pipeline
+import { cleanDrafts, defaultCandidates, dropBanned, toCandidates } from '../domain/candidates.ts'; // reply pipeline
 import type { DailyCap } from '../domain/dailyCap.ts'; // cost guard
+import { DEMO_HOUSEHOLD } from '../domain/facts.ts'; // the one household for now
 import type { Question, Utterance } from '../domain/model.ts'; // the model
-import type { LlmPort, Log, NotifierPort, StorePort, TracePort, TtsPort } from '../ports/index.ts'; // ports
+import type { LlmPort, Log, NotifierPort, StorePort, SuggestRequest, TracePort, TtsPort } from '../ports/index.ts'; // ports
 
 /** Everything the use-cases need, wired by compose.ts (or by a test). */
 export interface Deps { // ports and settings
@@ -23,6 +24,7 @@ export interface Deps { // ports and settings
 /** Body of POST /v1/utterances after validation. */
 export interface CommitInput { // a committed reply with its selection statistics
   question_id: string | null; // the question it answers; null for a reply to a local fixture question
+  question_text: string | null; // the fixture question's text, sent by the TV; ignored when question_id names a question
   text: string; // the words
   clicks: number; // presses that made the selection
   duration_ms: number; // from the question appearing to the commit
@@ -32,13 +34,14 @@ export interface CommitInput { // a committed reply with its selection statistic
 export interface CommitResult { // what the REST layer returns
   utterance: Utterance; // the stored utterance
   created: boolean; // false when the idempotency key was seen before
-  hasAudio: boolean; // whether GET /v1/utterances/{id}/audio has an MP3
+  hasAudio: boolean; // whether GET /v1/utterances/{id}/audio has audio
 } // end of CommitResult
 
 /** An utterance names a question that does not exist. */
 export class NotFoundError extends Error {} // mapped to 404 by the REST layer
 
 const TURNS = 6; // plan §4.6: up to six recent turns
+const REPLAY_MS = 120_000; // a TV that connects within 2 minutes of a question still gets it; an older one is stale
 
 /** The use-cases, sharing one set of ports. */
 export function createUseCases(deps: Deps) { // a closure, so CommitUtterance can track its in-flight requests
@@ -47,7 +50,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
 
   /** AskQuestion: store it, push it with the defaults at once, then let SuggestReplies push the model's candidates. */
   function askQuestion(text: string, askedBy: string): { question: Question; suggested: Promise<void> } { // S1 steps 1-5
-    const turns = deps.store.recentTurns(TURNS).map(({ speaker, text }) => ({ speaker, text })); // before this question
+    const turns = deps.store.recentTurns(TURNS); // the six latest, question then reply
     const question: Question = { // a new pending question
       id: deps.newId(), // random id
       text, // the question
@@ -65,17 +68,20 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
   } // end of askQuestion
 
   /** SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. */
-  async function suggestReplies(question: Question, recentTurns: { speaker: string; text: string }[]): Promise<void> { // steps 2-5
+  async function suggestReplies(question: Question, recentTurns: SuggestRequest['recentTurns']): Promise<void> { // steps 2-5
     const live = deps.llm.live !== null && deps.llm.cap.take(1); // live model, unless mock mode or today's cap is used up
     if (deps.llm.live !== null && !live) deps.log('cap.reached', { cap: 'llm_calls' }); // fell back to mock
     const llm = live ? deps.llm.live! : deps.llm.mock; // the adapter for this call
     const started = deps.clock(); // for the span
     const signal = AbortSignal.timeout(deps.llm.budgetMs); // plan §4.3: 3.5 s budget
-    const request = { question: question.text, askedBy: question.asked_by, recentTurns, localTime: hhmm(started) }; // §4.6 inputs
+    const request = { question: question.text, askedBy: question.asked_by, recentTurns, localTime: hhmm(started), facts: deps.store.profileFacts(DEMO_HOUSEHOLD) }; // §4.6 inputs
     let outcome = 'suggest'; // span operation; a suffix marks failures
+    let dropped = 0; // candidates the banned-term filter removed
     try { // the model call
       const raw = await Promise.race([llm.suggest(request, signal), rejectOnAbort(signal)]); // whichever comes first
-      const drafts = cleanDrafts(raw); // validate, trim, cap, de-duplicate
+      const filtered = dropBanned(cleanDrafts(raw)); // validate, trim, cap, de-duplicate, then drop banned terms
+      const drafts = filtered.kept; // what may reach the TV
+      dropped = filtered.dropped; // for the span; never the text
       const current = deps.store.getQuestion(question.id); // it may have been answered meanwhile
       if (drafts.length === 0) outcome = 'suggest.invalid'; // nothing usable: defaults stay
       else if (current?.status === 'pending') { // still on the TV
@@ -88,10 +94,10 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       outcome = signal.aborted ? 'suggest.timeout' : 'suggest.error'; // which one
       deps.log('suggest.failed', { question_id: question.id, outcome, error: String(error) }); // defaults stay on the TV
     } // end of the model call
-    deps.trace.span({ hop: 'server→llm', operation: outcome, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock' }); // hop
+    deps.trace.span({ hop: 'server→llm', operation: outcome, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock', dropped }); // hop
   } // end of suggestReplies
 
-  /** SynthesizeSpeech: MP3 from the live voice unless mock mode or today's cap; null means no audio. Never throws. */
+  /** SynthesizeSpeech: MP3 from the live voice, or the mock's WAV tone in mock mode or past today's cap; null on failure. Never throws. */
   async function synthesizeSpeech(text: string): Promise<Uint8Array | null> { // plan §4.3 speech pipeline
     const live = deps.tts.live !== null && deps.tts.cap.take(text.length); // characters count against the daily cap
     if (deps.tts.live !== null && !live) deps.log('cap.reached', { cap: 'tts_chars' }); // fell back to mock
@@ -100,7 +106,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     let audio: Uint8Array | null = null; // no audio unless synthesis succeeds
     let operation = 'synthesize'; // span operation
     try { // the synthesis call
-      audio = await tts.synthesize(text); // MP3 bytes or null
+      audio = await tts.synthesize(text); // audio bytes or null
     } catch (error) { // Polly failed: the reply still counts, just without audio
       operation = 'synthesize.error'; // marks the span
       deps.log('synthesize.failed', { error: String(error) }); // no text in logs
@@ -123,29 +129,36 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
   async function commit(key: string, input: CommitInput): Promise<CommitResult> { // the actual commit
     const question = input.question_id === null ? null : deps.store.getQuestion(input.question_id); // what it answers
     if (question === undefined) throw new NotFoundError('question not found'); // an id that was never issued
+    const id = deps.newId(); // random id, known before the speech so the question can name it
+    if (question?.status === 'pending') deps.store.saveQuestion({ ...question, status: 'answered', answered_utterance_id: id }); // answered at once, so a TV that connects during synthesis is not sent it again
     const audio = await synthesizeSpeech(input.text); // speech on commit (plan §3.3)
     const utterance: Utterance = { // the record
-      id: deps.newId(), // random id
+      id, // random id
       text: input.text, // the words
       kind: question ? 'reply' : 'spontaneous', // a reply names its question
       question_id: input.question_id, // or null
+      question_text: question ? question.text : input.question_text, // the stored question's text wins over the TV's
       clicks: input.clicks, // selection statistics
       duration_ms: input.duration_ms, // selection statistics
       created_at: iso(), // now
     }; // end of the record
     deps.store.addUtterance(utterance, key, audio); // persist with its audio
-    const current = question && deps.store.getQuestion(question.id); // re-read after the await
-    if (current?.status === 'pending') deps.store.saveQuestion({ ...current, status: 'answered', answered_utterance_id: utterance.id }); // answered
     deps.log('utterance.committed', { utterance_id: utterance.id, question_id: utterance.question_id, kind: utterance.kind, clicks: utterance.clicks, duration_ms: utterance.duration_ms, chars: utterance.text.length, audio: audio !== null }); // no text
     return { utterance, created: true, hasAudio: audio !== null }; // new
   } // end of commit
 
-  /** The MP3 of an utterance, if it has one. */
+  /** The audio of an utterance, if it has one. */
   function utteranceAudio(id: string): Uint8Array | undefined { // GET /v1/utterances/{id}/audio
     return deps.store.getAudio(id); // from the store
   } // end of utteranceAudio
 
-  return { askQuestion, commitUtterance, utteranceAudio }; // the public use-cases
+  /** The newest unanswered question, if it was asked within REPLAY_MS: replayed to a TV when it connects. */
+  function openQuestion(): Question | undefined { // GET /v1/stream on connect
+    const question = deps.store.newestPending(); // with its current candidates
+    return question && deps.clock() - Date.parse(question.created_at) <= REPLAY_MS ? question : undefined; // recent enough, or nothing
+  } // end of openQuestion
+
+  return { askQuestion, commitUtterance, utteranceAudio, openQuestion }; // the public use-cases
 } // end of createUseCases
 
 /** The use-cases object, for typing the REST layer. */

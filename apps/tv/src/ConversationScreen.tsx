@@ -10,7 +10,7 @@ import { CONFIG, CONTROLS, Conversation, REPLY_COUNT, type Reply } from './conve
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
 import { postUtterance, SERVER } from './server'; // the server, if this build has one
-import { playSpeech } from './speech'; // MP3 playback
+import { playSpeech } from './speech'; // speech playback
 import { StreamClient } from './stream'; // the server's question stream
 import { SwitchInput } from './switchInput'; // the single switch
 import { colors, px } from './theme'; // tokens and scale
@@ -25,22 +25,22 @@ function say(reply: Reply): void { // the conversation's reply hook
   if (!SERVER) return; // a build without a server: the reply was shown on screen only
   const server = SERVER; // narrowed for the callbacks
   postUtterance(server, reply).then( // POST /v1/utterances
-    (audioUrl) => { if (audioUrl) playSpeech(audioUrl, server.token); }, // null in mock mode: nothing to play
+    (audioUrl) => { if (audioUrl) playSpeech(audioUrl, server.token); }, // null when the server made none: nothing to play
     (error) => { if (__DEV__) console.log(`[server] reply not posted: ${String(error)}`); }, // offline: nothing more to do
   ); // end of the post
 } // end of say
 
 /** The only screen so far. Every card and pill is an option of one scan engine: 8 replies and 2 controls. */
 export function ConversationScreen() { // the screen
-  const conversation = useMemo( // one conversation for the screen's lifetime
-    () => new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say), // K2 log in dev
-    [], // created once
-  ); // end of the conversation
+  const { conversation, input } = useMemo(() => { // one conversation and its switch for the screen's lifetime
+    const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, () => input.held()); // K2 log in dev
+    return { conversation, input }; // each calls the other only later, from key events and timers
+  }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change
   const [, setDrawn] = useState(''); // the highlight the frame loop last saw; a change re-renders the screen
 
-  useEffect(() => { // the switch: presses and holds go to the conversation
-    const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t)); // stamps at key-down
+  useEffect(() => { // the switch: key-downs, presses and holds go to the conversation
     KeyEvent.onKeyDownListener(input.keyDown); // key down, from MainActivity
     KeyEvent.onKeyUpListener(input.keyUp); // key up decides between a press and a hold
     return () => { // on unmount
@@ -48,12 +48,12 @@ export function ConversationScreen() { // the screen
       KeyEvent.removeKeyUpListener(); // and key up
       conversation.dispose(); // cancel pending timers
     }; // end of clean-up
-  }, [conversation]); // once
+  }, [conversation, input]); // once
 
   useEffect(() => { // the server's questions while it can be reached; the fixtures keep the app working without it
     if (!SERVER) return; // built without a token: fixtures only
     const stream = new StreamClient(SERVER.url, SERVER.token, (event) => { // connects now, reconnects with back-off
-      if (event.type === 'question.created') conversation.receive(event.question); // a new question, defaults first
+      if (event.type === 'question.created') conversation.receive(event.question); // a new question, or the open one again after a reconnect
       else conversation.update(event.questionId, event.replies, event.scores); // the model's replies for it
     }); // end of the stream
     stream.start(); // connect
@@ -91,11 +91,12 @@ export function ConversationScreen() { // the screen
     </View> // end of the screen
   ); // end of Saying
 
+  const scanning = snap.mode === 'asking'; // while waiting the engine still holds the previous scan, so it is not read
   const t = now(); // one time for this render
-  const lit = conversation.engine.highlighted(t); // the highlighted option
-  const scanned = conversation.engine.scanAt(t).items; // the options the running scan shows
-  const look = (i: number) => [i === lit && styles.lit, !scanned.includes(i) && styles.dim]; // lit, or out of a rescan
-  return ( // Asking: the scan
+  const lit = scanning ? conversation.engine.highlighted(t) : -1; // the highlighted option; none while waiting
+  const scanned = scanning ? conversation.engine.scanAt(t).items : null; // the options the running scan shows
+  const look = (i: number) => [i === lit && styles.lit, scanned !== null && !scanned.includes(i) && styles.dim]; // lit, or out of a rescan
+  return ( // Asking: the scan; Waiting: the same screen with nothing lit or dimmed
     <View style={styles.screen}>{/* background; content inside the 5% safe area */}
       <View style={styles.column}>{/* the content column, as wide as the grid */}
         <Text style={styles.speaker}>{snap.question.speaker} asks</Text>{/* speaker label */}

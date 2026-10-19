@@ -4,7 +4,8 @@ One Node.js service for the TV (plan §3.2, §4.3): REST, the WebSocket question
 ports-and-adapters core. This first cut covers flow S1 only: questions, their reply candidates and utterances.
 
 - **Mock first.** `SAY_WHEN_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
-  the question text and MockTts makes no audio, so the TV skips playback.
+  the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
+  AWS.
 - **Live mode** (`SAY_WHEN_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It has been tested only
   against AWS SDK client mocks so far; see [Live mode](#live-mode) for what to set up.
 - **In memory.** Nothing survives a restart; SQLite is cut for now.
@@ -41,22 +42,27 @@ Every route except `/healthz` needs `Authorization: Bearer <SAY_WHEN_DEVICE_TOKE
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s) |
+| `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s). On connect, a TV first gets `question.created` for the newest unanswered question asked in the last 2 minutes, with its current candidates; nothing when there is none |
 | `POST /v1/questions` | Temporary dev endpoint until the MCP server's `ask_question` exists. Body: `text` (at most 200 characters), `asked_by` (at most 40). Returns 201 with the question |
-| `POST /v1/utterances` | Commits a reply. Needs an `Idempotency-Key` header. Body: `question_id` (or null), `text`, `clicks`, `duration_ms`. Returns 201, or 200 with the same utterance for a repeated key. `audio_url` is null in mock mode |
-| `GET /v1/utterances/{id}/audio` | The reply's MP3 (`audio/mpeg`), or 404 when there is none |
-| `GET /v1/trace` (SSE) | Spans `{id, at, hop, operation, duration_ms, mode}`: the last 500 first, then live. Never message text |
+| `POST /v1/utterances` | Commits a reply. Needs an `Idempotency-Key` header. Body: `question_id` (or null), `question_text` (optional; the TV's fixture question, at most 200 characters, or null; ignored when `question_id` names a question), `text`, `clicks`, `duration_ms`. Returns 201, or 200 with the same utterance for a repeated key |
+| `GET /v1/utterances/{id}/audio` | The reply's audio: Polly's MP3 (`audio/mpeg`), or the mock's WAV tone (`audio/wav`) in mock mode. 404 when there is none |
+| `GET /v1/trace` (SSE) | Spans `{id, at, hop, operation, duration_ms, mode}`, plus `dropped` (a count) on `server→llm`: the last 500 first, then live. Never message text |
 | `GET /healthz` | Liveness, no token |
 
 **Reply pipeline** (plan §4.3, §4.6). `POST /v1/questions` stores the question and pushes `question.created` straight
-away, with eight default candidates (Yes, No and Not now first). It then calls the model within a 3.5 s budget. The
-model's output is validated against the schema per candidate, then trimmed, capped at 60 characters, de-duplicated
-case-insensitively and filled up to eight with defaults. Priors are computed from the scores with switchclock's
-`priors()`, and the result is pushed as `question.candidates`. On a timeout, an error or unusable output, the
-defaults stay.
+away, with eight default candidates (Yes, No and Not now first). It then calls the model within a 3.5 s budget, with
+the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
+profile facts. The facts are quoted as data between `<facts>` and `</facts>`, never as instructions: at most 20, each
+at most 120 characters and in one of the categories likes, dislikes, people, routines or other; any other fact is left
+out. The model's output is validated against the schema per candidate, then trimmed, capped at 60 characters,
+de-duplicated case-insensitively and filtered for banned terms (whole words, any case); the `server→llm` span counts
+the dropped candidates as `dropped`, never their text. The rest are filled up to eight with defaults, and if none has
+the intent `later`, the weakest gives way to Not now (or Ask me later, if Not now is already there). Priors are
+computed from the scores with switchclock's `priors()`, and the result is pushed as `question.candidates`. On a
+timeout, an error or unusable output, the defaults stay.
 
-**Speech pipeline.** `POST /v1/utterances` synthesises speech on commit. A Polly failure or the daily cap commits
-the reply without audio.
+**Speech pipeline.** `POST /v1/utterances` synthesises speech on commit. A Polly failure commits the reply without
+audio; past the daily cap, the reply gets the mock's tone.
 
 **Cost guard.** At most 1,000 model calls and 100,000 Polly characters per UTC day; beyond that, mock output.
 

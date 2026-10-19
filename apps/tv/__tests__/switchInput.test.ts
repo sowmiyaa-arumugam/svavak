@@ -13,13 +13,15 @@ const LEFT = { keyCode: 21 }; // KEYCODE_DPAD_LEFT: not the switch
 let time = 0; // the fake shared clock
 let presses: number[] = []; // press timestamps the handler received
 let holds: number[] = []; // key-down times of the holds the handler received
+let downs: number[] = []; // key-down times the key-down handler received
 let input: SwitchInput; // under test
 
 beforeEach(() => { // fresh input at time 1000
   time = 1000; // start time
   presses = []; // nothing pressed
   holds = []; // nothing held
-  input = new SwitchInput(() => time, (t) => presses.push(t), (t) => holds.push(t)); // records presses and holds
+  downs = []; // nothing down
+  input = new SwitchInput(() => time, (t) => presses.push(t), (t) => holds.push(t), (t) => downs.push(t)); // records presses, holds, key-downs
 }); // end of set-up
 
 /** Holds `key` down from now for `ms`, then releases it. */
@@ -81,7 +83,7 @@ describe('SwitchInput', () => { // key events to presses and holds
   it('stamps the press at handler entry', () => { // timestamp first
     const now = jest.fn().mockReturnValueOnce(100).mockReturnValue(999); // key-down reads 100, key-up 999
     const stamped: number[] = []; // received timestamps
-    const switchInput = new SwitchInput(now, (t) => stamped.push(t), () => {}); // under test
+    const switchInput = new SwitchInput(now, (t) => stamped.push(t), () => {}, () => {}); // under test
     switchInput.keyDown(ENTER); // down
     switchInput.keyUp(ENTER); // up 899 ms later
     expect(stamped).toEqual([100]); // the time read on key-down entry
@@ -120,6 +122,38 @@ describe('SwitchInput', () => { // key events to presses and holds
     input.keyUp(ENTER); // released at 3500
     expect(presses).toEqual([1000]); // no late press from the repeats
     expect(holds).toEqual([]); // and no hold: it began as a bounce
+  }); // end of the case
+
+  it('reports each accepted key-down at once, but not auto-repeat, a bounce or another key', () => { // key-down notices
+    input.keyDown(ENTER); // down at 1000
+    expect(downs).toEqual([1000]); // reported before its key-up, at its key-down time
+    time += 500; // Android's first repeat
+    input.keyDown(ENTER); // auto-repeat
+    input.keyDown(LEFT); // not the switch
+    time += 100; // released at 1600
+    input.keyUp(ENTER); // a press
+    time += 20; // 20 ms after the release
+    tap(ENTER, 20); // a bounce
+    time = 2000; // later
+    tap(CENTER, 100); // the centre button
+    expect(downs).toEqual([1000, 2000]); // the two accepted key-downs only
+    expect(presses).toEqual([1000, 2000]); // which also became presses at key-up
+  }); // end of the case
+
+  it('tells whether a switch key is down now, a bounce included', () => { // held()
+    expect(input.held()).toBe(false); // nothing down
+    input.keyDown(LEFT); // not the switch
+    expect(input.held()).toBe(false); // still nothing
+    input.keyDown(ENTER); // down
+    expect(input.held()).toBe(true); // held
+    time += 100; // a short press
+    input.keyUp(ENTER); // up
+    expect(input.held()).toBe(false); // released
+    time += 20; // 20 ms after the release
+    input.keyDown(ENTER); // a bounce
+    expect(input.held()).toBe(true); // a switch key is down all the same
+    input.keyUp(ENTER); // the bounce ends
+    expect(input.held()).toBe(false); // nothing down
   }); // end of the case
 
   it("waits the engine's debounce after a release", () => { // one value for both checks

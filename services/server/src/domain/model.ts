@@ -38,6 +38,7 @@ export interface Utterance { // plan Table 14, without household and undo (P1)
   text: string; // the words
   kind: 'reply' | 'spontaneous'; // a reply names its question; anything else is spontaneous
   question_id: string | null; // the question it answers, if any
+  question_text: string | null; // that question as text: the server question's, or the fixture question's the TV sent
   clicks: number; // switch presses that made the selection
   duration_ms: number; // from the question appearing to the commit
   created_at: string; // ISO 8601 UTC
@@ -57,4 +58,5 @@ export interface Span { // a TraceSpan
   operation: string; // what ran, e.g. "POST /v1/questions" or "suggest"
   duration_ms: number; // how long it took
   mode: 'mock' | 'live'; // which adapter served it
+  dropped?: number; // candidates dropped by the banned-term filter; a count, never the text
 } // end of Span

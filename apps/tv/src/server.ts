@@ -22,11 +22,11 @@ export function serverFrom(entry: { url?: unknown; token?: unknown } | undefined
 const TIMEOUT_MS = 4000; // plan §4.2: REST calls time out after 4 s
 
 /**
- * Posts a reply and returns the absolute URL of its speech, or null when the server made none (mock mode). The
+ * Posts a reply and returns the absolute URL of its speech, or null when the server made none. The
  * idempotency key makes the one retry, after a network error, a timeout or a 5xx, safe. Throws when both attempts fail.
  */
 export async function postUtterance(server: ServerConfig, reply: Reply, key: string = newKey(), fetchFn: typeof fetch = fetch): Promise<string | null> { // POST /v1/utterances
-  const body = JSON.stringify({ question_id: reply.questionId, text: reply.text, clicks: reply.clicks, duration_ms: reply.durationMs }); // the wire format
+  const body = JSON.stringify({ question_id: reply.questionId, question_text: reply.questionText, text: reply.text, clicks: reply.clicks, duration_ms: reply.durationMs }); // the wire format
   const headers = { Authorization: `Bearer ${server.token}`, 'Content-Type': 'application/json', 'Idempotency-Key': key }; // same key on the retry
   const send = async () => { // one attempt, aborted after 4 s
     const controller = new AbortController(); // React Native's fetch honours it

@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2) in scan mode: Asking, Saying (2 s to cancel), and Help.
+// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), and Help.
 
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
@@ -10,6 +10,7 @@ export const CONTROLS = ['Something else', 'Help'] as const; // labels, in scan 
 
 export const REPLY_COUNT = 8; // replies per question: the 2 x 4 grid
 export const SAY_MS = 2000; // a committed reply fills the screen this long; a press in that time cancels it
+export const BUDGET_MS = 3500; // the server's budget for the model's replies (plan §4.3): a server question's scan starts by then
 
 /** Mock AI-like reply scores by rank: the fixture lists each question's replies best guess first. */
 export const MOCK_SCORES = [0.35, 0.2, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04] as const; // as in gate K1-scan
@@ -19,7 +20,7 @@ export const CONFIG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, controlShare: 0.01 }
 
 /** What the screen shows. Replaced as a whole on every change. */
 export interface Snapshot { // the screen state
-  mode: 'asking' | 'saying' | 'help'; // scanning the options; the reply and its cancel window; the Help screen
+  mode: 'asking' | 'waiting' | 'saying' | 'help'; // scanning; a server question before its scan starts; the reply and its cancel window; Help
   question: Question; // the current question
   reply: string | null; // the committed reply, while it is being said
 } // end of Snapshot
@@ -27,6 +28,7 @@ export interface Snapshot { // the screen state
 /** A reply that stood through its cancel window, with its selection statistics, for POST /v1/utterances. */
 export interface Reply { // handed to the screen, which posts it
   questionId: string | null; // the server question it answers; null for a fixture question
+  questionText: string | null; // a fixture question's text, which the server has no record of; null for a server question
   text: string; // the words
   clicks: number; // presses that made the selection
   durationMs: number; // from the scan of the question starting to the commit
@@ -53,7 +55,8 @@ function labelOf(question: Question, i: number): string { // option index to lab
 /**
  * Runs the screen: owns the engine, turns presses and holds into states and reports each committed selection.
  * Fixture questions rotate; a question from the server takes over at once while scanning, or as soon as "Saying it"
- * or Help ends, and the fixtures resume after it.
+ * or Help ends, and the fixtures resume after it. Its scan starts when the model's replies arrive or its budget ends,
+ * whichever comes first, so the list never changes while the highlight moves.
  */
 export class Conversation { // one per screen
   readonly engine: ScanEngine; // the screen reads its highlight on every frame
@@ -62,23 +65,25 @@ export class Conversation { // one per screen
   private readonly questions: readonly Question[]; // the fixture
   private readonly onSelection: (selection: Selection) => void; // K2 log hook
   private readonly onSay: (reply: Reply) => void; // receives each reply once its cancel window has passed
+  private readonly held: () => boolean; // whether a switch key is down now
   private readonly listeners = new Set<() => void>(); // the screen's change callbacks
   private index = 0; // the fixture question shown last
   private pending: Question | null = null; // a server question that arrived during "Saying it" or Help
-  private previous: Question | null = null; // the question whose reply was just said, while a late press may cancel it
+  private readonly budgets = new Map<string, number>(); // server questions whose scan has not started: when their budget ends
   private askedAt = 0; // when the current selection's scan started
   private lastPress = -Infinity; // key-down time of the last press that was not debounced, in any state
   private presses: (number | null)[][] = []; // accepted presses of this selection: offsets from each option's onset
-  private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window
+  private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, or of a budget
   private snap: Snapshot; // what the screen shows now
 
-  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void) { // start
+  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, held: () => boolean) { // start
     this.engine = new ScanEngine(config, now); // engine on the shared clock
     this.now = now; // the clock
     this.debounceMs = config.debounceMs; // 150 ms by default
     this.questions = questions; // fixture
     this.onSelection = onSelection; // log hook
     this.onSay = onSay; // reply hook
+    this.held = held; // the switch's state
     this.snap = this.ask(questions[0]!); // Asking the first question
   } // end of constructor
 
@@ -98,39 +103,59 @@ export class Conversation { // one per screen
   press(t: number): void { // from the switch input, at key-up
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
+    if (this.snap.mode === 'waiting') return; // nothing is lit yet
     if (this.snap.mode === 'help' && this.pending) return this.set(this.next()); // closes Help: a server question asked meanwhile comes first
-    if (this.snap.mode !== 'asking') return this.set(this.ask(this.snap.question)); // cancels "Saying it" or closes Help: scan again
-    if (t < this.askedAt) { // the key went down before this scan started
-      if (this.previous) this.set(this.ask(this.previous)); // inside the "Saying it" window: cancel that reply
-      return; // otherwise its scan was replaced by a server question or new candidates: the press meant nothing here
-    } // end of the early press
+    if (this.snap.mode !== 'asking') return this.set(this.show(this.snap.question)); // cancels "Saying it" or closes Help: the same question
+    if (t < this.askedAt) return; // a key-down before this scan started: the press meant nothing here
     const offsets = this.engine.offsets(t); // where this press falls against each option's highlight, for K2
     const result = this.engine.click(t); // Bayes update; commit, or a rescan of the top two that the screen draws
     this.presses.push(offsets); // keep it for the offset log
     if (result.committed !== null) this.commit(result.committed); // a selection was made
   } // end of press
 
-  /** A hold of 2 s or more whose key went down at time t, in any state: the Help screen. */
-  help(t: number): void { // from the switch input, at key-up
+  /**
+   * A switch key went down at time t. In the "Saying it" window that cancels the reply at once, so a reply is only
+   * posted when its window ends with no key-down; in any other state the press is handled at its key-up.
+   */
+  down(t: number): void { // from the switch input, at key-down
+    if (this.snap.mode !== 'saying' || t - this.lastPress < this.debounceMs) return; // not in the window, or debounced
+    this.lastPress = t; // the same press, handed over again at key-up, is debounced away
+    this.set(this.show(this.snap.question)); // cancels "Saying it": scan the same question again
+  } // end of down
+
+  /** A hold of 2 s or more whose key went down at time _t (not needed here), in any state: the Help screen. */
+  help(_t: number): void { // from the switch input, at key-up
     if (this.snap.mode === 'help') return; // already shown
-    clearTimeout(this.timer); // a reply still in its "Saying it" window is not said
-    if (t < this.askedAt && this.previous) this.snap = this.ask(this.previous); // the hold began in "Saying it": back to that question
+    clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
     this.set({ ...this.snap, mode: 'help', reply: null }); // "Help is coming"
   } // end of help
 
-  /** A question from the server: asked at once while scanning, otherwise when "Saying it" ends or Help is dismissed. */
+  /**
+   * A question from the server: shown at once while scanning or waiting, otherwise when "Saying it" ends or Help is
+   * dismissed. Its budget for the model's replies runs from now. After a reconnect the server sends the open question
+   * again: for the question on screen or the queued one, new replies are only an update, which never restarts a running
+   * scan, and the same replies (the defaults again, before the model's arrive) change nothing.
+   */
   receive(question: Question): void { // from the stream's question.created
-    if (this.snap.mode === 'asking') this.set(this.ask(question)); // replaces the current scan
+    const id = question.id!; // a server question always has an id
+    const known = [this.snap.question, this.pending].find((q) => q?.id === id); // the screen's copy, if this is a replay
+    if (known && known.replies.join('\n') === question.replies.join('\n')) return; // the same replies: nothing new
+    if (known) return this.update(id, question.replies, question.scores ?? []); // the model's replies: an update
+    this.budgets.set(id, this.now() + BUDGET_MS); // a new question: its budget runs from its arrival here
+    if (this.snap.mode === 'asking' || this.snap.mode === 'waiting') this.set(this.show(question)); // replaces the current question
     else this.pending = question; // the next question, ahead of the fixtures
   } // end of receive
 
-  /** The model's candidates for server question `id`: they replace its replies wherever it is. */
+  /** The model's candidates for server question `id`: they replace its replies only within its budget, before its scan. */
   update(id: string, replies: readonly string[], scores: readonly number[]): void { // from the stream's question.candidates
-    if (this.pending?.id === id) this.pending = { ...this.pending, replies, scores }; // not shown yet
-    if (this.snap.question.id !== id) return; // not on screen: answered, replaced, or a fixture
+    const end = this.budgets.get(id); // when its budget ends; none once its scan has started
+    if (end === undefined || this.now() >= end) return; // too late: the list stays as it is
+    this.budgets.delete(id); // the final list: its scan may start
+    if (this.pending?.id === id) this.pending = { ...this.pending, replies, scores }; // not shown yet: scanned at once when it is
+    if (this.snap.question.id !== id) return; // not on screen: replaced, or queued
     const question = { ...this.snap.question, replies, scores }; // the new replies, best guess first
-    if (this.snap.mode === 'asking') this.set(this.ask(question)); // a fresh scan over them
-    else this.set({ ...this.snap, question }); // during "Saying it" or Help: used if this question is scanned again
+    if (this.snap.mode === 'waiting') this.set(this.ask(question)); // the highlight starts now, on the final list
+    else this.set({ ...this.snap, question }); // Help, opened while waiting: scanned when Help is dismissed
   } // end of update
 
   /** Cancels the pending timer; the screen calls this when it unmounts. */
@@ -145,20 +170,20 @@ export class Conversation { // one per screen
     const offsetsMs = this.presses.map((p) => p[chosen]).filter((d): d is number => typeof d === 'number'); // where shown
     this.onSelection({ label, offsetsMs }); // K2 log
     if (label === 'Help') return this.set({ ...this.snap, mode: 'help' }); // the same screen as a hold
-    if (label === 'Something else') return this.set(this.next()); // the next question
-    const reply: Reply = { questionId: question.id ?? null, text: label, clicks: this.presses.length, durationMs: Math.round(this.now() - this.askedAt) }; // stats
+    if (label === 'Something else' && question.id === undefined) return this.set(this.next()); // on a fixture: the next question
+    const reply: Reply = { questionId: question.id ?? null, questionText: question.id ? null : question.text, text: label, clicks: this.presses.length, durationMs: Math.round(this.now() - this.askedAt) }; // stats
     this.set({ ...this.snap, mode: 'saying', reply: label }); // the reply fills the screen
-    this.timer = setTimeout(() => { // the window passed without a cancel: the reply stands
-      this.onSay(reply); // posted (and spoken) only now, so a cancelled reply never leaves the TV
+    this.timer = setTimeout(() => { // the window passed without a key-down notice
+      if (this.held()) return this.set(this.show(question)); // a switch key is still down (a bounce, say): cancel
+      this.onSay(reply); // the reply stands: posted (and spoken) only now, so a cancelled reply never leaves the TV
       this.set(this.next()); // the next question
-      this.previous = question; // a press whose key went down inside the window still cancels it on screen
     }, SAY_MS); // 2 s
   } // end of commit
 
   private next(): Snapshot { // the question after the current one: a waiting server question first, else the next fixture
     const waiting = this.pending; // arrived during "Saying it" or Help
     this.pending = null; // taken
-    if (waiting) return this.ask(waiting); // ask it now
+    if (waiting) return this.show(waiting); // show it now
     this.index = this.nearby(1); // the fixture after the last one shown
     return this.ask(this.questions[this.index]!); // ask it
   } // end of next
@@ -167,9 +192,17 @@ export class Conversation { // one per screen
     return (this.index + step + this.questions.length) % this.questions.length; // after the last comes the first
   } // end of nearby
 
+  private show(question: Question): Snapshot { // a server question within its budget waits for its replies; others are asked
+    const end = this.budgets.get(question.id ?? ''); // when its budget ends; fixtures have none
+    if (end === undefined || this.now() >= end) return this.ask(question); // nothing to wait for: the scan starts now
+    clearTimeout(this.timer); // one pending timer at a time
+    this.timer = setTimeout(() => this.set(this.ask(this.snap.question)), end - this.now()); // the budget ends: scan what is shown
+    return { mode: 'waiting', question, reply: null }; // the question and its replies, nothing lit
+  } // end of show
+
   private ask(question: Question): Snapshot { // a new selection on `question`
-    clearTimeout(this.timer); // a pending "Saying it" window is over
-    this.previous = null; // a press from before this scan cancels nothing (the "Saying it" timer sets it after asking)
+    clearTimeout(this.timer); // a pending "Saying it" window or budget is over
+    this.budgets.delete(question.id ?? ''); // its scan starts: later replies are ignored
     this.engine.setOptions(optionsFor(question)); // priors from the server or the mock scores; a full scan from now
     this.askedAt = this.now(); // presses whose key went down before this belong to the state before
     this.presses = []; // no presses yet

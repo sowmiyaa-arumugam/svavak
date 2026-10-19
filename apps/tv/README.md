@@ -7,25 +7,30 @@ first in reading order, then Something else, then Help: 1 s each, 2 s for the fi
 
 Questions come from the [server](../../services/server) when it can be reached, and otherwise from mock fixtures
 ([src/questions.ts](src/questions.ts)), listed best guess first.
-- **A server question** takes over at once while the scan runs. If it arrives during "Saying it" or Help, it waits
-  until that window ends or Help is dismissed.
-- It shows the server's default replies first. When the model's replies arrive, the scan restarts on them, best
-  guess first, using the server's priors.
+- **A server question** takes over at once while the scan runs or another server question waits for its replies. If it
+  arrives during "Saying it" or Help, it waits until that window ends or Help is dismissed.
+- It shows the question and the server's default replies at once, but the highlight starts only when the model's
+  replies arrive (then on them, best guess first, using the server's priors) or when the server's 3.5 s budget for
+  them has passed (then on the defaults). Replies that come later are ignored, so the list never changes while the
+  highlight moves.
+- After a reconnect the server sends the open question again. If the screen already has it (shown, or held until
+  "Saying it" or Help ends), new replies in it are the model's, taken within the budget as above, and the same replies
+  again change nothing; a running scan never restarts.
 - Once it is answered, the fixtures resume.
 
 Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04) and each control
 1%, as in the second case of gate K1-scan.
 
-- **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A press in that window
-  cancels it and scans the same question again. Otherwise the reply is posted to `POST /v1/utterances`, its MP3 is
-  played with Expo's audio module (mock mode makes none), and the next question appears. A cancelled reply never
-  leaves the TV. One exception: a press whose key goes down in the window but comes up after it still cancels on
-  screen, but the reply has already been posted. Undo (P1) will close that gap.
+- **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A key-down in that
+  window cancels it at once and scans the same question again, and so does a switch key still held when the window
+  ends. Otherwise the reply is posted to `POST /v1/utterances`, its speech is played with Expo's audio module
+  (Polly's MP3, or a short tone in mock mode), and the next question appears. A cancelled reply never leaves the TV.
 - **Not sure yet.** When a press leaves no option at θ = 0.97, only the top two are scanned once more and the other
   cards dim. If nobody presses, the full scan resumes.
-- **Something else** loads the next fixture question and its replies.
+- **Something else** on a fixture question loads the next fixture question and its replies. On a server question
+  it is the answer: it is said and posted like any reply.
 - **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, shows "Help is coming". A press
-  dismisses it and the scan starts again.
+  dismisses it and the scan starts again (a server question still within its budget waits for its replies first).
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
 delay of about 150 ms (the engine's window model). Every card and both pills carry an accessibility label and the
@@ -43,9 +48,10 @@ The switch is Select: Enter on the emulator's keyboard, or the centre button on 
 lights up; hold for 2 s for Help. Each press is timestamped at key-down, when the key handler is entered, on the same
 clock the engine and the highlight use; whether it was a press or a hold is decided at key-up. Key auto-repeat is
 ignored, a press within 150 ms of the last one is ignored (the engine's debounce, kept across every state), and so is
-a key-down within 150 ms after any release, so a bounce after a hold or a long press does nothing. A press
-whose key went down inside the 2 s "Saying it" window cancels the reply even if the key comes up after the window, and
-a hold that began there drops the reply and opens Help on that question.
+a key-down within 150 ms after any release, so a bounce after a hold or a long press does nothing. Inside the 2 s
+"Saying it" window the reply is cancelled at the key-down, without waiting for the key-up; a switch key still held
+when the window ends, a bounce included, cancels it too, and a hold that began in the window opens Help on that
+question.
 
 ## Server connection
 

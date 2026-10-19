@@ -3,7 +3,7 @@
 // The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
-import { CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
+import { BUDGET_MS, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
 import { HOLD_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
@@ -17,13 +17,15 @@ let time = 0; // the fake shared clock, in ms
 let selections: Selection[] = []; // what the K2 hook received
 let said: Reply[] = []; // what the reply hook received
 let conversation: Conversation; // the instance under test
+let input: SwitchInput; // the switch, wired to it as on screen
 
 beforeEach(() => { // a fresh conversation at time 0
   jest.useFakeTimers(); // control the 2 s window
   time = 0; // the scan starts at 0
   selections = []; // nothing logged yet
   said = []; // nothing said yet
-  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r)); // under test
+  input = new SwitchInput(() => time, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // as on screen
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held()); // under test
 }); // end of set-up
 
 afterEach(() => { // tidy up
@@ -80,16 +82,17 @@ describe('Conversation', () => { // the state machine
     expect(conversation.snapshot().question).toBe(QUESTIONS[0]); // it did not move on
   }); // end of the case
 
-  it('cancels when the key went down inside the window but came up after it closed', () => { // straddling press
+  it('cancels when the key went down inside the window but came up after it closed, and posts nothing', () => { // straddling press
     select(0); // "Coffee, please": Saying
-    const down = time + SAY_MS - 50; // key-down 50 ms before the window closes
-    time += SAY_MS; // the window closes
-    jest.advanceTimersByTime(SAY_MS); // and the next question appears
-    expect(conversation.snapshot().question).toBe(QUESTIONS[1]); // before the key came up
+    time += SAY_MS - 50; // 50 ms before the window closes
+    input.keyDown(ENTER); // the key goes down
+    time += 50; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed, with the key still down
     time += 100; // key-up, when the press is handed over
-    conversation.press(down); // stamped at key-down
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the reply is cancelled
-    expect(selections).toHaveLength(1); // and nothing was chosen on the next question
+    input.keyUp(ENTER); // stamped at key-down
+    expect(said).toEqual([]); // the reply never left the TV
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question again
+    expect(selections).toHaveLength(1); // and nothing was chosen after it
   }); // end of the case
 
   it('loads the next fixture set when Something else is chosen, and wraps after the last', () => { // Something else
@@ -122,19 +125,55 @@ describe('Conversation', () => { // the state machine
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // scanned again
   }); // end of the case
 
-  it('drops the reply and opens Help on its question when a hold starts in the Saying window', () => { // hold across its end
-    const input = new SwitchInput(() => time, (t) => conversation.press(t), (t) => conversation.help(t)); // wired as on screen
+  it('cancels at the key-down of a hold that starts in the Saying window, and opens Help on its question at key-up', () => { // hold
     select(0); // "Coffee, please": Saying from `time`
     time += 300; // 300 ms into the window
     input.keyDown(ENTER); // the hold starts
-    time += SAY_MS - 300; // the window closes while the key is down
-    jest.advanceTimersByTime(SAY_MS); // and the next question appears
-    expect(conversation.snapshot().question).toBe(QUESTIONS[1]); // before the key came up
-    time += HOLD_MS; // released well after 2 s
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the reply is cancelled
+    time += HOLD_MS; // released after 2 s
+    jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
     input.keyUp(ENTER); // a hold
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // on the reply's question
-    conversation.press((time += 1000)); // dismiss
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help on that question
+    expect(said).toEqual([]); // the reply was never posted
+    time += 1000; // later
+    input.keyDown(ENTER); // a press goes down
+    expect(conversation.snapshot().mode).toBe('help'); // a key-down outside the window decides nothing
+    time += 100; // a short press
+    input.keyUp(ENTER); // handed over: dismisses Help
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // that question again
+  }); // end of the case
+
+  it('cancels at the key-down in the Saying window, before the key comes up', () => { // early cancel
+    select(2); // "Coffee with milk": Saying
+    time += 500; // half a second into the window
+    input.keyDown(ENTER); // the key goes down
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // cancelled at once
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // its scan restarted from the key-down
+    const asking = conversation.snapshot(); // the restarted scan
+    time += 120; // a short press
+    input.keyUp(ENTER); // the same press, handed over again: debounced away
+    expect(conversation.snapshot()).toBe(asking); // nothing more happened
+    expect(conversation.engine.scanAt(time).items).toHaveLength(10); // and no rescan started
+    jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
+    expect(said).toEqual([]); // nothing posted
+  }); // end of the case
+
+  it("cancels when a switch key is still down at the window's end, even a bounce", () => { // held at the end
+    time = nextOnset(conversation.engine, CONFIG, 0, time) + AIM_MS + CONFIG.biasMs; // aimed at "Coffee, please"
+    input.keyDown(ENTER); // the committing press goes down
+    expect(conversation.snapshot().mode).toBe('asking'); // decided at key-up, as ever
+    time += 100; // a short press
+    input.keyUp(ENTER); // handed over: committed with one press
+    expect(conversation.snapshot().mode).toBe('saying'); // Saying
+    time += 20; // 20 ms after the release
+    input.keyDown(ENTER); // a contact bounce: no key-down notice, but a switch key is down
+    expect(conversation.snapshot().mode).toBe('saying'); // no cancel yet
+    time += SAY_MS; // the window's end, the key still down
+    jest.advanceTimersByTime(SAY_MS); // reached
+    expect(said).toEqual([]); // not posted
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question again
+    input.keyUp(ENTER); // the bounce ends: neither a press nor a hold
+    expect(conversation.snapshot().mode).toBe('asking'); // still Asking
   }); // end of the case
 
   it("rescans the top two after a press that does not commit, and logs offsets from the chosen card's onsets", () => { // rescan
@@ -220,28 +259,99 @@ const LIVE: Question = { // as parsed from question.created and question.candida
 const DEFAULTS = { replies: ['Yes, please', 'No, thanks', 'Not now', "I'm not sure", 'Ask me later', 'Tell me more', 'Thank you', 'Maybe'], scores: [0.3, 0.25, 0.12, 0.1, 0.08, 0.06, 0.05, 0.04] }; // pushed first
 
 describe('Conversation with the server', () => { // questions from the stream, replies to POST /v1/utterances
-  it('asks a server question at once while scanning, at its priors', () => { // preemption
+  it("shows a server question at once while scanning, and starts its scan when the model's replies arrive, at their priors", () => { // stable list
     time = 700; // mid-scan of the first fixture
-    conversation.receive(LIVE); // question.created
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // on screen
-    expect(conversation.engine.scanAt(time).epoch).toBe(time); // a fresh scan
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // question.created with the defaults
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: { ...LIVE, ...DEFAULTS }, reply: null }); // shown, nothing lit
+    time = 1900; // 1.2 s later, inside the budget
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the model's replies
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // the highlight starts now, on the final list
     const p = conversation.engine.posterior(); // the priors
     LIVE.scores!.forEach((x, i) => expect(p[i]).toBeCloseTo(0.98 * x, 12)); // the server's, after the controls' 2%
   }); // end of the case
 
-  it('hands over a reply only when its 2 s window has passed, with its statistics; then the fixtures resume', () => { // post timing
-    conversation.receive(LIVE); // asked at 0
+  it("starts the scan on the default replies when the budget passes without the model's, and ignores them after that", () => { // no replies
+    time = 700; // mid-scan of the first fixture
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // question.created with the defaults
+    const waiting = conversation.snapshot(); // shown, nothing lit
+    time += BUDGET_MS - 1; // just inside the budget
+    jest.advanceTimersByTime(BUDGET_MS - 1); // reached
+    expect(conversation.snapshot()).toBe(waiting); // still waiting
+    time += 1; // the budget's end
+    jest.advanceTimersByTime(1); // reached
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: { ...LIVE, ...DEFAULTS }, reply: null }); // the defaults
+    expect(conversation.engine.scanAt(time).epoch).toBe(700 + BUDGET_MS); // the highlight starts exactly then
+    const p = conversation.engine.posterior(); // the priors
+    DEFAULTS.scores.forEach((x, i) => expect(p[i]).toBeCloseTo(0.98 * x, 12)); // the server's defaults
+    const asking = conversation.snapshot(); // the scan
+    time += 300; // later
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies, too late
+    expect(conversation.snapshot()).toBe(asking); // the list stays as it is
+    expect(conversation.engine.scanAt(time).epoch).toBe(700 + BUDGET_MS); // and so does the scan
+  }); // end of the case
+
+  it("ignores the model's replies after the scan started, and replies for a question not shown", () => { // late replies
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // question.created with the defaults
+    time = 900; // later
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates: the scan starts
+    const asking = conversation.snapshot(); // on the model's replies
+    time = 1500; // later
+    conversation.update('q1', DEFAULTS.replies, DEFAULTS.scores); // more replies for it
+    conversation.update('q9', DEFAULTS.replies, DEFAULTS.scores); // replies for a question not on screen
+    time = BUDGET_MS; // the budget's end
+    jest.advanceTimersByTime(BUDGET_MS); // passed
+    expect(conversation.snapshot()).toBe(asking); // unchanged
+    expect(asking.question).toEqual(LIVE); // the model's replies
+    expect(conversation.engine.scanAt(time).epoch).toBe(900); // the same scan
+  }); // end of the case
+
+  it('ignores a press while a server question waits, since nothing is lit', () => { // no highlight yet
+    conversation.receive(LIVE); // shown at 0, waiting
+    const waiting = conversation.snapshot(); // nothing lit
+    conversation.press((time = 1000)); // a press
+    expect(conversation.snapshot()).toBe(waiting); // nothing happened
+    time = 1050; // 50 ms later
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies: the scan starts
+    conversation.press((time = 1100)); // 100 ms after the ignored press
+    expect(conversation.engine.scanAt(time).items).toHaveLength(10); // debounced against it all the same: no rescan
+    expect(selections).toEqual([]); // and no commit
+  }); // end of the case
+
+  it('hands over a reply only when its 2 s window has passed, with its statistics; then the fixtures resume at once', () => { // post timing
+    conversation.receive(LIVE); // shown at 0
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts at 0
     const presses = select(1); // "Coffee, please"
     const committedAt = time; // the commit
     jest.advanceTimersByTime(SAY_MS - 1); // inside the window
     expect(said).toEqual([]); // not yet
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(1); // reached
-    expect(said).toEqual([{ questionId: 'q1', text: 'Coffee, please', clicks: presses, durationMs: Math.round(committedAt) }]); // posted now
-    expect(conversation.snapshot().question).toBe(QUESTIONS[1]); // the fixture after the one it replaced
+    expect(said).toEqual([{ questionId: 'q1', questionText: null, text: 'Coffee, please', clicks: presses, durationMs: Math.round(committedAt) }]); // posted now
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // the fixture after the one it replaced
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // a fixture scans at once
   }); // end of the case
 
-  it('never hands over a cancelled reply, and hands over fixture replies without a question id', () => { // cancel and fixtures
+  it('answers a server question with Something else, through the Saying window like any reply', () => { // Something else
+    conversation.receive(LIVE); // shown at 0
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts at 0
+    const presses = select(SOMETHING_ELSE); // chosen
+    const committedAt = time; // the commit
+    expect(conversation.snapshot()).toEqual({ mode: 'saying', question: LIVE, reply: 'Something else' }); // said like a reply
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(said).toEqual([{ questionId: 'q1', questionText: null, text: 'Something else', clicks: presses, durationMs: Math.round(committedAt) }]); // its answer
+    const newer = { ...LIVE, id: 'q2' }; // the next server question
+    conversation.receive(newer); // shown
+    conversation.update('q2', LIVE.replies, LIVE.scores!); // scanned
+    select(SOMETHING_ELSE); // chosen again
+    conversation.press((time += 500)); // cancelled in the window
+    jest.advanceTimersByTime(SAY_MS); // past its end
+    expect(said).toHaveLength(1); // nothing more handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: newer, reply: null }); // the same question again
+  }); // end of the case
+
+  it("never hands over a cancelled reply, and hands over fixture replies with the question's text instead of an id", () => { // fixtures
     select(0); // "Coffee, please" on the first fixture
     conversation.press((time += 500)); // cancelled in the window
     jest.advanceTimersByTime(SAY_MS); // past its end
@@ -249,47 +359,136 @@ describe('Conversation with the server', () => { // questions from the stream, r
     select(1); // "Tea, please"
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(SAY_MS); // passed
-    expect(said).toEqual([expect.objectContaining({ questionId: null, text: 'Tea, please' })]); // a fixture reply
+    expect(said).toEqual([expect.objectContaining({ questionId: null, questionText: QUESTIONS[0]!.text, text: 'Tea, please' })]); // a fixture reply
   }); // end of the case
 
-  it('holds a server question asked during Saying or Help until it ends; the newest comes first after Help', () => { // queueing
+  it('holds a server question asked during Saying or Help until it ends, then waits out its budget; the newest comes first', () => { // queueing
     select(0); // Saying
-    conversation.receive(LIVE); // arrives during the window
+    const arrived = time; // the question arrives during the window
+    conversation.receive(LIVE); // queued
     expect(conversation.snapshot().mode).toBe('saying'); // the reply keeps the screen
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(SAY_MS); // passed
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // then the server question
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // shown, 1.5 s of its budget left
+    time = arrived + BUDGET_MS; // its budget's end
+    jest.advanceTimersByTime(BUDGET_MS - SAY_MS); // reached
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // its scan starts
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // from then
     conversation.help((time += 100)); // a hold: Help
     const newer = { ...LIVE, id: 'q2', text: 'Shall I open the window?' }; // asked while Help shows
-    conversation.receive(newer); // waits
+    conversation.receive(newer); // queued
     expect(conversation.snapshot().mode).toBe('help'); // Help stays
-    conversation.press((time += 1000)); // dismissed
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: newer, reply: null }); // the newer question
+    conversation.press((time += 1000)); // dismissed 1 s into its budget
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: newer, reply: null }); // the newer question, waiting
   }); // end of the case
 
-  it("restarts the scan with the model's replies for the question on screen, and ignores other questions'", () => { // candidates
-    conversation.receive({ ...LIVE, ...DEFAULTS }); // question.created with the defaults
-    time = 900; // later
-    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
-    expect(conversation.snapshot().question).toEqual(LIVE); // the model's replies
-    expect(conversation.engine.scanAt(time).epoch).toBe(time); // scanned from the top
-    conversation.update('q9', DEFAULTS.replies, DEFAULTS.scores); // a question not on screen
-    expect(conversation.snapshot().question).toEqual(LIVE); // unchanged
-  }); // end of the case
-
-  it('updates a waiting server question before it is shown', () => { // candidates while queued
+  it('scans a queued server question at once when it is shown, if its replies came meanwhile', () => { // candidates while queued
     select(0); // Saying
-    conversation.receive({ ...LIVE, ...DEFAULTS }); // waits, with the defaults
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // queued, with the defaults
     conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies arrive
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(SAY_MS); // passed
-    expect(conversation.snapshot().question).toEqual(LIVE); // shown with the model's replies
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // shown with them, scanning
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // from the window's end
   }); // end of the case
 
-  it('ignores a press whose key went down before a server question replaced the scan', () => { // stale press
+  it('scans a queued server question on its defaults when its budget ended during Help, ignoring later replies', () => { // late, queued
+    conversation.help((time = 100)); // a hold: Help
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // queued at 100
+    time = 100 + BUDGET_MS; // its budget's end
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies, too late
+    conversation.press((time += 1000)); // Help dismissed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: { ...LIVE, ...DEFAULTS }, reply: null }); // the defaults, at once
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // from the dismissal
+  }); // end of the case
+
+  it('opens Help while a question waits; replies that arrive meanwhile start its scan when Help is dismissed', () => { // Help while waiting
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // shown at 0, waiting
+    conversation.help((time = 500)); // a hold
+    time = 1000; // inside the budget
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // kept for later
+    time = 2 * BUDGET_MS; // long after the budget's end
+    jest.advanceTimersByTime(2 * BUDGET_MS); // passed
+    expect(conversation.snapshot().mode).toBe('help'); // Help stays
+    conversation.press(time); // dismissed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the scan starts on them
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // now
+  }); // end of the case
+
+  it('waits out the rest of the budget when Help, opened while waiting, is dismissed inside it', () => { // Help inside the budget
+    conversation.receive(LIVE); // shown at 0, waiting
+    conversation.help((time = 500)); // a hold
+    conversation.press((time = 1500)); // dismissed 1.5 s into the budget
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // waiting again
+    time = BUDGET_MS - 1; // just inside the budget
+    jest.advanceTimersByTime(BUDGET_MS - 1500 - 1); // the rest of it, timed from the dismissal
+    expect(conversation.snapshot().mode).toBe('waiting'); // still waiting
+    time = BUDGET_MS; // the budget's end
+    jest.advanceTimersByTime(1); // reached
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the scan starts
+    expect(conversation.engine.scanAt(time).epoch).toBe(BUDGET_MS); // exactly at the budget's end
+  }); // end of the case
+
+  it('ignores a replay of the question on screen while its scan runs, as after a reconnect', () => { // replay while scanning
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // shown at 0
+    time = 900; // its replies arrive
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the scan starts at 900
+    const asking = conversation.snapshot(); // scanning
+    time = 1500; // the stream reconnects
+    conversation.receive(LIVE); // the server sends the open question again
+    expect(conversation.snapshot()).toBe(asking); // nothing changed
+    expect(conversation.engine.scanAt(time).epoch).toBe(900); // the scan runs on
+  }); // end of the case
+
+  it("starts the scan on the model's replies carried by a replay while the question waits", () => { // replay while waiting
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // shown at 0, waiting
+    time = 1200; // the stream reconnects; the model's replies reached the server meanwhile
+    conversation.receive(LIVE); // the replay carries them
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the scan starts on them
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // now
+  }); // end of the case
+
+  it("keeps waiting on a replay that carries the defaults again, and starts the scan when the model's replies arrive", () => { // replay of the defaults
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // shown at 0, waiting
+    const waiting = conversation.snapshot(); // nothing lit
+    time = 1000; // the stream reconnects before the model's replies reached the server
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // the replay carries the defaults
+    expect(conversation.snapshot()).toBe(waiting); // still waiting
+    time = 2000; // inside the budget
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the model's replies
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // the highlight starts now
+  }); // end of the case
+
+  it('takes a replay of the queued question as its replies, not as a new question', () => { // replay while queued
+    select(0); // Saying
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // queued, with the defaults
+    conversation.receive(LIVE); // sent again after a reconnect, with the model's replies
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // scanned at once on them
+  }); // end of the case
+
+  it('shows the open question again after an app reload', () => { // a fresh screen
+    conversation.receive(LIVE); // shown before the reload
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // and scanned
+    conversation.dispose(); // the app reloads
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held()); // fresh
+    time = 5000; // it connects
+    conversation.receive(LIVE); // the server sends the open question
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // shown
+    time += BUDGET_MS; // its budget's end
+    jest.advanceTimersByTime(BUDGET_MS); // reached
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // and scanned
+  }); // end of the case
+
+  it("ignores a press whose key went down before a server question's scan started", () => { // stale press
     const down = 500; // key-down on the fixture's scan
     time = 600; // the server question arrives before the key comes up
-    conversation.receive(LIVE); // replaces the scan
+    conversation.receive(LIVE); // shown, waiting
+    time = 700; // its replies arrive
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the scan starts
     conversation.press(down); // handed over at key-up
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // nothing happened
     expect(conversation.engine.scanAt(time).items).toHaveLength(10); // no rescan started

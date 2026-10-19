@@ -3,7 +3,7 @@
 // Reply pipeline post-processing (plan §4.6): validation, trimming, length cap, de-duplication, merge and priors.
 
 import { describe, expect, it } from 'vitest'; // test API
-import { cleanDrafts, DEFAULT_REPLIES, defaultCandidates, toCandidates } from '../src/domain/candidates.ts'; // tested
+import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, dropBanned, toCandidates } from '../src/domain/candidates.ts'; // tested
 import { REPLY_COUNT } from '../src/domain/model.ts'; // eight per question
 
 describe('cleanDrafts', () => { // raw model output to drafts
@@ -36,6 +36,23 @@ describe('cleanDrafts', () => { // raw model output to drafts
   }); // end of the case
 }); // end of cleanDrafts
 
+describe('dropBanned', () => { // plan §4.6: no profanity
+  const draft = (text: string) => ({ text, intent: 'social' as const, score: 0.5 }); // a draft with this text
+
+  it('drops drafts that contain a listed term as a whole word, in any case, and counts them', () => { // whole words only
+    const drafts = [draft('Frog legs'), draft('Frogman'), draft('Leapfrog'), draft('I like FROG'), draft('Tea, please')]; // two with the word; two with it inside a longer word
+    expect(dropBanned(drafts, ['frog'])).toEqual({ kept: [draft('Frogman'), draft('Leapfrog'), draft('Tea, please')], dropped: 2 }); // the rest, in order
+  }); // end of the case
+
+  it('treats a term as plain text, not as a pattern', () => { // regex metacharacters are escaped
+    expect(dropBanned([draft('a+b'), draft('aab')], ['a+b']).kept).toEqual([draft('aab')]); // "+" is a plus sign
+  }); // end of the case
+
+  it('uses BANNED_TERMS by default', () => { // the one list
+    expect(dropBanned([draft(`Oh ${BANNED_TERMS[0]}`), draft('Oh dear')])).toEqual({ kept: [draft('Oh dear')], dropped: 1 }); // the listed word goes
+  }); // end of the case
+}); // end of dropBanned
+
 describe('toCandidates', () => { // merge with defaults and priors
   it('returns the eight defaults, Yes, No and Not now first, when the model gave nothing', () => { // FR-02
     const c = defaultCandidates(); // no model output
@@ -54,7 +71,7 @@ describe('toCandidates', () => { // merge with defaults and priors
   }); // end of the case
 
   it('uses only the best eight model candidates', () => { // cap at the grid size
-    const model = Array.from({ length: 10 }, (_, i) => ({ text: `Reply ${i}`, intent: 'choice' as const, score: 1 - i / 10 })); // ten drafts, best first
+    const model = Array.from({ length: 10 }, (_, i) => ({ text: `Reply ${i}`, intent: 'later' as const, score: 1 - i / 10 })); // ten drafts, best first; later, so none gives way to "Not now"
     const c = toCandidates(model); // merged
     expect(c.map((x) => x.text)).toEqual(model.slice(0, 8).map((d) => d.text)); // the first eight, no defaults
   }); // end of the case
@@ -66,5 +83,28 @@ describe('toCandidates', () => { // merge with defaults and priors
     expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // a distribution
     const total = 0.9 + DEFAULT_REPLIES.slice(0, 7).reduce((s, d) => s + d.score, 0); // tau = 1 and every score above the floor
     expect(c[0]!.prior).toBeCloseTo(0.9 / total, 12); // proportional to the score
+  }); // end of the case
+
+  it('replaces the weakest candidate with "Not now" when no candidate has intent later', () => { // plan §4.6: a later reply is kept
+    const model = Array.from({ length: 8 }, (_, i) => ({ text: `Reply ${i}`, intent: 'choice' as const, score: 0.9 - i / 10 })); // eight drafts, none later
+    const c = toCandidates(model); // merged
+    expect(c.map((x) => x.text)).toEqual([...model.slice(0, 7).map((d) => d.text), 'Not now']); // the lowest-scored draft gave way, order by score
+    expect(c[7]).toMatchObject({ text: 'Not now', intent: 'later', source: 'default', score: 0.12 }); // the default as it is
+    expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // priors over the new eight
+  }); // end of the case
+
+  it('replaces the lowest-scored candidate, not the last one listed', () => { // a default fill can outscore a model draft
+    const model = [...Array.from({ length: 6 }, (_, i) => ({ text: `Reply ${i}`, intent: 'choice' as const, score: 0.9 - i / 10 })), { text: 'Reply 6', intent: 'choice' as const, score: 0.05 }]; // seven drafts, none later; "Yes, please" (0.3) fills the eighth place
+    expect(toCandidates(model).map((x) => x.text)).toEqual([...model.slice(0, 6).map((d) => d.text), 'Yes, please', 'Not now']); // the 0.05 draft gave way
+  }); // end of the case
+
+  it('uses "Ask me later" when "Not now" is already there with another intent', () => { // no duplicate text
+    const model = [...Array.from({ length: 7 }, (_, i) => ({ text: `Reply ${i}`, intent: 'choice' as const, score: 0.9 - i / 10 })), { text: 'Not now', intent: 'no' as const, score: 0.5 }]; // eight drafts, none later
+    expect(toCandidates(model).map((x) => x.text)).toContain('Ask me later'); // the next later default
+  }); // end of the case
+
+  it('leaves a list that already has a later candidate unchanged', () => { // nothing to add
+    const model = Array.from({ length: 8 }, (_, i) => ({ text: `Reply ${i}`, intent: i === 7 ? ('later' as const) : ('choice' as const), score: 0.9 - i / 10 })); // the weakest is later
+    expect(toCandidates(model).map((x) => x.text)).toEqual(model.map((d) => d.text)); // the model's eight, as they were
   }); // end of the case
 }); // end of toCandidates

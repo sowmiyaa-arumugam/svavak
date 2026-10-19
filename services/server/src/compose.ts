@@ -16,6 +16,7 @@ import { WsNotifier } from './adapters/wsNotifier.ts'; // notifier adapter
 import { createUseCases, type Deps } from './application/useCases.ts'; // use-cases
 import type { Config } from './config.ts'; // settings
 import { DailyCap } from './domain/dailyCap.ts'; // cost guard
+import { DEMO_FACTS, DEMO_HOUSEHOLD } from './domain/facts.ts'; // the demo persona's facts
 import { createServer } from './interfaces/http.ts'; // REST, WebSocket, SSE
 import type { Log } from './ports/index.ts'; // logging
 
@@ -38,7 +39,7 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
   const notifier = new WsNotifier(wss); // pushes
   const deps: Deps = { // the use-cases' ports
     mode: config.mode, // mock or live
-    store: new MemoryStore(), // in memory
+    store: new MemoryStore({ [DEMO_HOUSEHOLD]: DEMO_FACTS }), // in memory, seeded with the demo facts
     notifier, // the stream
     trace, // spans
     log, // logs

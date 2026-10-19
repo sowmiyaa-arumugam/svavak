@@ -208,7 +208,10 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Severity:** medium, since the Help hold could not be checked on the emulator by adb alone. *(proposed)*
 - **Workaround:** the system's `hid` shell tool registered a virtual USB keyboard through `/dev/uhid` and sent an
   Enter report, a 2,500 ms delay and a release. On API 30 its JSON `register` command needs a `bus` field; without it
-  the tool fails with a `NullPointerException` in `Event.getBus`.
+  the tool fails with a `NullPointerException` in `Event.getBus`. Met again on 2026-10-19 (B2.1), for a press that
+  goes down inside the 2 s "Saying it" window and comes up after it: `input keyevent --longpress 66` holds the key for
+  about 400 ms (a key-down, the long-press timeout, then the key-up), and `dumpsys input` lists the recent key events
+  with their ages, which gave the key-down's offset into the window (1.70 s).
 - **Suggestion:** document a supported way to hold a key for a set time on emulators (for example an `input keyevent`
   duration on every API level), and make the console's `event send` report when no device receives the event.
   *(proposed)*
@@ -273,3 +276,16 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** default `Brian` (British English, neural), configurable as `SAY_WHEN_VOICE`. To be checked with
   `aws polly describe-voices --engine neural --region eu-central-1` once SSO access exists.
 - **Suggestion:** a table of voices by Region on the neural-voices page. *(proposed)*
+
+## 2026-10-19: Claude Code's Bash tool turns a doubled backslash into one
+
+- **Tool:** Claude Code (desktop app) Bash tool, running Git Bash on Windows 11
+- **Task attempted:** edit test files that contain backslashes (regular expressions) with shell scripts during B2.1.
+- **Steps:** ran a string-replace script with backslashes inside single quotes, then checked with
+  `printf '%s\n' 'a\\b'` and a quoted heredoc (`<<'EOF'`) holding `c\\d`.
+- **Expected:** `a\\b` and `c\\d`, since bash keeps backslashes inside single quotes and quoted heredocs.
+- **Actual:** `a\b` and `c\d`: each doubled backslash reaches bash as one, so the script's search text did not match.
+  The script checked for a match before writing, so no file was damaged.
+- **Severity:** low; it costs a retry, but a script without that check could write the wrong text. *(proposed)*
+- **Workaround:** used the Edit tool for any text with backslashes, or wrote the script to a file first.
+- **Suggestion:** pass commands to the shell unchanged, or document the escaping the tool applies. *(proposed)*

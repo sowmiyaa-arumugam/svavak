@@ -25,6 +25,9 @@ export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess 
   { text: 'Maybe', intent: 'clarify', score: 0.04 }, // undecided
 ]; // end of DEFAULT_REPLIES
 
+/** Plan §4.6 rule "no profanity": the one list of words a candidate may not contain. */
+export const BANNED_TERMS: readonly string[] = ['bastard', 'bitch', 'bollocks', 'crap', 'damn', 'fuck', 'fucking', 'piss', 'shit', 'wanker']; // whole words, any case
+
 /** The engine's scan defaults for priors; the TV adds the controls' shares itself. */
 const PRIOR_CONFIG = { priorFloor: 0.02, temperature: 1, controlShare: 0 }; // s_floor, tau, no controls here
 
@@ -51,9 +54,16 @@ export function cleanDrafts(raw: unknown): Draft[] { // raw tool input to clean 
   return valid.filter((d) => !seen.has(d.text.toLowerCase()) && seen.add(d.text.toLowerCase())); // first of each text
 } // end of cleanDrafts
 
+/** Plan §4.6: drops every draft that contains a listed term as a whole word, in any case. Returns the rest, in order, and how many went. */
+export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = BANNED_TERMS): { kept: Draft[]; dropped: number } { // the profanity filter
+  const patterns = terms.map((t) => new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i')); // one whole-word pattern per term, metacharacters escaped
+  const kept = drafts.filter((d) => !patterns.some((p) => p.test(d.text))); // drafts without any listed term
+  return { kept, dropped: drafts.length - kept.length }; // a count, never the text
+} // end of dropBanned
+
 /**
- * Plan §4.3 step 4: the model's drafts (up to 8) filled up with defaults they do not already contain, then all eight
- * ordered best guess first, with priors from the scores.
+ * Plan §4.3 step 4: the model's drafts (up to 8) filled up with defaults they do not already contain; without a later
+ * reply the weakest gives way to one (plan §4.6); then all eight ordered best guess first, with priors from the scores.
  */
 export function toCandidates(model: readonly Draft[]): Candidate[] { // drafts to the eight candidates
   const picked: Omit<Candidate, 'prior'>[] = model.slice(0, REPLY_COUNT).map((d) => ({ ...d, source: 'llm' })); // the model's best eight
@@ -62,6 +72,11 @@ export function toCandidates(model: readonly Draft[]): Candidate[] { // drafts t
     if (picked.length === REPLY_COUNT) break; // full
     if (!seen.has(d.text.toLowerCase())) picked.push({ ...d, source: 'default' }); // not a duplicate
   } // end of the fill
+  if (!picked.some((c) => c.intent === 'later')) { // Sam can always say "later"
+    const later = DEFAULT_REPLIES.find((d) => d.intent === 'later' && !picked.some((c) => c.text.toLowerCase() === d.text.toLowerCase())); // "Not now", else "Ask me later"
+    const weakest = picked.reduce((w, c, i) => (c.score <= picked[w]!.score ? i : w), 0); // the lowest score; of equals, the one listed last
+    if (later) picked[weakest] = { ...later, source: 'default' }; // gives way
+  } // end of the later rule
   picked.sort((a, b) => b.score - a.score); // best guess first, as the TV scans them
   const p = priors(picked.map((c, i) => ({ id: String(i), score: c.score })), PRIOR_CONFIG); // max(s, floor)^(1/tau), normalised
   return picked.map((c, i) => ({ ...c, prior: p[i]! })); // one prior per candidate

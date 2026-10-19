@@ -25,14 +25,21 @@ export class SwitchInput { // key events to presses and holds
   private readonly now: () => number; // the shared clock
   private readonly onPress: (t: number) => void; // receives each short press's key-down time
   private readonly onHold: (t: number) => void; // receives each hold's key-down time (holds of HOLD_MS or more)
+  private readonly onDown: (t: number) => void; // receives each accepted key-down's time at once, before press or hold is known
   private readonly down = new Map<number, number>(); // switch keys that are down, with key-down times (NaN: a bounce)
   private lastRelease = -Infinity; // time of the last switch key-up
 
-  constructor(now: () => number, onPress: (t: number) => void, onHold: (t: number) => void) { // a clock and handlers
+  constructor(now: () => number, onPress: (t: number) => void, onHold: (t: number) => void, onDown: (t: number) => void) { // a clock and handlers
     this.now = now; // keep the clock
     this.onPress = onPress; // keep the press handler
     this.onHold = onHold; // keep the hold handler
+    this.onDown = onDown; // keep the key-down handler
   } // end of constructor
+
+  /** Whether a switch key is down now, a bounce included. */
+  held(): boolean { // asked when the "Saying it" window ends
+    return this.down.size > 0; // any switch key not yet released
+  } // end of held
 
   /** Key-down handler: the timestamp comes first, before any other work. */
   readonly keyDown = (event: KeyEventLike): void => { // from react-native-keyevent
@@ -40,6 +47,7 @@ export class SwitchInput { // key events to presses and holds
     if (!SWITCH_KEY_CODES.has(event.keyCode) || this.down.has(event.keyCode)) return; // another key, or auto-repeat
     const bounce = t - this.lastRelease < RELEASE_DEBOUNCE_MS; // too soon after a release: tremor or contact bounce
     this.down.set(event.keyCode, bounce ? NaN : t); // down since t; a bounce stays down too, so its repeats are ignored
+    if (!bounce) this.onDown(t); // an accepted key-down, reported at once
   }; // end of keyDown
 
   /** Key-up handler: a press stamped at its key-down, or a hold. */

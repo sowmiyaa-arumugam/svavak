@@ -9,7 +9,7 @@ import type { WebSocketServer } from 'ws'; // the WebSocket server (noServer mod
 import { z } from 'zod'; // request validation at the edge
 import type { SseTraceSink } from '../adapters/traceSink.ts'; // the trace buffer
 import { NotFoundError, type UseCases } from '../application/useCases.ts'; // use-cases
-import { ASKED_BY_MAX_CHARS, QUESTION_MAX_CHARS, UTTERANCE_MAX_CHARS, type Span } from '../domain/model.ts'; // limits
+import { ASKED_BY_MAX_CHARS, QUESTION_MAX_CHARS, UTTERANCE_MAX_CHARS, type Span, type StreamEvent } from '../domain/model.ts'; // limits
 import type { Log, NotifierPort } from '../ports/index.ts'; // ports
 
 /** What the interfaces need. */
@@ -33,6 +33,7 @@ const questionBody = z.object({ // request body
 /** POST /v1/utterances: a committed reply with its selection statistics. */
 const utteranceBody = z.object({ // request body
   question_id: z.string().min(1).max(64).nullable(), // the server question it answers, or null
+  question_text: z.string().trim().min(1).max(QUESTION_MAX_CHARS).nullable().default(null), // a fixture question's text; absent means null
   text: z.string().trim().min(1).max(UTTERANCE_MAX_CHARS), // the words
   clicks: z.number().int().min(0).max(1000), // presses
   duration_ms: z.number().int().min(0).max(86_400_000), // at most a day
@@ -79,9 +80,10 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
   }); // end of POST /v1/utterances
 
   app.get('/v1/utterances/:id/audio', (req, res) => { // the speech
-    const audio = o.useCases.utteranceAudio(req.params.id); // MP3 bytes, if any
-    if (!audio) return problem(res, 404, 'no audio for this utterance'); // mock mode, failed synthesis or unknown id
-    res.type('audio/mpeg').send(Buffer.from(audio)); // the MP3
+    const audio = o.useCases.utteranceAudio(req.params.id); // audio bytes, if any
+    if (!audio) return problem(res, 404, 'no audio for this utterance'); // failed synthesis or unknown id
+    const bytes = Buffer.from(audio); // for Express
+    res.type(bytes.toString('latin1', 0, 4) === 'RIFF' ? 'audio/wav' : 'audio/mpeg').send(bytes); // the mock's WAV tone, or Polly's MP3
   }); // end of GET /v1/utterances/{id}/audio
 
   app.get('/v1/trace', (_req, res) => { // live spans (plan Table 13)
@@ -110,6 +112,11 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     o.wss.handleUpgrade(req, socket, head, (ws) => { // accepted
       o.log('stream.connected', { clients: o.wss.clients.size }); // a TV connected
       ws.on('close', () => o.log('stream.closed', { clients: o.wss.clients.size })); // and left
+      const question = o.useCases.openQuestion(); // a question it may have missed while away
+      if (!question) return; // nothing open
+      const event: StreamEvent = { type: 'question.created', question }; // the usual event, with the current candidates
+      ws.send(JSON.stringify(event)); // to this TV only
+      o.log('question.replayed', { question_id: question.id }); // never the text
     }); // end of the upgrade
   }); // end of the upgrade handler
 

@@ -158,6 +158,21 @@ describe('POST /v1/questions and GET /v1/stream', () => { // flow S1 on the stre
     tv.socket.close(); // disconnect
     await until(() => logs.find((l) => l.msg === 'stream.closed')); // logged too
   }); // end of the case
+
+  it('replays the open question, with the model candidates, to a TV that connects later, and nothing once it is answered', async () => { // replay on reconnect
+    const { http, ws, logs } = await start({ pingMs: 50 }); // pings mark time on the stream
+    const first = await connect(ws); // a TV that sees the question asked
+    const question = (await (await ask(http)).json()) as Question; // the caregiver asks
+    const update = await until(() => first.events.find((e) => e.type === 'question.candidates')); // the model's candidates went out
+    if (update.type !== 'question.candidates') throw new Error('unreachable'); // narrow the type
+    const late = await connect(ws); // a TV that connects afterwards
+    expect(await until(() => late.events[0])).toEqual({ type: 'question.created', question: { ...question, candidates: update.candidates } }); // its first event
+    expect(logs).toContainEqual({ msg: 'question.replayed', question_id: question.id }); // logged, without the text
+    expect((await say(http, 'k1', { ...reply, question_id: question.id })).status).toBe(201); // answered
+    const after = await connect(ws); // a TV that connects after the answer
+    await until(() => after.events.find((e) => e.type === 'ping')); // a replay would have come before the first ping
+    expect(after.events.filter((e) => e.type !== 'ping')).toEqual([]); // no question event
+  }); // end of the case
 }); // end of the stream
 
 describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // commit and speech
@@ -166,7 +181,7 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
     const first = await say(http, 'key-1', reply); // commit
     expect(first.status).toBe(201); // created
     const body = (await first.json()) as Record<string, unknown>; // the utterance
-    expect(body).toMatchObject({ ...reply, kind: 'spontaneous', audio_url: null }); // mock mode: no audio
+    expect(body).toMatchObject({ ...reply, kind: 'spontaneous', audio_url: `/v1/utterances/${String(body.id)}/audio` }); // mock mode: the tone
     const again = await say(http, 'key-1', reply); // retry
     expect([again.status, ((await again.json()) as Record<string, unknown>).id]).toEqual([200, body.id]); // the same one
   }); // end of the case
@@ -181,6 +196,19 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
     await expectProblem(await say(http, 'k4', { text: 'Hi' }), 400); // missing fields
   }); // end of the case
 
+  it('stores the question_text of a fixture question, ignores it for a server question and refuses one over 200 characters', async () => { // reply context
+    const { http } = await start(); // server
+    const fixture = (await (await say(http, 'k1', { ...reply, question_text: '  Shall we watch the cricket?  ' })).json()) as Record<string, unknown>; // a reply to a fixture question
+    expect(fixture).toMatchObject({ question_id: null, question_text: 'Shall we watch the cricket?' }); // stored, trimmed
+    expect(((await (await say(http, 'k1', reply)).json()) as Record<string, unknown>).question_text).toBe('Shall we watch the cricket?'); // the stored utterance again
+    expect(((await (await say(http, 'k2', reply)).json()) as Record<string, unknown>).question_text).toBeNull(); // absent means null
+    const question = (await (await ask(http)).json()) as Question; // a server question
+    const answer = (await (await say(http, 'k3', { ...reply, question_id: question.id, question_text: 'Something else?' })).json()) as Record<string, unknown>; // a reply to it
+    expect(answer.question_text).toBe('Would you like tea or coffee?'); // the stored question's text wins
+    await expectProblem(await say(http, 'k4', { ...reply, question_text: 'x'.repeat(201) }), 400); // over 200 characters
+    await expectProblem(await say(http, 'k5', { ...reply, question_text: '   ' }), 400); // blank after trimming
+  }); // end of the case
+
   it('serves the MP3 when the voice made one, and 404 when not', async () => { // audio
     const { http } = await start({ tts: { synthesize: async () => new Uint8Array([0xff, 0xfb, 0x90]) } }); // a voice
     const body = (await (await say(http, 'k1', reply)).json()) as { id: string; audio_url: string }; // commit
@@ -189,6 +217,15 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
     expect([audio.status, audio.headers.get('content-type')]).toEqual([200, 'audio/mpeg']); // MP3
     expect(new Uint8Array(await audio.arrayBuffer())).toEqual(new Uint8Array([0xff, 0xfb, 0x90])); // the bytes
     await expectProblem(await fetch(`${http}/v1/utterances/unknown/audio`, { headers: AUTH }), 404); // nothing there
+  }); // end of the case
+
+  it('serves the mock tone as audio/wav in mock mode', async () => { // the TV's playback path without AWS
+    const { http } = await start(); // mock speech
+    const body = (await (await say(http, 'k1', reply)).json()) as { id: string; audio_url: string | null }; // commit
+    expect(body.audio_url).toBe(`/v1/utterances/${body.id}/audio`); // not null in mock mode
+    const audio = await fetch(`${http}${body.audio_url}`, { headers: AUTH }); // fetch it
+    expect([audio.status, audio.headers.get('content-type')]).toEqual([200, 'audio/wav']); // WAV
+    expect(Buffer.from(await audio.arrayBuffer()).toString('latin1', 0, 4)).toBe('RIFF'); // a RIFF file
   }); // end of the case
 }); // end of utterances
 
