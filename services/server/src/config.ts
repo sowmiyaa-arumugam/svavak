@@ -13,9 +13,11 @@ export interface Config { // what compose.ts needs
   mcpAllowedHosts: string[]; // SAY_WHEN_MCP_ALLOWED_HOSTS: Host names /mcp accepts (DNS-rebinding protection)
   mcpAllowedOrigins: string[]; // SAY_WHEN_MCP_ALLOWED_ORIGINS: browser origins /mcp accepts; requests without an Origin are allowed
   awsProfile: string | undefined; // AWS_PROFILE: the IAM Identity Center (SSO) profile, used in live mode only
-  awsRegion: string; // AWS_REGION: Bedrock and Polly region (plan §8.1)
+  awsRegion: string; // AWS_REGION: the Bedrock region (plan §8.1), and Polly's unless SAY_WHEN_POLLY_REGION is set
   modelId: string; // SAY_WHEN_MODEL_ID: the Bedrock model or inference profile id
-  voice: string; // SAY_WHEN_VOICE: the Polly neural voice
+  voice: string; // SAY_WHEN_VOICE: the Polly voice
+  pollyRegion: string; // SAY_WHEN_POLLY_REGION: Polly's region, AWS_REGION by default
+  pollyEngine: 'neural' | 'standard'; // SAY_WHEN_POLLY_ENGINE: neural by default; standard where a region has no neural voices
 } // end of Config
 
 /** Reads and checks the settings; throws with a readable message when one is missing or wrong. */
@@ -29,6 +31,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config { //
   if (agentToken === deviceToken) throw new Error('SAY_WHEN_AGENT_TOKEN must differ from SAY_WHEN_DEVICE_TOKEN'); // else an agent could post answers
   const awsProfile = env.AWS_PROFILE || undefined; // empty counts as unset
   if (mode === 'live' && !awsProfile) throw new Error('SAY_WHEN_MODE=live needs AWS_PROFILE, an IAM Identity Center (SSO) profile'); // never access keys
+  const awsRegion = env.AWS_REGION || 'eu-central-1'; // Frankfurt (plan §8.1)
+  const pollyEngine = env.SAY_WHEN_POLLY_ENGINE || 'neural'; // neural by default
+  if (pollyEngine !== 'neural' && pollyEngine !== 'standard') throw new Error(`SAY_WHEN_POLLY_ENGINE must be "neural" or "standard", not "${pollyEngine}"`); // typo guard
   return { // the settings
     mode, // mock or live
     deviceToken, // the TV's bearer token
@@ -36,9 +41,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config { //
     mcpAllowedHosts: list(env.SAY_WHEN_MCP_ALLOWED_HOSTS || 'localhost,127.0.0.1'), // loopback names by default
     mcpAllowedOrigins: list(env.SAY_WHEN_MCP_ALLOWED_ORIGINS || 'http://localhost:5173'), // the studio by default
     awsProfile, // SSO profile name
-    awsRegion: env.AWS_REGION || 'eu-central-1', // Frankfurt (plan §8.1)
+    awsRegion, // the Bedrock region
     modelId: env.SAY_WHEN_MODEL_ID || 'eu.amazon.nova-2-lite-v1:0', // Nova 2 Lite, EU geo inference profile (plan §8.1)
-    voice: env.SAY_WHEN_VOICE || 'Brian', // a British English neural voice listed for eu-central-1
+    voice: env.SAY_WHEN_VOICE || 'Brian', // a British English voice, neural in eu-central-1 and standard in eu-north-1
+    pollyRegion: env.SAY_WHEN_POLLY_REGION || awsRegion, // Polly's own region, if it has one
+    pollyEngine, // neural or standard
   }; // end of the settings
 } // end of loadConfig
 

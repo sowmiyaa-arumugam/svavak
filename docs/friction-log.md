@@ -433,3 +433,87 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** live mode refuses to start while `AWS_BEARER_TOKEN_BEDROCK` is set. A test checks this.
 - **Suggestion:** let an explicitly named profile take precedence over the bearer token, or log a warning when the
   bearer token overrides a named profile. *(proposed)*
+
+## 2026-10-20: Bedrock refuses every call while the AWS account is being verified
+
+- **Tool:** Amazon Bedrock Runtime (Converse), through the AWS SDK for JavaScript 3.1146.0 with an `aws login` profile
+- **Task attempted:** the first live run for gate K3: Nova 2 Lite (`eu.amazon.nova-2-lite-v1:0`, eu-central-1) with
+  a forced tool call, to settle temperature and maxTokens.
+- **Steps:** signed in with `aws login`. `aws polly describe-voices` in eu-north-1 worked with the same profile. Then
+  30 Converse calls were sent, one per evaluation question.
+- **Expected:** tool-call responses, or an error naming a missing permission.
+- **Actual:** all 30 calls failed with `AccessDeniedException: Your account is currently being verified. Verification
+  normally takes less than 2 hours. Until your account is verified, you may not have access to this operation.`
+  Gate K3, the live evaluation run and the live end-to-end run are blocked until it clears.
+- **Severity:** high: it blocks every live AI step. *(proposed)*
+- **Workaround:** none. The experiment script did not stop at the first refusal, so all 30 calls went out within a
+  few seconds; no AWS call was made after that, as the task brief says. Mock mode and the tools for the live run are
+  ready.
+- **Suggestion:** give account verification its own error code, so it is not read as an IAM denial. Show the
+  verification state and its expected end on the Bedrock console's model access page. *(proposed)*
+
+## 2026-10-20: The emulator console's `event send` answers OK but no key reaches the guest
+
+- **Tool:** Android Emulator 37.2.12 console, through `adb emu` (Android TV API 30 image, Windows 11)
+- **Task attempted:** inject one clean 2.5 s Enter hold (one key-down, one key-up) to check the TV's hold for Help.
+- **Steps:**
+  - `adb -s emulator-5554 emu event send EV_KEY:KEY_ENTER:1 EV_SYN:SYN_REPORT:0`, then the same with `EV_SYN:0:0`.
+  - `getevent -lt` recorded every input device in the guest meanwhile.
+- **Expected:** a DOWN and an UP event on the virtual keyboard, and Help opening.
+- **Actual:**
+  - `SYN_REPORT` is not an accepted alias: the console answered `KO: invalid event code`, yet `adb emu` exited 0.
+  - With `EV_SYN:0:0` the console answered `OK`, but no event reached any input device and the app saw nothing.
+  - `adb shell sendevent` was refused (permission denied) on this `user` build, which cannot run `adb root` either.
+- **Severity:** medium; the console's documented way to inject keys silently does nothing. *(proposed)*
+- **Workaround:** the emulator's gRPC endpoint, `EmulatorController/sendKey`. Its port and token are in the running
+  emulator's discovery file under `%LOCALAPPDATA%\Temp\avd\running`, and the call delivered both events.
+- **Suggestion:** route `event send` to the input device the emulator uses for host keys, or answer KO. Make
+  `adb emu` exit non-zero on a KO, and list the `EV_SYN` codes. *(proposed)*
+
+## 2026-10-20: Holding a PC key in the emulator reaches Android as press-release pairs
+
+- **Tool:** Android Emulator 37.2.12 (Qt 6 window, Windows 11)
+- **Task attempted:** K2 protocol step 6: hold the switch (Enter) for 2 s to open Help.
+- **Steps:**
+  - The K2 run held Enter on the PC keyboard for 30 s; its `getevent -l` capture showed one DOWN and then many UP
+    lines.
+  - The host's auto-repeat was then replayed through gRPC `sendKey`: a key-down every 33 ms for 2.5 s, then one key-up.
+- **Expected:** one DOWN, then Android's own key repeats, and one UP when the key is released.
+- **Actual:** the kernel got 57 DOWN and 57 UP events, alternating about 46 ms apart. The app saw one short press
+  followed by bounces, so Help never opened. A clean key-down and key-up 2.5 s apart opened Help.
+- **Severity:** medium: a held key cannot be demonstrated with the PC keyboard. *(proposed)*
+- **Workaround:** a physical remote or switch, or a clean key-down and key-up through gRPC `sendKey`.
+- **Suggestion:** drop the host's auto-repeat events, or pass them on as key repeats (EV_KEY value 2) instead of
+  release-press pairs. *(proposed)*
+
+## 2026-10-20: Git Bash rewrites a device path inside an adb argument
+
+- **Tool:** Git for Windows bash (MSYS2)
+- **Task attempted:** run `sendevent /dev/input/event2 ...` in the emulator through `adb shell`, from a Node script
+  started in Git Bash.
+- **Steps:** passed `/dev/input/event2` as a command-line argument.
+- **Expected:** the path reaches the device unchanged.
+- **Actual:** MSYS path conversion turned it into `C:/Program Files/Git/dev/input/event2`, and `sendevent` failed
+  with "Max 4 arguments".
+- **Severity:** low; it is documented MSYS behaviour. *(proposed)*
+- **Workaround:** `MSYS_NO_PATHCONV=1` for that command.
+- **Suggestion:** do not convert arguments passed to native Windows programs that forward them to a remote shell,
+  such as adb. *(proposed)*
+
+## 2026-10-20: The Nova 2 docs disagree on tool-call temperature and on maxTokens
+
+- **Tool:** Amazon Nova 2 user guide and the Bedrock model card for Nova 2 Lite
+- **Task attempted:** choose `temperature` and `maxTokens` for the server's forced tool call.
+- **Steps:** read the Nova 2 Troubleshooting page, the advanced prompting guide, the request schema, the Converse
+  page and the model card.
+- **Expected:** one recommendation and one limit.
+- **Actual:**
+  - Temperature: Troubleshooting says 0 for tool calls, while the prompting guide says 0.7 with topP 0.9 (reasoning
+    off).
+  - maxTokens: the request schema says at most 5,000, while the model card says 64K and the Converse page 65,000.
+  - The Bedrock pricing page did not show its prices in the browser, so the token prices came from the public Price
+    List files.
+- **Severity:** low; the settings can be measured instead. *(proposed)*
+- **Workaround:** kept temperature 0 and maxTokens 1000 until real responses can be measured (the server logs output
+  tokens and stop reason per call).
+- **Suggestion:** one recommended setting for tool use with Nova 2, and one documented output limit. *(proposed)*

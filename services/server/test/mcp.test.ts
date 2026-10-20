@@ -31,8 +31,8 @@ const MCP_HEADERS = { 'Content-Type': 'application/json', Accept: 'application/j
 
 let running: { server: Server; wss: WebSocketServer; clients: Client[] } | null = null; // closed after each test
 
-/** Starts a mock-mode server on a free loopback port, with no profile facts. */
-async function start() { // the system under test
+/** Starts a mock-mode server on a free loopback port, with no profile facts; MCP sessions end after `mcpIdleMs` without requests. */
+async function start(mcpIdleMs = 60_000) { // the system under test
   const clock = () => Date.now(); // real time
   const newId = () => randomUUID(); // real ids
   const wss = new WebSocketServer({ noServer: true }); // stream
@@ -40,7 +40,7 @@ async function start() { // the system under test
   const notifier = new WsNotifier(wss); // pushes
   const log = () => {}; // quiet
   const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: new MockTts(), cap: new DailyCap(100_000, clock) } }; // mock wiring
-  const server = createServer({ token: DEVICE, agentToken: AGENT, mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: [STUDIO], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: 60_000 }); // interfaces
+  const server = createServer({ token: DEVICE, agentToken: AGENT, mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: [STUDIO], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: 60_000, mcpIdleMs }); // interfaces
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); // any free port
   running = { server, wss, clients: [] }; // for clean-up
   const port = (server.address() as AddressInfo).port; // the chosen port
@@ -137,6 +137,19 @@ describe('sessions and protocol (Streamable HTTP, spec 2025-11-25)', () => { // 
     expect((await raw(port, 'DELETE', '/mcp', headers)).status).toBe(404); // and cannot be ended twice
   }); // end of the case
 
+  it('ends a session after mcpIdleMs without requests; each request restarts the wait', async () => { // idle sessions (30 minutes in compose.ts)
+    const { port, mcp } = await start(400); // sessions idle out after 400 ms
+    const { client, transport } = await connect(mcp); // a session
+    const headers = { ...MCP_HEADERS, Authorization: `Bearer ${AGENT}`, 'Mcp-Session-Id': transport.sessionId!, 'MCP-Protocol-Version': '2025-11-25' }; // the session, raw
+    for (let i = 0; i < 3; i++) { // 750 ms in all, longer than the idle time
+      await new Promise((r) => setTimeout(r, 250)); // less than the idle time
+      await client.listTools(); // a request: the wait starts again
+    } // end of the requests
+    expect((await raw(port, 'POST', '/mcp', headers, LIST)).status).toBe(200); // still open
+    await new Promise((r) => setTimeout(r, 650)); // idle for longer than 400 ms
+    expect((await raw(port, 'POST', '/mcp', headers, LIST)).status).toBe(404); // ended
+  }); // end of the case
+
   it('refuses an unknown session id (404), and a request without one that is not initialize (400)', async () => { // no session
     const { port } = await start(); // server
     const auth = { ...MCP_HEADERS, Authorization: `Bearer ${AGENT}` }; // authenticated
@@ -222,6 +235,17 @@ describe('tools (plan Table 16)', () => { // tools/list and tools/call
     expect(await call(client, 'get_answer', { question_id: id })).toEqual({ status: 'answered', answer_text: 'Tea', answered_at: expect.any(String), clicks: 1 }); // the answer
     expect(await call(client, 'get_recent_messages', { limit: 5 })).toEqual({ messages: [{ text: 'Tea', time: expect.any(String), kind: 'reply', question_text: 'Would you like tea or coffee?' }] }); // with its question
     expect(await call(client, 'add_profile_fact', { fact: 'Sam prefers tea to coffee', category: 'likes' })).toEqual({ fact_id: expect.stringMatching(UUID) }); // stored
+  }); // end of the case
+
+  it('get_recent_messages returns the newest messages within the limit, oldest first', async () => { // more messages than the limit
+    const { base, mcp } = await start(); // server
+    const { client } = await connect(mcp); // a session
+    for (let i = 1; i <= 7; i++) { // seven messages, one at a time so their times differ
+      expect((await commit(base, DEVICE, null, `Message ${i}`)).status).toBe(201); // said on the TV
+      await new Promise((r) => setTimeout(r, 5)); // a later time for the next
+    } // end of the messages
+    const { messages } = await call(client, 'get_recent_messages', { limit: 5 }); // five of seven
+    expect((messages as { text: string }[]).map((m) => m.text)).toEqual(['Message 3', 'Message 4', 'Message 5', 'Message 6', 'Message 7']); // the newest five, oldest first
   }); // end of the case
 
   it('get_answer returns answered as soon as the TV commits during its wait', async () => { // long-poll

@@ -13,7 +13,7 @@ const DEMO = [ // demo questions and the first two replies expected
   ['How are you feeling today?', ['Good, thanks', 'A bit tired']], // feelings
   ['What would you like for lunch?', ['Something light', 'Soup, please']], // food
   ['Shall I open the window?', ['Yes, please', 'No, thanks']], // yes or no
-  ['Tell me about your day.', ["I'm not sure", 'Tell me more']], // anything else
+  ['Where shall we go today?', ["I'm not sure", 'Tell me more']], // any other open question
 ] as const; // end of the cases
 
 describe('mockReplies', () => { // the rules
@@ -29,8 +29,8 @@ describe('mockReplies', () => { // the rules
 
   it('offers Yes and No only for yes/no questions', () => { // defaults that fit the question
     const yesNo = (question: string) => mockReplies(question).filter((d) => /^(yes|no)\b/i.test(d.text) || d.intent === 'yes').map((d) => d.text); // replies that say yes or no
-    expect(yesNo('Shall I open the window?')).toEqual(['Yes, please', 'No, thanks']); // a yes/no question
-    for (const q of ['Would you like tea or coffee?', 'What shall we watch tonight?', 'Where is my book?', 'Tell me about your day.']) expect(yesNo(q)).toEqual([]); // choice and open questions
+    for (const q of ['Shall I open the window?', 'Tea?', 'Shall I read you the paper, or not?', 'Shall we go for a walk after lunch?', 'Are you feeling better?']) expect(yesNo(q)).toEqual(['Yes, please', 'No, thanks']); // yes/no questions: with and without an auxiliary verb, "or not", and a topic word
+    for (const q of ['Would you like tea or coffee?', 'What shall we watch tonight?', 'Where is my book?', 'Who called?']) expect(yesNo(q)).toEqual([]); // choice and open questions
     expect(cleanDrafts({ candidates: mockReplies('Where is my book?') })).toHaveLength(8); // still eight valid, distinct replies
   }); // end of the case
 }); // end of mockReplies

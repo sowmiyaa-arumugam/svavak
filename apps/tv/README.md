@@ -105,3 +105,21 @@ The Metro terminal (and `adb logcat -s ReactNativeJS`) shows:
    "Saying it" cancels the reply and restarts the scan of the same question.
 
 K2 passes with at least 19 of 20 intended selections, a lowest frame rate of at least 50 fps, and the jitter recorded.
+
+### Holding the switch on the emulator
+
+In the first K2 run every check passed except step 6's hold: holding Enter on the PC keyboard in the emulator window
+for 30 s never opened Help. The app is not the cause. Checked on 2026-10-20 (emulator 37.2.12, Android TV API 30):
+- **A clean hold opens Help.** One Enter key-down, then one key-up 2.5 s later, sent through the emulator's gRPC
+  `EmulatorController/sendKey` (the path its window uses for host keys). The kernel got exactly one DOWN and one UP,
+  2.49 s apart (`getevent -lt`), and "Help is coming" appeared.
+- **The PC keyboard's key repeat breaks the hold.** A key-down repeated every 33 ms for 2.5 s, as a host keyboard's
+  auto-repeat sends it, reached the kernel as 57 DOWN and 57 UP events, alternating about 46 ms apart. The app
+  rightly saw one short press and then bounces within its 150 ms release debounce, never a hold. Qt's Windows key
+  handling turns each auto-repeat into a release and a press, which fits (from Qt's source, not confirmed in the
+  emulator's).
+- **What did not work.** `adb emu event send` answered OK, but no event reached any input device. `adb shell
+  sendevent` was refused on this `user` build, which also cannot run `adb root`.
+
+So test the hold with a physical remote or switch, or with a clean key-down and key-up as above. A long press on the
+PC keyboard cannot reach the app as one press. The key handling is unchanged.

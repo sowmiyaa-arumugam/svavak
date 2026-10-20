@@ -61,7 +61,54 @@ def test_live_mode_sends_the_policy_temperature_and_model_id(aws, stub):  # plan
     assert [t["toolSpec"]["name"] for t in first["toolConfig"]["tools"]] == ["ask_question", "get_answer", "get_recent_messages", "add_profile_fact"]  # the server's tools, from MCP
     assert requests[1]["messages"][-1]["content"][0]["toolResult"]["content"][0]["text"].startswith('{"messages":[{"text":"Tea"')  # the tool output reached the model
     assert stub.calls == [("get_recent_messages", {"limit": 5})]  # the call reached the server
-    assert events == [("tool_call", {"name": "get_recent_messages", "input": {"limit": 5}}), ("tool_result", {"name": "get_recent_messages", "ok": True}), ("speech", {"text": "Sam said: Tea."}), ("done", {})]  # the same events as mock mode
+    assert events == [("tool_call", {"name": "get_recent_messages", "input": {"limit": 5}}), ("tool_result", {"name": "get_recent_messages", "ok": True}), ("speech", {"text": 'To "Would you like tea or coffee?", Sam said: Tea.'}), ("done", {})]  # the same events as mock mode, the recap composed by code
+
+
+def live_turn(stub, replies: list[list[dict]], words: str) -> list[tuple[str, dict]]:  # one live turn with scripted model replies
+    agent = AgentService(config("live", PROFILE), stub.url)  # the real BedrockModel
+    agent.model.client.converse_stream = scripted([], replies)  # no AWS call
+    agent.start()  # the stub server's tools
+    try:  # the turn
+        with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
+            return parse(http.post("/agent/turn", json={"text": words}).text)  # its events
+    finally:  # always end the session
+        agent.stop()  # DELETE /mcp
+
+
+ASK = '{"question": "What would you like to watch?", "asked_by": "Alex"}'  # ask_question's input
+WAIT = '{"question_id": "q-1", "wait_seconds": 20}'  # get_answer's input for the stub's first question
+
+
+def test_thinking_is_never_spoken(aws, stub):  # Nova can put its reasoning in the text blocks
+    replies = [tool_use("add_profile_fact", '{"fact": "Sam loves cricket", "category": "likes"}'), text("<thinking>I will\nnote it.</thinking>Noted.<thinking>That was easy.</thinking>")]  # two spans, one across lines
+    assert live_turn(stub, replies, "Remember that Sam loves cricket")[-2:] == [("speech", {"text": "Noted."}), ("done", {})]  # only the words between them
+
+
+def test_a_thinking_only_reply_says_nothing(aws, stub):  # nothing left to speak
+    assert live_turn(stub, [text("<thinking>Nothing to say.</thinking>\n")], "hello") == [("done", {})]  # no speech event
+
+
+def test_a_pending_answer_is_never_claimed(aws, stub):  # the model invents Sam's answer
+    stub.answer = None  # get_answer stays pending
+    events = live_turn(stub, [tool_use("ask_question", ASK), tool_use("get_answer", WAIT), text("Sam says: Cricket.")], "Ask Sam what he wants to watch")  # the claim
+    assert events[2:] == [("tool_call", {"name": "get_answer", "input": {"question_id": "q-1", "wait_seconds": 20}}), ("tool_result", {"name": "get_answer", "ok": True}), ("speech", {"text": "Sam hasn't answered yet."}), ("done", {})]  # the chips as before, the claim replaced
+
+
+def test_an_answer_is_reported_word_for_word(aws, stub):  # the model paraphrases Sam's answer
+    stub.answer = "The cricket, please"  # Sam's choice
+    events = live_turn(stub, [tool_use("ask_question", ASK), tool_use("get_answer", WAIT), text("Sam would like to watch cricket!")], "Ask Sam what he wants to watch")  # the paraphrase
+    assert events[-2:] == [("speech", {"text": "Sam says: The cricket, please."}), ("done", {})]  # Sam's own words, attributed by code
+
+
+def test_an_attribution_without_an_answer_is_replaced(aws, stub):  # no tool at all, yet the model reports Sam
+    assert live_turn(stub, [text("Sam says: Yes.")], "Does Sam want tea?") == [("speech", {"text": "Sam hasn't answered yet."}), ("done", {})]  # never invented
+
+
+def test_the_turn_log_carries_the_token_usage(aws, stub, capsys):  # for the cost report
+    usage = {"metadata": {"usage": {"inputTokens": 120, "outputTokens": 30, "totalTokens": 150}, "metrics": {"latencyMs": 10}}}  # Bedrock's last stream event
+    live_turn(stub, [[*text("Hello."), usage]], "hello")  # one model call
+    logged = json.loads(capsys.readouterr().out.splitlines()[-1])  # the turn's log line
+    assert (logged["msg"], logged["input_tokens"], logged["output_tokens"]) == ("turn.done", 120, 30)  # the turn's usage
 
 
 def test_every_turn_starts_without_the_earlier_ones(aws, stub):  # a fresh Agent per turn: no memory, no shared lock
@@ -103,7 +150,8 @@ def test_a_failing_model_ends_the_turn_with_an_error_event(aws, stub, capsys, ca
         agent.stop()  # DELETE /mcp
     assert events == [("error", {"message": "The agent could not finish this turn."}), ("done", {})]  # the stream still ends cleanly
     out, err = capsys.readouterr()  # everything printed
-    assert json.loads(out.splitlines()[-1])["outcome"] == "RuntimeError"  # the error's type is logged
+    logged = json.loads(out.splitlines()[-1])  # the turn's log line
+    assert (logged["outcome"], logged["input_tokens"], logged["output_tokens"]) == ("RuntimeError", 0, 0)  # the error's type is logged; no result, no usage
     assert "istachio" not in out + err + caplog.text  # its message is not
 
 

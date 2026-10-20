@@ -30,7 +30,7 @@ export function mockReplies(question: string, facts: readonly ProfileFact[] = []
 /** Eight candidates for the question, chosen by simple rules; the same question always gets the same list. */
 function ruleReplies(question: string): Draft[] { // question text to drafts
   const q = question.trim().replace(/[?.!\s]+$/, ''); // without the final punctuation
-  const or = /^(.*\S)\s+or\s+(\S.*)$/i.exec(q); // "... tea or coffee"
+  const or = questionKind(q) === 'choice' ? /^(.*\S)\s+or\s+(\S.*)$/i.exec(q) : null; // "... tea or coffee", but not "... or not"
   if (or) { // a choice between two things
     const left = or[1]!.split(/\s+/); // the words before "or"
     const before = left.length > 1 && ARTICLES.has(left.at(-2)!.toLowerCase()) ? `${left.at(-2)} ` : ''; // "a film"
@@ -38,9 +38,9 @@ function ruleReplies(question: string): Draft[] { // question text to drafts
     const b = cap(or[2]!.split(/\s+/).slice(0, 3).join(' ')); // the second option: up to three words after it
     return rows([[`${a}, please`, 'choice', 0.3], [`${b}, please`, 'choice', 0.28], ['Neither, thanks', 'no', 0.1], ['Not right now', 'later', 0.08], ['Both, please', 'choice', 0.07], ["I'm not sure", 'clarify', 0.07], ['Ask me later', 'later', 0.05], ['Tell me more', 'clarify', 0.05]]); // choice
   } // end of the choice
+  if (questionKind(q) === 'yesno') return rows([['Yes, please', 'yes', 0.3], ['No, thanks', 'no', 0.25], ['Not right now', 'later', 0.12], ['Maybe later', 'later', 0.1], ["I'm not sure", 'clarify', 0.08], ['Tell me more', 'clarify', 0.06], ['Thank you', 'social', 0.05], ['Ask me later', 'later', 0.04]]); // yes or no, before the topic rules: "a walk after lunch?" still wants Yes or No
   if (/\bhow (are|do) you\b|\bfeel/i.test(q)) return rows([['Good, thanks', 'social', 0.28], ['A bit tired', 'need', 0.16], ['Not great', 'need', 0.12], ['Happy', 'social', 0.1], ['In some pain', 'need', 0.1], ["I'd rather not say", 'clarify', 0.08], ['Bored', 'need', 0.06], ['And you?', 'social', 0.04]]); // feelings
   if (/\b(eat|lunch|dinner|breakfast|hungry|snack)\b/i.test(q)) return rows([['Something light', 'choice', 0.22], ['Soup, please', 'choice', 0.16], ['A sandwich', 'choice', 0.14], ['Not hungry yet', 'later', 0.12], ['Surprise me', 'choice', 0.1], ['Pasta, please', 'choice', 0.1], ['Same as yesterday', 'choice', 0.08], ['Ask me later', 'later', 0.08]]); // food
-  if (questionKind(q) === 'yesno') return rows([['Yes, please', 'yes', 0.3], ['No, thanks', 'no', 0.25], ['Not right now', 'later', 0.12], ['Maybe later', 'later', 0.1], ["I'm not sure", 'clarify', 0.08], ['Tell me more', 'clarify', 0.06], ['Thank you', 'social', 0.05], ['Ask me later', 'later', 0.04]]); // yes or no
   return rows([["I'm not sure", 'clarify', 0.2], ['Tell me more', 'clarify', 0.16], ['Let me think', 'clarify', 0.14], ['You decide', 'choice', 0.12], ['Ask me later', 'later', 0.1], ['Thank you', 'social', 0.1], ['Maybe', 'clarify', 0.1], ['Not now', 'later', 0.08]]); // an open question: no Yes or No
 } // end of ruleReplies
 

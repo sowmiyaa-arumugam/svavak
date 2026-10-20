@@ -24,6 +24,7 @@ export const BUDGET_MS = 3500; // plan §4.3: the model's candidates must arrive
 export const LLM_CALLS_PER_DAY = 1000; // plan §4.3 daily cap
 export const POLLY_CHARS_PER_DAY = 100_000; // plan §4.3 daily cap
 const PING_MS = 25_000; // keep-alive event on the stream
+const MCP_IDLE_MS = 30 * 60_000; // an MCP session ends after 30 minutes without requests
 
 /** JSON log lines on stdout (plan §4.3: structured logs, no message text). */
 export const jsonLog: Log = (msg, fields = {}) => console.log(JSON.stringify({ at: new Date().toISOString(), msg, ...fields })); // one line each
@@ -33,7 +34,7 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
   const clock = () => Date.now(); // ClockPort
   const newId = () => randomUUID(); // IdPort
   const live = config.mode === 'live'; // which adapters
-  const aws = { region: config.awsRegion, profile: config.awsProfile }; // the SDK's default chain resolves the SSO profile; no keys here
+  const profile = config.awsProfile; // the SDK's default chain resolves the SSO profile (aws login or IAM Identity Center); no keys here
   const wss = new WebSocketServer({ noServer: true }); // upgrades are authenticated in http.ts first
   const trace = new SseTraceSink(clock, newId); // spans
   const notifier = new WsNotifier(wss); // pushes
@@ -45,9 +46,9 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
     log, // logs
     clock, // time
     newId, // ids
-    llm: { live: live ? new BedrockLlm(new BedrockRuntimeClient(aws), config.modelId) : null, mock: new MockLlm(), cap: new DailyCap(LLM_CALLS_PER_DAY, clock), budgetMs: BUDGET_MS }, // replies
-    tts: { live: live ? new PollyTts(new PollyClient(aws), config.voice) : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock) }, // speech
+    llm: { live: live ? new BedrockLlm(new BedrockRuntimeClient({ region: config.awsRegion, profile }), config.modelId, log) : null, mock: new MockLlm(), cap: new DailyCap(LLM_CALLS_PER_DAY, clock), budgetMs: BUDGET_MS }, // replies
+    tts: { live: live ? new PollyTts(new PollyClient({ region: config.pollyRegion, profile }), config.voice, config.pollyEngine) : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock) }, // speech, in Polly's own region
   }; // end of deps
-  const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS }); // interfaces
+  const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS, mcpIdleMs: MCP_IDLE_MS }); // interfaces
   return { server, deps }; // the caller listens
 } // end of compose

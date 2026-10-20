@@ -14,8 +14,8 @@ export interface Draft { // one proposed reply
 } // end of Draft
 
 /**
- * Shown the instant a question arrives (FR-02: Yes, No and Not now at once), and used to fill the model's list to 8.
- * Only a yes/no question gets all of them; any other question gets them without Yes and No (defaultsFor).
+ * Shown the instant a yes/no question arrives (FR-02: Yes, No and Not now at once), and used to fill the model's list
+ * to 8. A choice or open question gets its own four instead (CHOICE_OR_OPEN, through defaultsFor).
  */
 export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess first
   { text: 'Yes, please', intent: 'yes', score: 0.3 }, // yes
@@ -28,22 +28,35 @@ export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess 
   { text: 'Maybe', intent: 'clarify', score: 0.04 }, // undecided
 ]; // end of DEFAULT_REPLIES
 
-const NOT_YES_NO = DEFAULT_REPLIES.filter((d) => d.intent !== 'yes' && d.intent !== 'no'); // the defaults of a choice or open question
+/** The defaults of a choice or open question, best guess first: no Yes or No, and still a "later" reply. */
+const CHOICE_OR_OPEN: readonly Draft[] = [ // design values, scored so this order holds
+  { text: 'Not sure', intent: 'clarify', score: 0.12 }, // undecided
+  { text: 'You decide', intent: 'choice', score: 0.1 }, // hands the choice back
+  { text: 'Tell me more', intent: 'clarify', score: 0.08 }, // ask for detail
+  { text: 'Not now', intent: 'later', score: 0.06 }, // later
+]; // end of CHOICE_OR_OPEN
 const UNSURE_OR_LATER = DEFAULT_REPLIES.filter((d) => d.text === 'Not now' || d.text === 'Not sure'); // added to ask_question's options
 export const OPTION_SCORE = 0.3; // each of ask_question's options is as likely as "Yes, please", the best default
 
-/** Starts with an auxiliary verb, or its negative ("Don't", "Can't"): a question that Yes or No can answer. */
-const AUXILIARY = /^(?:(?:am|is|are|was|were|do|does|did|have|has|had|can|could|will|would|shall|should|may|might|must)(?:n['’]t)?|can['’]t|won['’]t|shan['’]t)\b/i; // whole first word
+const LEADING_NAME = /^\s*\p{L}[\p{L}'’-]*\s*,\s*/u; // "Sam, " before the question itself
+const OR_NOT = /(?:^|\s)or\s+not[\s?.!]*$/i; // "... or not?" at the end; "Now, or not?" leaves "or not?" once the name is gone
+const OR = /(?:^|\s)or\s/i; // " or " anywhere, or at the start once a leading word and comma are gone ("Tea, or coffee?")
+const WH_WORD = /^(?:what|which|who|whom|whose|where|when|why|how)\b/i; // whole first word, so "Whatever" is not one
 
-/** A choice question has " or "; a yes/no question starts with an auxiliary verb; any other question is open. */
+/**
+ * The kind of answer a question wants, ignoring a leading name ("Sam, ..."): "... or not?" is yes/no, " or " makes a
+ * choice, a question starting with a wh-word is open, and everything else ("Tea?" too) is yes/no.
+ */
 export function questionKind(question: string): 'yesno' | 'choice' | 'open' { // the kind of answer it wants
-  if (/\sor\s/i.test(question)) return 'choice'; // "Tea or coffee?", even after an auxiliary verb
-  return AUXILIARY.test(question.trim()) ? 'yesno' : 'open'; // "Shall I ...?" or "What ...?"
+  const q = question.replace(LEADING_NAME, ''); // without the name
+  if (OR_NOT.test(q)) return 'yesno'; // "Would you like tea or not?"
+  if (OR.test(q)) return 'choice'; // "Tea or coffee?", even after a wh-word
+  return WH_WORD.test(q) ? 'open' : 'yesno'; // "What ...?", or anything else
 } // end of questionKind
 
-/** The defaults that fit the question: all eight for a yes/no question, the six without Yes and No for any other. */
+/** The defaults that fit the question: all eight for a yes/no question, the four of CHOICE_OR_OPEN for any other. */
 export function defaultsFor(question: string): readonly Draft[] { // Yes, No and Not now only where they make sense
-  return questionKind(question) === 'yesno' ? DEFAULT_REPLIES : NOT_YES_NO; // Not now and Not sure lead the others
+  return questionKind(question) === 'yesno' ? DEFAULT_REPLIES : CHOICE_OR_OPEN; // by kind
 } // end of defaultsFor
 
 /** Plan §4.6 rule "no profanity": the one list of words a candidate may not contain. */
@@ -75,9 +88,13 @@ export function cleanDrafts(raw: unknown): Draft[] { // raw tool input to clean 
   return valid.filter((d) => !seen.has(d.text.toLowerCase()) && seen.add(d.text.toLowerCase())); // first of each text
 } // end of cleanDrafts
 
-/** Plan §4.6: drops every draft that contains a listed term as a whole word, in any case. Returns the rest, in order, and how many went. */
+/**
+ * Plan §4.6: drops every draft that contains a listed term as a whole word, in any case, or one of its simple variants
+ * (-s, -es, -ed, -ing, -er, the last three also after a doubled last letter). Returns the rest, in order, and how many went.
+ */
 export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = BANNED_TERMS): { kept: Draft[]; dropped: number } { // the profanity filter
-  const patterns = terms.map((t) => new RegExp('\\b' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i')); // one whole-word pattern per term, metacharacters escaped
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // regex metacharacters as plain text
+  const patterns = terms.map((t) => new RegExp('\\b' + esc(t) + '(?:s|es|' + esc(t.slice(-1)) + '?(?:ed|ing|er))?\\b', 'i')); // one whole-word pattern per term and its variants ("crapped" too)
   const kept = drafts.filter((d) => !patterns.some((p) => p.test(d.text))); // drafts without any listed term
   return { kept, dropped: drafts.length - kept.length }; // a count, never the text
 } // end of dropBanned

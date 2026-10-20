@@ -8,7 +8,8 @@ questions, their reply candidates and utterances, asked and answered through MCP
   the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
   AWS.
 - **Live mode** (`SAY_WHEN_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It has been tested only
-  against AWS SDK client mocks so far; see [Live mode](#live-mode) for what to set up.
+  against AWS SDK client mocks so far: the first live calls were refused while the AWS account was being verified. See
+  [Live mode](#live-mode) for what to set up.
 - **In memory.** Nothing survives a restart; SQLite is cut for now.
 - Bound to `127.0.0.1:8787`. The Android emulator reaches it as `10.0.2.2:8787`.
 
@@ -18,6 +19,7 @@ questions, their reply candidates and utterances, asked and answered through MCP
 yarn workspace server start        # reads the repository's .env; mock mode unless SAY_WHEN_MODE=live
 node tools/smoke-stream.mjs        # with the server running: posts a question and checks it reaches a WebSocket client
 node tools/mcp-smoke.mjs           # with the server and the TV running: ask_question, answer Tea on the TV, get_answer
+node tools/k3-eval.mjs             # with the server running: the 30 evaluation questions, gate K3 timing, test-results/k3/eval.md
 yarn workspace server test         # Vitest with coverage (gate: 80% lines), including the MCP conformance suite
 yarn workspace server vitest run test/mcp.test.ts   # the MCP conformance suite alone (gate K4)
 yarn workspace server typecheck    # strict tsc over the source and the tests
@@ -36,10 +38,12 @@ Copy `.env.example` to `.env` at the repository root. The server refuses to star
 | `SAY_WHEN_AGENT_TOKEN` | none (required) | Bearer token for caregiver or agent MCP clients, at least 16 characters and different from the device token |
 | `SAY_WHEN_MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host names `/mcp` accepts, comma-separated (any port) |
 | `SAY_WHEN_MCP_ALLOWED_ORIGINS` | `http://localhost:5173` | Browser origins `/mcp` accepts, comma-separated; requests without an `Origin` header are allowed |
-| `AWS_PROFILE` | none | IAM Identity Center (SSO) profile; required in live mode |
-| `AWS_REGION` | `eu-central-1` | Region for Bedrock and Polly |
+| `AWS_PROFILE` | none | An `aws login` or IAM Identity Center (SSO) profile; required in live mode |
+| `AWS_REGION` | `eu-central-1` | Region for Bedrock, and for Polly unless `SAY_WHEN_POLLY_REGION` is set |
 | `SAY_WHEN_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |
-| `SAY_WHEN_VOICE` | `Brian` | Polly neural voice |
+| `SAY_WHEN_VOICE` | `Brian` | Polly voice; it must exist for the engine in Polly's region |
+| `SAY_WHEN_POLLY_REGION` | `AWS_REGION` | Region for Polly |
+| `SAY_WHEN_POLLY_ENGINE` | `neural` | `neural` or `standard`; standard where the region has no neural voices, such as eu-north-1 |
 
 ## API
 
@@ -60,22 +64,28 @@ token gets 401, and the agent token gets 403, so an agent can never post an answ
 (`get_answer` then reports `expired`). A reply that arrives later for an expired question is still stored, with its
 question, but the question stays expired.
 
-**Default replies.** They fit the question. A yes/no question (one that starts with an auxiliary verb such as do, is,
-can, would or shall, or its negative, and has no " or ") gets eight: Yes, No and Not now first, then Not sure, Ask me
-later, Tell me more, Thank you and Maybe. A choice question (with " or ") and an open question (anything else, such as
-what, where or how) get the same list without Yes and No: six, with Not now and Not sure first.
+**Default replies.** They fit the question, whose kind is decided without a leading name ("Sam, ..."):
+- A question ending "... or not?" is yes/no.
+- Otherwise " or " makes a choice question.
+- A question starting with a wh-word (what, which, who, whom, whose, where, when, why or how) is open.
+- Everything else is yes/no, "Tea?" included.
+
+A yes/no question gets eight defaults: Yes, No and Not now first, then Not sure, Ask me later, Tell me more, Thank you
+and Maybe. A choice or open question gets four: Not sure, You decide, Tell me more and Not now.
 
 **Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` straight
 away, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
 the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
-profile facts. The facts are quoted as data between `<facts>` and `</facts>`, never as instructions: at most 20, each
-at most 120 characters and in one of the categories likes, dislikes, people, routines or other; any other fact is left
-out. The model's output is validated against the schema per candidate, then trimmed, capped at 60 characters,
-de-duplicated case-insensitively and filtered for banned terms (whole words, any case); the `server→llm` span counts
-the dropped candidates as `dropped`, never their text. The rest are filled up (to at most eight) with the defaults that
-fit the question and that no candidate already says (a candidate "I'm not sure" keeps out the default Not sure), and if
-none has the intent `later`, the weakest gives way to Not now (or Ask me later, if Not now is already
-there). Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
+profile facts. The question, the turns and the facts are quoted as data, never as instructions: each text is a JSON
+string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The facts are at most 20,
+each at most 120 characters and in one of the categories likes, dislikes, people, routines or other; any other fact
+is left out. The model's output is validated against the schema per candidate, then trimmed, capped at 60 characters,
+de-duplicated case-insensitively and filtered for banned terms (whole words in any case, and their -s, -es, -ed, -ing
+and -er forms, the last three also after a doubled last letter); the `server→llm` span counts the dropped candidates
+as `dropped`, never their text. Each live model call logs one `llm.usage` line: its input and output tokens, latency
+and stop reason, never text. The rest are filled up (to at most eight) with the defaults that fit the question and that
+no candidate already says (a candidate "I'm not sure" keeps out the default Not sure), and if none has the intent
+`later`, the weakest gives way to Not now (or, for a yes/no question, Ask me later if Not now is already there). Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
 `question.candidates`. On a timeout, an error or unusable output, the defaults stay. Profile facts with `<` or `>`
 are left out, so no fact can close the `<facts>` block.
 
@@ -96,7 +106,7 @@ audio; past the daily cap, the reply gets the mock's tone.
 - **Sessions.** `initialize` (a POST without `Mcp-Session-Id`) opens a session with a random UUID, returned in the
   `Mcp-Session-Id` header. Later POST, GET (SSE stream) and DELETE requests carry it. DELETE ends the session; its id
   then gets 404, as does any id the server never issued. Any other request without a session id gets 400. Sessions
-  live in memory and end only on DELETE or a restart.
+  live in memory and end on DELETE, after 30 minutes without requests, or on a restart.
 - **Protocol version.** The SDK negotiates it at `initialize`: 2025-11-25 is the latest. On later requests an
   unsupported `MCP-Protocol-Version` header gets 400; a missing one is accepted.
 - **Access.** Only `Authorization: Bearer <SAY_WHEN_AGENT_TOKEN>`: a missing or wrong token gets 401 (with
@@ -124,7 +134,8 @@ fact are tool errors (`isError: true`) with a short reason; the session stays us
 **Conformance suite** (`test/mcp.test.ts`, gate K4). It runs the official SDK client over Streamable HTTP against a
 real server listening on a free loopback port, and raw HTTP for what a client would not send: initialise and session
 id, `tools/list` with schemas and hints, every tool, the long-poll (answered when the TV commits during the wait,
-pending after a 1 s wait, expired after a newer question), DELETE then 404, a foreign Origin or Host (403), no token
+pending after a 1 s wait, expired after a newer question), `get_recent_messages` with more messages than its limit (the
+newest, oldest first), DELETE then 404, a session ending after its idle time, a foreign Origin or Host (403), no token
 (401), the device token on `/mcp` and the agent token on the TV's routes (403), an unsupported protocol header (400),
 invalid inputs as tool errors, and an added fact changing the mock ranking. Run it with
 `yarn workspace server vitest run test/mcp.test.ts`, or as part of `yarn workspace server test`.
@@ -138,24 +149,44 @@ npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8
 
 ## Live mode
 
-Not tried against AWS yet. To try it:
+Not run against AWS yet: on 2026-10-20 every Bedrock Converse call in eu-central-1 was refused with
+`AccessDeniedException` while the AWS account was being verified. To set it up:
 
-1. In IAM Identity Center, create a permission set with:
-   - `bedrock:InvokeModel` on `arn:aws:bedrock:eu-central-1:<account-id>:inference-profile/eu.amazon.nova-2-lite-v1:0`,
-     and on `arn:aws:bedrock:<region>::foundation-model/amazon.nova-2-lite-v1:0` for each Region the EU profile routes
-     to: eu-central-1, eu-north-1, eu-south-1, eu-south-2, eu-west-1 and eu-west-3.
-   - `polly:SynthesizeSpeech` on `*`.
-2. Run `aws configure sso` to create a profile, then `aws sso login --profile <profile>`.
-3. In `.env`, set:
-   - `SAY_WHEN_MODE=live`
+1. Sign in with `aws login --profile <profile>` (AWS CLI 2.32 or later), or create an IAM Identity Center profile with
+   `aws configure sso` and sign in with `aws sso login --profile <profile>`. The identity needs `bedrock:InvokeModel`
+   on the EU inference profile and on `amazon.nova-2-lite-v1:0` in each Region it routes to (eu-central-1,
+   eu-north-1, eu-south-1, eu-south-2, eu-west-1 and eu-west-3), and `polly:SynthesizeSpeech`.
+2. In `.env`, set:
    - `AWS_PROFILE=<profile>`
    - `AWS_REGION=eu-central-1`
    - `SAY_WHEN_MODEL_ID=eu.amazon.nova-2-lite-v1:0`
-   - `SAY_WHEN_VOICE` set to a neural voice that this check lists:
-     `aws polly describe-voices --engine neural --region eu-central-1 --profile <profile>`.
+   - `SAY_WHEN_VOICE`, `SAY_WHEN_POLLY_REGION` and `SAY_WHEN_POLLY_ENGINE`: a voice this check lists for the engine,
+     for example `aws polly describe-voices --region eu-north-1 --language-code en-GB --profile <profile>`, which lists
+     Amy, Brian and Emma with the standard engine only.
+3. Start the server with `SAY_WHEN_MODE=live` set in the shell for that run; the environment overrides `.env`.
 
-The SDK's default credential chain resolves the SSO profile. The server never reads or stores access keys, and when a
-profile is set the chain skips environment-variable keys.
+The SDK's default credential chain resolves the profile: `aws login` profiles since SDK 3.936.0 (installed: 3.1146.0),
+SSO profiles always. The server never reads or stores access keys, and when a profile is set the chain skips
+environment-variable keys.
+
+The model call uses a forced tool call (`toolChoice` on `suggest_replies`), not Bedrock's structured outputs, which
+the Nova 2 Lite model card lists as unsupported. Its settings are `temperature` 0 and `maxTokens` 1000. The Nova 2
+docs disagree on both: temperature 0 for tool calls (Troubleshooting) against 0.7 with topP 0.9 (prompting guide), and
+a maximum of 5,000 output tokens (request schema) against 64K or 65,000 (model card, Converse page). They are still to
+be checked against real responses: the `llm.usage` log lines give the output tokens and stop reason of each call.
+
+## Evaluation set
+
+`test/evalSet.ts` holds the evaluation set of plan §4.6: 30 synthetic household questions (twelve yes/no, eight choice,
+ten open), three of which should bring up a seeded demo fact (tea, cricket, lunch at one). Its automatic checks run
+on every `yarn workspace server test` against mock output, through the real pipeline: schema (raw and pushed),
+at most 60 characters, intent coverage (a later reply always, yes and no for a yes/no question) and no banned terms.
+
+`node tools/k3-eval.mjs` asks the 30 questions on a running server, one at a time, and takes the time from each ask to
+its `question.candidates` from the server's own trace span. It writes `test-results/k3/eval.md`: each question's top
+four replies, the checks, the time, whether the fact showed, and an empty column for judging whether an acceptable
+reply is in the top four (target: 25 of 30). It prints p50 and p95 and exits 1 when gate K3 (p50 at most 2.0 s) fails;
+a question without candidates counts as the slowest.
 
 ## Layout
 

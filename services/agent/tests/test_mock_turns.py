@@ -53,9 +53,20 @@ def test_what_did_sam_say_summarises_the_recent_messages(stub, turn):  # the his
     assert turn("What did Sam say?") == [  # the whole stream
         ("tool_call", {"name": "get_recent_messages", "input": {"limit": 5}}),  # the five latest
         ("tool_result", {"name": "get_recent_messages", "ok": True}),  # listed
-        ("speech", {"text": "Sam said: Not now. Tea."}),  # short and spoken
+        ("speech", {"text": 'To "Would you like tea or coffee?", Sam said: Tea. To "Shall we go out?", Sam said: Not now.'}),  # newest first, with the questions
         ("done", {}),  # end of the turn
     ]  # end of the stream
+
+
+def test_what_did_sam_say_speaks_the_newest_three_distinct_replies(stub, turn):  # a longer history with a repeated reply
+    stub.messages = [  # oldest first
+        {"text": "Tea", "time": "2026-10-19T10:00:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"},  # the fourth distinct reply: left out
+        {"text": "I'm cold", "time": "2026-10-19T10:01:00Z", "kind": "spontaneous", "question_text": None},  # no question
+        {"text": "Yes", "time": "2026-10-19T10:02:00Z", "kind": "reply", "question_text": "Shall we go out?"},  # a reply
+        {"text": " not now ", "time": "2026-10-19T10:03:00Z", "kind": "reply", "question_text": "Would you like a walk?"},  # the same reply as the newest, in other case and spacing
+        {"text": "Not now", "time": "2026-10-19T10:04:00Z", "kind": "reply", "question_text": "Shall we watch the news?"},  # the newest
+    ]  # end of the history
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": 'To "Shall we watch the news?", Sam said: Not now. To "Shall we go out?", Sam said: Yes. Sam said: I\'m cold.'})  # the newest occurrence of each reply, at most three
 
 
 def test_what_did_sam_say_with_no_messages(stub, turn):  # nothing yet
@@ -100,4 +111,10 @@ def test_a_turn_closed_early_is_still_logged(service, stub, capsys):  # the care
     assert asyncio.run(first_then_close())[1]["name"] == "add_profile_fact"  # the call was announced
     assert stub.calls == []  # but never made
     logged = json.loads(capsys.readouterr().out.splitlines()[-1])  # the last log line
-    assert (logged["msg"], logged["tools"], logged["outcome"]) == ("turn.done", ["add_profile_fact"], "cancelled")  # logged all the same
+    assert (logged["msg"], logged["tools"], logged["outcome"], logged["input_tokens"], logged["output_tokens"]) == ("turn.done", ["add_profile_fact"], "cancelled", 0, 0)  # logged all the same; no result, no usage
+
+
+def test_mock_turns_log_no_tokens(turn, capsys):  # no model is called
+    turn("Remember that Sam loves gardening")  # a whole turn
+    logged = json.loads(capsys.readouterr().out.splitlines()[-1])  # its log line
+    assert (logged["outcome"], logged["input_tokens"], logged["output_tokens"]) == ("ok", 0, 0)  # reported as zero

@@ -23,6 +23,7 @@ export interface McpOptions { // wired by http.ts
   allowedHosts: string[]; // Host names accepted
   allowedOrigins: string[]; // browser origins accepted; a request without Origin is allowed
   authorize: RequestHandler; // the agent-token check
+  idleMs: number; // a session ends after this long without requests
 } // end of McpOptions
 
 const NEVER = 'Never ask for or store passwords, health records or financial data.'; // plan §4.4: the agents' safety rule
@@ -31,6 +32,14 @@ const TOOLS = new Set(['ask_question', 'get_answer', 'get_recent_messages', 'add
 /** The /mcp middleware chain: Host, Origin, token, JSON body, then the session's transport. */
 export function mcpHandlers(o: McpOptions): RequestHandler[] { // for app.all('/mcp', ...)
   const sessions = new Map<string, StreamableHTTPServerTransport>(); // open sessions by id
+  const idle = new Map<string, ReturnType<typeof setTimeout>>(); // each open session's idle timer
+
+  const touch = (sid: string, transport: StreamableHTTPServerTransport) => { // a request on the session: its idle wait starts again
+    clearTimeout(idle.get(sid)); // the previous wait
+    const timer = setTimeout(() => void transport.close(), o.idleMs); // ends the session as a DELETE would; onclose forgets it
+    timer.unref(); // never keeps the process alive
+    idle.set(sid, timer); // the current wait
+  }; // end of touch
 
   const origin: RequestHandler = (req, res, next) => { // plan §6.1: a page on another origin must not drive /mcp
     const value = req.get('origin'); // browsers send it; other clients usually do not
@@ -44,15 +53,15 @@ export function mcpHandlers(o: McpOptions): RequestHandler[] { // for app.all('/
     if (tool !== null) res.on('close', () => o.trace.span({ hop: 'mcp', operation: TOOLS.has(tool) ? tool : 'unknown', duration_ms: Math.round(performance.now() - started), mode: o.mode })); // every call, refused ones too; never arguments, nor a name the caller made up
     const id = req.get('mcp-session-id'); // the session, after initialize
     const known = id === undefined ? undefined : sessions.get(id); // its transport
-    if (known) return known.handleRequest(req, res, req.body); // POST, GET (SSE) or DELETE on the session
+    if (known) { touch(id!, known); return known.handleRequest(req, res, req.body); } // POST, GET (SSE) or DELETE on the session, which stays open for another idleMs
     if (id !== undefined) return rpcError(res, 404, -32001, 'Session not found'); // ended or never issued
     if (req.method !== 'POST' || !isInitializeRequest(req.body)) return rpcError(res, 400, -32000, 'Bad Request: No valid session ID provided'); // only initialize starts one
     const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({ // a new session
       sessionIdGenerator: () => randomUUID(), // cryptographically random, visible ASCII
-      onsessioninitialized: (sid) => { sessions.set(sid, transport); o.log('mcp.session.opened', { sessions: sessions.size }); }, // routable from now on
+      onsessioninitialized: (sid) => { sessions.set(sid, transport); touch(sid, transport); o.log('mcp.session.opened', { sessions: sessions.size }); }, // routable from now on, until idle
     }); // end of the transport
-    transport.onclose = () => { // DELETE, or the server closing it; set before connect, which wraps it
-      if (transport.sessionId) sessions.delete(transport.sessionId); // later requests with its id get 404
+    transport.onclose = () => { // DELETE, the idle timer, or the server closing it; set before connect, which wraps it
+      if (transport.sessionId) { sessions.delete(transport.sessionId); clearTimeout(idle.get(transport.sessionId)); idle.delete(transport.sessionId); } // later requests with its id get 404
       o.log('mcp.session.closed', { sessions: sessions.size }); // no ids or content
     }; // end of onclose
     await toolServer(o).connect(transport); // one McpServer per session: the SDK binds a server to one transport

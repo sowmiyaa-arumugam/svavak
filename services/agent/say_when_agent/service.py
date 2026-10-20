@@ -5,6 +5,7 @@
 
 import json  # log lines
 import logging  # Strands' log level
+import re  # thinking spans and the attribution form in the model's speech
 import time  # turn durations
 from collections.abc import AsyncIterator  # turn()'s type
 from datetime import UTC, datetime  # log timestamps
@@ -18,7 +19,7 @@ from strands.tools.mcp import MCPClient  # MCP over Streamable HTTP
 from strands.types.exceptions import MCPClientInitializationError  # how every start-up failure surfaces
 
 from .config import MCP_URL, Config  # settings
-from .mock_model import ASKED_BY, MockModel  # mock mode
+from .mock_model import ASKED_BY, NOT_YET, MockModel, next_step  # mock mode, and the sentences that speak Sam's words
 
 logging.getLogger("strands").setLevel(logging.CRITICAL)  # off: its lines can quote model-written tool input or tool names; the service reports failures itself
 
@@ -36,6 +37,9 @@ POLICY = " ".join((  # the system prompt: plan §4.6's agent policy
     "Answer in one or two short sentences, as they will be spoken.",  # a voice assistant
 ))  # end of the policy
 TEMPERATURE = 0.2  # plan §4.5: set explicitly, never a default
+THINKING = re.compile(r"<thinking>.*?</thinking>", re.DOTALL)  # Nova's reasoning in its text blocks, across lines: never spoken
+ATTRIBUTION = re.compile(r"\bSam (?:says|said)\s*:", re.IGNORECASE)  # the reporting form, "Sam says:" or "Sam said:"
+SAM_TOOLS = ("get_answer", "get_recent_messages")  # the tools whose results carry Sam's words
 
 
 class StartupError(Exception):  # the MCP server cannot be reached, or refused the token
@@ -80,7 +84,9 @@ class AgentService:  # the MCP session and the turns
         names: dict[str, str] = {}  # tool names by toolUseId
         listed = {tool.tool_name for tool in self.tools}  # the only names the log may carry
         called: list[str] = []  # the tools called, for the log
+        heard: tuple[str, bool, dict[str, Any]] | None = None  # the latest get_answer or get_recent_messages result: the only source of Sam's words
         outcome = "cancelled"  # until the loop ends: the client may go away first
+        usage = {"inputTokens": 0, "outputTokens": 0}  # the turn's tokens; zero without a result (cancelled or failed)
         agent = Agent(model=self.model, tools=self.tools, system_prompt=POLICY, callback_handler=None)  # fresh per turn; prints nothing
         try:  # the log line, however the turn ends
             try:  # the Strands loop
@@ -93,9 +99,13 @@ class AgentService:  # the MCP session and the turns
                             yield ("tool_call", {"name": use["name"], "input": use["input"]})  # shown as a chip
                         elif "toolResult" in block:  # the tool finished
                             result = block["toolResult"]  # its status
-                            yield ("tool_result", {"name": names[result["toolUseId"]], "ok": result["status"] == "success"})  # never its content
+                            name, ok = names[result["toolUseId"]], result["status"] == "success"  # which tool, and whether it worked
+                            if name in SAM_TOOLS:  # Sam's words, or that there are none
+                                heard = (name, ok, result.get("structuredContent") or {})  # newest wins, as in mock_model.plan()
+                            yield ("tool_result", {"name": name, "ok": ok})  # never its content
                     if "result" in event:  # the final answer
-                        speech = "".join(b.get("text", "") for b in event["result"].message["content"]).strip()  # its text blocks
+                        usage = event["result"].metrics.accumulated_usage  # every model call of this fresh Agent, so the whole turn
+                        speech = speak("".join(b.get("text", "") for b in event["result"].message["content"]), heard)  # its text blocks, guarded
                         if speech:  # something to say
                             yield ("speech", {"text": speech})  # for the caregiver
                 outcome = "ok"  # the loop ended
@@ -104,7 +114,14 @@ class AgentService:  # the MCP session and the turns
                 yield ("error", {"message": "The agent could not finish this turn."})  # the panel shows it
             yield ("done", {})  # always last
         finally:  # finished, failed or cancelled
-            log("turn.done", mode=self.config.mode, tools=called, outcome=outcome, duration_ms=round((time.monotonic() - started) * 1000))  # no text
+            log("turn.done", mode=self.config.mode, tools=called, outcome=outcome, input_tokens=usage["inputTokens"], output_tokens=usage["outputTokens"], duration_ms=round((time.monotonic() - started) * 1000))  # no text
+
+
+def speak(said: str, heard: tuple[str, bool, dict[str, Any]] | None) -> str:  # what the agent may say: never an answer the TV didn't commit
+    if heard is not None:  # a tool returned Sam's words, or that there are none
+        return next_step(*heard)  # composed by code from that result, never in the model's own words
+    said = THINKING.sub("", said).strip()  # the model's speech without its reasoning
+    return NOT_YET if ATTRIBUTION.search(said) else said  # an attribution with no result behind it is never spoken
 
 
 def explain(error: BaseException, url: str) -> str:  # a start-up failure in words

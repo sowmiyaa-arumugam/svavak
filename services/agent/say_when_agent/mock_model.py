@@ -46,8 +46,11 @@ def next_step(tool: str, ok: bool, output: dict[str, Any]) -> tuple[str, dict[st
     if tool == "get_answer":  # answered, or not yet
         return f"Sam says: {sentence(output['answer_text'])}" if output["status"] == "answered" else NOT_YET  # verbatim, attributed
     if tool == "get_recent_messages":  # what Sam said lately
-        texts = [sentence(m["text"]) for m in output["messages"]]  # oldest first
-        return f"Sam said: {' '.join(texts)}" if texts else "Sam hasn't said anything recently."  # a short spoken summary
+        distinct: dict[str, dict[str, Any]] = {}  # one message per reply, newest first
+        for m in reversed(output["messages"]):  # the list is oldest first
+            distinct.setdefault(m["text"].strip().casefold(), m)  # the newest occurrence wins; case and spacing ignored
+        said = [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[:3]]  # one sentence each, at most three
+        return " ".join(said) if said else "Sam hasn't said anything recently."  # a short spoken recap
     return "Noted."  # add_profile_fact
 
 

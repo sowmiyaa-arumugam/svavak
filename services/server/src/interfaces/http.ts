@@ -27,6 +27,7 @@ export interface HttpOptions { // wired by compose.ts or a test
   notifier: NotifierPort; // for the keep-alive pings
   log: Log; // JSON log lines
   pingMs: number; // ping interval on the stream
+  mcpIdleMs: number; // an MCP session ends after this long without requests
 } // end of HttpOptions
 
 /** POST /v1/questions: the dev endpoint (tools/smoke-stream.mjs); agents use ask_question on /mcp. */
@@ -73,7 +74,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     next(); // carry on
   }); // end of the span middleware
 
-  app.all('/mcp', ...mcpHandlers({ useCases: o.useCases, trace: o.trace, mode: o.mode, log: o.log, allowedHosts: o.mcpAllowedHosts, allowedOrigins: o.mcpAllowedOrigins, authorize: allow('agent') })); // MCP: Host, Origin and the agent token; no Host check on the TV's routes (the emulator calls the host 10.0.2.2)
+  app.all('/mcp', ...mcpHandlers({ useCases: o.useCases, trace: o.trace, mode: o.mode, log: o.log, allowedHosts: o.mcpAllowedHosts, allowedOrigins: o.mcpAllowedOrigins, authorize: allow('agent'), idleMs: o.mcpIdleMs })); // MCP: Host, Origin and the agent token; no Host check on the TV's routes (the emulator calls the host 10.0.2.2)
 
   app.use(allow('device')); // the device token on every call below; the agent token gets 403
 

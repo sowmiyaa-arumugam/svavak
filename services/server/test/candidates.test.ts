@@ -51,6 +51,17 @@ describe('dropBanned', () => { // plan §4.6: no profanity
   it('uses BANNED_TERMS by default', () => { // the one list
     expect(dropBanned([draft(`Oh ${BANNED_TERMS[0]}`), draft('Oh dear')])).toEqual({ kept: [draft('Oh dear')], dropped: 1 }); // the listed word goes
   }); // end of the case
+
+  it('also drops the simple variants of a term: -s, -es, -ed, -ing and -er', () => { // inflected forms
+    const drafts = ['Kicks', 'Kicked', 'kicking', 'Kicker', 'Two PUSHES', 'Kickoff', 'Kickers', 'Sidekicks'].map(draft); // five variants, then three other words
+    expect(dropBanned(drafts, ['kick', 'push'])).toEqual({ kept: [draft('Kickoff'), draft('Kickers'), draft('Sidekicks')], dropped: 5 }); // one suffix, whole words only, still
+    expect(dropBanned(['Damned', 'Pissing', 'Bitches', 'Wankers', 'Scrap'].map(draft)).kept).toEqual([draft('Scrap')]); // the real list
+    expect(dropBanned(['Crapped', "I'm not shitting you", 'Shitter', 'Kickked'].map(draft), [...BANNED_TERMS, 'kick']).kept).toEqual([]); // a doubled last letter before -ed, -ing and -er
+  }); // end of the case
+
+  it('keeps words that only start like a term with a doubled last letter', () => { // still whole words
+    expect(dropBanned(['Crappy', 'Kickkk'].map(draft), ['crap', 'kick']).kept).toEqual([draft('Crappy'), draft('Kickkk')]); // no listed suffix after the doubling
+  }); // end of the case
 }); // end of dropBanned
 
 describe('toCandidates', () => { // merge with defaults and priors
@@ -123,26 +134,36 @@ describe('defaults that fit the question', () => { // Yes, No and Not now only f
   const texts = (question: string) => defaultCandidates(question).map((c) => c.text); // the defaults pushed at once
   const intents = (question: string) => defaultCandidates(question).map((c) => c.intent); // and their intents
 
-  it('offers Yes, No and Not now first for a yes/no question: one starting with an auxiliary verb, without " or "', () => { // yes/no
-    for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?"]) { // yes/no questions
+  it('offers Yes, No and Not now first for a yes/no question: anything that is neither a choice nor open', () => { // yes/no
+    for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?", 'Tea?', 'Tell me about your day.', 'Whatever next?']) { // yes/no questions, with no auxiliary verb in the last three
       expect(questionKind(q)).toBe('yesno'); // classified
       expect(texts(q)).toEqual(DEFAULT_REPLIES.map((d) => d.text)); // all eight defaults, Yes, No and Not now first
     } // end of the questions
   }); // end of the case
 
-  it('offers Not now and Not sure, and neither Yes nor No, for a choice question: one with " or "', () => { // choice
-    for (const q of ['Would you like tea or coffee?', 'Tea or coffee?', 'Shall we watch a film or the news?']) { // choice questions, two starting with an auxiliary verb
+  it('treats "... or not?" as yes/no, not as a choice', () => { // a yes/no question in disguise
+    for (const q of ['Would you like tea or not?', 'Tea or not?', 'Shall we go out, or not ?', 'Now, or not?']) expect(questionKind(q)).toBe('yesno'); // or not, at the end
+  }); // end of the case
+
+  it('ignores a leading name and comma', () => { // "Sam, ..." asks the same question
+    expect(['Sam, would you like a blanket?', 'Sam, tea or coffee?', 'Sam, what shall we watch?', 'Sam, tea or not?'].map(questionKind)).toEqual(['yesno', 'choice', 'open', 'yesno']); // as without the name
+  }); // end of the case
+
+  const FOUR = ['Not sure', 'You decide', 'Tell me more', 'Not now']; // the defaults of a choice or open question, best first
+
+  it('offers four defaults, without Yes or No, for a choice question: one with " or "', () => { // choice
+    for (const q of ['Would you like tea or coffee?', 'Tea or coffee?', 'Shall we watch a film or the news?', 'What would you like, tea or coffee?', 'Now, or later?', 'Tea, or coffee?']) { // choice questions: one starting with a wh-word, two with a comma before " or "
       expect(questionKind(q)).toBe('choice'); // classified
-      expect(texts(q).slice(0, 2)).toEqual(['Not now', 'Not sure']); // first
+      expect(texts(q)).toEqual(FOUR); // Not sure, You decide, Tell me more, Not now
       expect(intents(q)).not.toContain('yes'); // no Yes
       expect(intents(q)).not.toContain('no'); // no No
     } // end of the questions
   }); // end of the case
 
-  it('offers Not now and Not sure, and neither Yes nor No, for an open question: any other question', () => { // open
-    for (const q of ['What shall we watch tonight?', 'Where shall we go?', 'Who called?', 'When shall we eat?', 'How was your day?', 'Why not?', 'Tell me about your day.']) { // open questions
+  it('offers the same four defaults for an open question: one starting with a wh-word', () => { // open
+    for (const q of ['What shall we watch tonight?', 'Which one?', 'Who called?', 'Whom shall we invite?', 'Whose coat is this?', 'Where shall we go?', 'When shall we eat?', 'Why not?', 'How was your day?', "What's on tonight?"]) { // open questions, one per wh-word
       expect(questionKind(q)).toBe('open'); // classified
-      expect(texts(q)).toEqual(['Not now', 'Not sure', 'Ask me later', 'Tell me more', 'Thank you', 'Maybe']); // six defaults, best first
+      expect(texts(q)).toEqual(FOUR); // four defaults, best first
     } // end of the questions
   }); // end of the case
 }); // end of defaults that fit the question
