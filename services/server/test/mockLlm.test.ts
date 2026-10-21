@@ -10,6 +10,7 @@ import { DEMO_FACTS, type ProfileFact } from '../src/domain/facts.ts'; // profil
 const DEMO = [ // demo questions and the first two replies expected
   ['Would you like tea or coffee?', ['Tea, please', 'Coffee, please']], // a choice
   ['Shall we watch a film or the news?', ['A film, please', 'The news, please']], // a choice with articles
+  ['Soup or a sandwich for lunch?', ['Soup, please', 'A sandwich, please']], // a choice with words after the second option
   ['How are you feeling today?', ['Good, thanks', 'A bit tired']], // feelings
   ['What would you like for lunch?', ['Something light', 'Soup, please']], // food
   ['Shall I open the window?', ['Yes, please', 'No, thanks']], // yes or no

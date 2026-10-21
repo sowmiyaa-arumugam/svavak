@@ -123,6 +123,21 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     ] }); // end of the expected request
   }); // end of the case
 
+  it("names a choice question's options, and only those, in the defaults and in the mock model's replies", async () => { // the same option finder for both
+    const cases: [question: string, named: string[], never: string][] = [ // a question, the options its first four must name, and a reply it must never get
+      ['Would you like more or are you full?', ['More, please'], 'Are, please'], // "are" is no option
+      ['Cricket or something else?', ['Cricket, please'], 'Something, please'], // nor is "something"
+      ['Soup or a sandwich for lunch?', ['Soup, please', 'A sandwich, please'], 'A sandwich for, please'], // an option ends with its word
+    ]; // end of the cases
+    for (const [question, named, never] of cases) { // each question
+      const { uc, events } = setup(); // the mock model
+      await uc.askQuestion(question, 'Alex').suggested; // the defaults at once, then the mock's replies
+      const lists = events.map((e) => (e.type === 'question.created' ? e.question.candidates : e.type === 'question.candidates' ? e.candidates : []).map((c) => c.text)); // both pushed lists
+      expect(lists).toHaveLength(2); // question.created and question.candidates
+      for (const texts of lists) expect([texts.slice(0, 4), texts.includes(never)]).toEqual([expect.arrayContaining(named), false]); // the options on the first row, the wrong reply nowhere
+    } // end of the cases
+  }); // end of the case
+
   it('does not push candidates for a question answered before the model replied', async () => { // late model
     let release: (v: unknown) => void = () => {}; // resolves the model call
     const slow: LlmPort = { suggest: () => new Promise((r) => { release = r; }) }; // waits for release

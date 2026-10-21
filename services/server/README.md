@@ -90,7 +90,13 @@ tea or coffee?").
 
 **Basic answers.** The first four replies always cover the question's basic answers: a yes-intent and a no-intent
 reply for a yes/no question; for a choice question, a reply naming each option, that is the word before " or " and
-the first word after it that is not an article (a, an, the or some). A reply with the intent `no`, `later` or
+the first word after it that is not an article (a, an, the or some). A side whose word is a function word names no
+option: a pronoun or question word, an auxiliary or modal verb (with their short forms, such as "you're" and
+"don't"), "not", "something", "anything", "nothing" or "else", so "Would you like more or are you full?" has the
+option "more" alone, and "Cricket or something else?" has "cricket" alone. Such a word counts only in lower case
+("I" aside) or as the question's first word, as a capital marks a name: "April or May?" has both options. MockLlm
+names a choice's options the same way ("Soup or a sandwich for lunch?" gets "Soup, please" and "A sandwich, please").
+A reply with the intent `no`, `later` or
 `clarify` names an option without choosing it ("No, not the news"), so it does not count, and neither does one that
 turns it down in its words ("Tea, not coffee", "instead of coffee", "rather than coffee"). A reply that says the
 default itself counts whatever its intent, so no card is shown twice. When no reply gives a basic answer, a short

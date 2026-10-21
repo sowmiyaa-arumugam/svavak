@@ -40,7 +40,8 @@ const FALLBACKS: readonly Intent[] = ['later', 'clarify']; // "Not now", "Not su
 export const OPTION_SCORE = 0.3; // each of ask_question's options is as likely as "Yes, please", the best default
 const FIRST_ROW = 4; // the grid's first row, scanned first: it always holds the question's basic answers (toCandidates)
 const NOT_CHOSEN: readonly Intent[] = ['no', ...FALLBACKS]; // a reply with one of these intents names an option without choosing it ("No, not the news")
-const ARTICLE = /^(?:a|an|the|some)$/i; // kept in front of an option ("the news"), as the mock model keeps it
+const ARTICLE = /^(?:a|an|the|some)$/i; // kept in front of an option ("the news")
+const FUNCTION_WORD = /^(?:(?:[Ii]|me|my|mine|myself|you|your|yours|yourself|yourselves|he|him|his|himself|she|her|hers|herself|it|its|itself|we|us|our|ours|ourselves|they|them|their|theirs|themselves|this|that|these|those|someone|somebody|anyone|anybody|everyone|everybody|everything|nobody|what|which|who|whom|whose|where|when|why|how)(?:['’](?:s|re|m|d|ll|ve))?|(?:am|is|are|was|were|be|been|being|have|has|had|do|does|did|can|could|may|might|must|shall|should|will|would)(?:n['’]t)?|can['’]t|cannot|won['’]t|shan['’]t|not|something|anything|nothing|else)$/; // a word that names no option ("or are you full?", "or something else?"): a pronoun or question word (with a short form such as "you're"), an auxiliary or modal verb (with "n't"), "not", "something", "anything", "nothing" and "else"; in lower case ("I" aside), as a capital marks a name ("April or May", "the UK or the US")
 
 const LEADING_NAME = /^\s*\p{L}[\p{L}'’-]*\s*,\s*/u; // "Sam, " before the question itself
 const OR_NOT = /(?:^|\s)or\s+not[\s?.!]*$/i; // "... or not?" at the end; "Now, or not?" leaves "or not?" once the name is gone
@@ -60,6 +61,27 @@ export function questionKind(question: string): 'yesno' | 'choice' | 'open' { //
   return q.includes('?') ? 'yesno' : 'open'; // "Tea?", or a sentence such as "Tell me about your day."
 } // end of questionKind
 
+/**
+ * The options a choice question names: the word before " or " and the first word after it that is not an article, each
+ * with the article in front of it, if any ("a film or the news"; "soup or a sandwich for lunch" names "soup" and
+ * "a sandwich"). A side whose word is a function word (FUNCTION_WORD) names none: "more or are you full" names "more"
+ * alone, while "April or May" names both. None for a question that is not a choice, has no " or " to split at, or has a
+ * side with no word. The question's first letter comes out in lower case; callers capitalise an option to show it.
+ */
+export function choiceOptions(question: string): string[] { // the options, for the basic answers and the mock model
+  if (questionKind(question) !== 'choice') return []; // yes/no or open: no options
+  const or = OR.exec(question); // " or "; none when a leading word and comma come right before "or" ("Tea,or coffee?")
+  if (!or) return []; // nothing to split at
+  const q = question.charAt(0).toLowerCase() + question.slice(1); // a capital that only starts the question marks no name ("Something or tea?")
+  const words = (s: string) => s.split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter((w) => w !== ''); // words without punctuation ("Tea," to "Tea")
+  const before = words(q.slice(0, or.index)); // up to " or "
+  const after = words(q.slice(or.index + or[0].length)); // from after it
+  const second = after.findIndex((w) => !ARTICLE.test(w)); // the second option's word, after any article
+  const options = [before.slice(-2), after.slice(0, second + 1)].map((ws) => (ws.length > 1 && !ARTICLE.test(ws[0]!) ? ws.slice(1) : ws)); // each option's word, with the article in front of it, if any
+  if (options.some((ws) => ws.length === 0 || ARTICLE.test(ws.at(-1)!))) return []; // an option missing: none
+  return options.filter((ws) => !FUNCTION_WORD.test(ws.at(-1)!)).map((ws) => ws.join(' ')); // the sides that name something ("the news"), not "are" or "something"
+} // end of choiceOptions
+
 /** The defaults that fit the question: all eight for a yes/no question, the four of CHOICE_OR_OPEN for any other. */
 export function defaultsFor(question: string): readonly Draft[] { // Yes, No and Not now only where they make sense
   return questionKind(question) === 'yesno' ? DEFAULT_REPLIES : CHOICE_OR_OPEN; // by kind
@@ -73,28 +95,18 @@ interface BasicAnswer { // a yes, a no, or one option of a choice
 
 /**
  * The answers that must be among the first four replies: a yes and a no for a yes/no question; for a choice question,
- * each option, that is the word before " or " and the first word after it that is not an article ("tea or coffee",
- * "a film or the news"), named by a reply that does not turn it down or put it off, in its intent or in its words
- * ("Tea, not coffee"). A reply that says the default itself gives it too, whatever its intent. An open question has none.
+ * each option it names (choiceOptions: "tea or coffee", "a film or the news"), named by a reply that does not turn it
+ * down or put it off, in its intent or in its words ("Tea, not coffee"). A reply that says the default itself gives it
+ * too, whatever its intent. An open question has none.
  */
 function basicAnswers(question: string): BasicAnswer[] { // by the question's kind
   const kind = questionKind(question); // yes/no, choice or open
   const says = (draft: Draft, r: Draft) => r.text.toLowerCase().includes(draft.text.toLowerCase()); // "Yes, please" marked social still says it: no second card
   if (kind === 'yesno') return [DEFAULT_REPLIES[0]!, DEFAULT_REPLIES[1]!].map((draft) => ({ meets: (r) => r.intent === draft.intent || says(draft, r), draft })); // Yes, please and No, thanks, by intent
-  if (kind === 'open') return []; // nothing to cover
-  const or = OR.exec(question); // " or "; none when a leading word and comma come right before "or" ("Tea,or coffee?")
-  if (!or) return []; // nothing to split at
-  const words = (s: string) => s.split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter((w) => w !== ''); // words without punctuation ("Tea," to "Tea")
-  const before = words(question.slice(0, or.index)); // up to " or "
-  const after = words(question.slice(or.index + or[0].length)); // from after it
-  const second = after.findIndex((w) => !ARTICLE.test(w)); // the second option's word, after any article
-  const options = [before.slice(-2), after.slice(0, second + 1)].map((ws) => (ws.length > 1 && !ARTICLE.test(ws[0]!) ? ws.slice(1) : ws)); // each option's word, with the article in front of it, if any
-  if (options.some((ws) => ws.length === 0 || ARTICLE.test(ws.at(-1)!))) return []; // an option missing: nothing to cover
-  return options.map((ws) => { // one basic answer per option
-    const word = ws.at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the option's word, as plain text in a pattern
+  return choiceOptions(question).map((text) => { // one basic answer per option; an open question has none
+    const word = text.split(' ').at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the option's word, as plain text in a pattern
     const name = new RegExp(`(?<![\\p{L}\\p{N}])${word}(?![\\p{L}\\p{N}])`, 'iu'); // the word, whole ("café" too), in any case
     const down = new RegExp(`(?<![\\p{L}\\p{N}])(?:not|no|instead of|rather than)\\s+(?:(?:a|an|the|some)\\s+)?${word}(?![\\p{L}\\p{N}])`, 'iu'); // "not coffee", "instead of the news"
-    const text = ws.join(' '); // "the news"
     const draft: Draft = { text: `${text.charAt(0).toUpperCase()}${text.slice(1)}, please`, intent: 'choice', score: OPTION_SCORE }; // "The news, please", as likely as an option
     return { meets: (r) => (!NOT_CHOSEN.includes(r.intent) && name.test(r.text) && !down.test(r.text)) || says(draft, r), draft }; // named and chosen, or the default itself
   }); // end of the options

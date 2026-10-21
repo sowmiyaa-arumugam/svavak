@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // MockLlm (plan §4.3): deterministic candidates from the question text and profile facts, in the §4.6 tool-output shape, without AWS.
 
-import { questionKind, type Draft } from '../domain/candidates.ts'; // candidate shape, and which questions Yes or No can answer
+import { choiceOptions, questionKind, type Draft } from '../domain/candidates.ts'; // candidate shape, which questions Yes or No can answer, and a choice's options
 import { promptFacts, type ProfileFact } from '../domain/facts.ts'; // profile facts
 import { REPLY_COUNT } from '../domain/model.ts'; // eight per question
 import type { LlmPort, SuggestRequest } from '../ports/index.ts'; // the port
 
 type Row = [text: string, intent: Draft['intent'], score: number]; // a compact candidate
-
-const ARTICLES = new Set(['a', 'an', 'the', 'some']); // kept in front of a choice ("a film")
 
 /** Replies that use a fact (plan FR-03): [question pattern, pattern for a "likes" fact, reply]. The first match wins. */
 const FACT_REPLIES: readonly [question: RegExp, fact: RegExp, reply: string][] = [ // one small table, in one place
@@ -31,12 +29,9 @@ export function mockReplies(question: string, facts: readonly ProfileFact[] = []
 function ruleReplies(question: string): Draft[] { // question text to drafts
   const kind = questionKind(question); // as asked: without its "?", every yes/no question would be open
   const q = question.trim().replace(/[?.!\s]+$/, ''); // without the final punctuation
-  const or = kind === 'choice' ? /^(.*\S)\s+or\s+(\S.*)$/i.exec(q) : null; // "... tea or coffee", but not "... or not"
-  if (or) { // a choice between two things
-    const left = or[1]!.split(/\s+/); // the words before "or"
-    const before = left.length > 1 && ARTICLES.has(left.at(-2)!.toLowerCase()) ? `${left.at(-2)} ` : ''; // "a film"
-    const a = cap(before + left.at(-1)!); // the first option: the last word before "or"
-    const b = cap(or[2]!.split(/\s+/).slice(0, 3).join(' ')); // the second option: up to three words after it
+  const options = choiceOptions(question); // named as the server's basic answers name them: "Soup or a sandwich for lunch?" gives "soup" and "a sandwich"
+  if (options.length === 2) { // a choice between two things; with a side such as "or are you full?" left out, the rules below apply
+    const [a, b] = options.map(cap) as [string, string]; // "Soup", "A sandwich"
     return rows([[`${a}, please`, 'choice', 0.3], [`${b}, please`, 'choice', 0.28], ['Neither, thanks', 'no', 0.1], ['Not right now', 'later', 0.08], ['Both, please', 'choice', 0.07], ["I'm not sure", 'clarify', 0.07], ['Ask me later', 'later', 0.05], ['Tell me more', 'clarify', 0.05]]); // choice
   } // end of the choice
   if (kind === 'yesno') return rows([['Yes, please', 'yes', 0.3], ['No, thanks', 'no', 0.25], ['Not right now', 'later', 0.12], ['Maybe later', 'later', 0.1], ["I'm not sure", 'clarify', 0.08], ['Tell me more', 'clarify', 0.06], ['Thank you', 'social', 0.05], ['Ask me later', 'later', 0.04]]); // yes or no, before the topic rules: "a walk after lunch?" still wants Yes or No

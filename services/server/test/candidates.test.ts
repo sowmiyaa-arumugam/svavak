@@ -236,6 +236,28 @@ describe('the first four replies cover the basic answers', () => { // Yes and No
   it('adds nothing for an open question', () => { // no basic answers to cover
     expect(firstFour('What would you like to watch tonight?', [['The cricket', 'choice', 0.9]])).toEqual(['The cricket', 'You decide', 'Not sure', 'Tell me more']); // as before
   }); // end of the case
+
+  it('skips a side of " or " whose word is a function word, and keeps the other', () => { // "are" and "something" name no option
+    expect(firstFour('Would you like more or are you full?', [])).toEqual(['More, please', 'You decide', 'Not sure', 'Tell me more']); // never "Are, please"
+    expect(firstFour('Cricket or something else?', [])).toEqual(['Cricket, please', 'You decide', 'Not sure', 'Tell me more']); // never "Something, please"
+    const sides: [string, string[]][] = [ // a choice question and the options it names, one kind of function word each
+      ['Is it you or me?', []], // pronouns on both sides: no option
+      ['Tea or is that too strong?', ['Tea, please']], // an auxiliary verb
+      ["Tea or don't you fancy any?", ['Tea, please']], // an auxiliary verb's short form with "not"
+      ['Tea or would you rather have coffee?', ['Tea, please']], // a modal verb
+      ['Tea or not yet?', ['Tea, please']], // "not", where "or not" does not end the question
+      ['Coffee or what?', ['Coffee, please']], // a question word
+      ['Tea or anything?', ['Tea, please']], // "anything"
+      ['Tea or nothing?', ['Tea, please']], // "nothing"
+      ['Something else or tea?', ['Tea, please']], // "else", the word before " or "
+      ['Something or tea?', ['Tea, please']], // a function word with the question's capital
+      ["Tea, or I'll make you coffee?", ['Tea, please']], // "I", always a capital, in a short form
+      ['Shall we go in April or May?', ['April, please', 'May, please']], // a capital mid-question marks a name, not the modal verb
+      ['Shall we call Sam or Will?', ['Sam, please', 'Will, please']], // likewise
+      ['A trip to the UK or the US?', ['The UK, please', 'The US, please']], // and not the pronoun
+    ]; // end of the sides
+    for (const [q, options] of sides) expect(merged(q, []).map((c) => c.text).filter((t) => t.endsWith(', please'))).toEqual(options); // the option defaults, in the whole list
+  }); // end of the case
 }); // end of the first four
 
 describe('defaults that fit the question', () => { // Yes, No and Not now only for yes/no questions
