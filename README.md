@@ -13,8 +13,8 @@ Amazon Developer Hackathon 2026.
   - Questions come from the server's WebSocket stream. While it is connected, the TV shows a calm idle screen between
     questions (the last reply, and a press opens Help). Local practice questions, labelled "Practice", run only when
     the server can't be reached.
-  - It has a 2 s cancel window, after which the reply is posted and its speech played, a 2 s hold for Help, and K2
-    instrumentation.
+  - It has a 2 s cancel window, after which the reply is posted and its speech played, a 2 s hold for Help, which
+    sends one help request to the server and says whether it got there, and K2 instrumentation.
   - It runs on the Android TV emulator; gate K2 on a device is still open.
 - **Server** ([services/server](services/server)): REST, the WebSocket question stream and the SSE trace for flow S1,
   mock-first. It has default replies at once and model candidates within 3.5 s, idempotent utterances, a device token
@@ -27,7 +27,8 @@ Amazon Developer Hackathon 2026.
   2026-10-21).
 - **Studio** ([apps/studio](apps/studio)): one localhost page (React and Vite, http://localhost:5173) with the caregiver
   panel (the simulated Alexa+), a virtual TV in drive mode on the TV's own modules (the space bar is the switch), the
-  engine's posterior after each press, and the system trace. A Playwright test drives the whole loop in mock mode.
+  engine's posterior after each press, and the system trace. A help request from the TV shows in the caregiver panel
+  as "Sam is asking for help." and is spoken once. A Playwright test drives the whole loop in mock mode.
 - **Not built yet:** SQLite storage and Docker.
 
 ## Run a demo

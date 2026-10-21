@@ -27,7 +27,7 @@ export function App() { // the page
           Drive mode{/* its name */}
         </label>{/* end of the switch */}
       </header>{/* end of the head */}
-      <CaregiverPanel onHop={trace.local} />{/* centred, or on the left */}
+      <CaregiverPanel onHop={trace.local} helps={trace.helps} />{/* centred, or on the left; help alerts from the trace */}
       {drive && ( // the virtual TV and its engine, only while driving
         <section className="tv-column" aria-label="Virtual TV">{/* right */}
           <div className="tv-head">{/* title and label */}

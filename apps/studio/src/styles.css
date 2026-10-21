@@ -43,6 +43,8 @@ h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(
 .chip.failed { border-color: var(--help); color: var(--help); } /* a tool error */
 .speech { margin: 0; font-size: 32px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; } /* the agent's answer, large */
 .error { margin: 0; color: var(--help); } /* a failed turn */
+.alert { display: flex; align-items: baseline; gap: 16px; margin: 0; padding: 14px 20px; border: 2px solid var(--help); border-left-width: 10px; border-radius: 16px; background: rgba(64, 12, 16, 0.85); font-size: 24px; font-weight: 700; } /* a help request: bold white on a deep red, framed in the TV's help red, the only red box in the panel */
+.alert time { margin-left: auto; color: var(--text2); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; } /* its time, on the right */
 .ask { display: flex; gap: 12px; } /* the input row */
 .ask input { flex: 1; font: inherit; font-size: 22px; padding: 14px 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--well); color: var(--text); transition: border-color 200ms var(--ease); } /* the text box */
 .ask input::placeholder { color: var(--text2); } /* its hint, readable on the dark well */
@@ -114,5 +116,5 @@ h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(
 .tv-column { animation-delay: 180ms; } /* then the virtual TV */
 .trace { animation-delay: 270ms; } /* then the trace */
 .credits { animation-delay: 360ms; } /* and the credits last */
-.bubble, .chips, .speech, .error { animation: rise 500ms var(--ease) both; } /* each part of a turn rises in as it arrives */
+.bubble, .chips, .speech, .error, .alert { animation: rise 500ms var(--ease) both; } /* each part of a turn, and each alert, rises in as it arrives */
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } } /* no motion when the viewer asks for less */

@@ -6,6 +6,7 @@
 import asyncio  # drives a turn directly
 import json  # log lines
 import re  # counts sentences
+from datetime import datetime  # a help request's time on this machine's clock
 
 from svavak_agent.mock_model import FAILED, HELP, NOT_YET, next_step  # the mock's fixed sentences, and the follow-up to each tool result
 
@@ -75,9 +76,27 @@ def test_a_message_without_a_question_is_recapped_on_its_own(stub, turn):  # a s
     assert turn("What did Sam say?")[-2] == ("speech", {"text": "Sam said: I'm cold."})  # one sentence
 
 
-def test_a_help_request_in_the_history_does_not_break_the_recap(stub, turn):  # the server lists help requests as messages without text
-    stub.messages = [{"text": "Tea", "time": "2026-10-19T10:00:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"}, {"text": None, "time": "2026-10-19T10:01:00Z", "kind": "help", "question_text": None}]  # a reply, then a help request
-    assert turn("What did Sam say?")[-2] == ("speech", {"text": 'To "Would you like tea or coffee?", Sam said: Tea.'})  # the reply is recapped
+def local(time: str) -> str:  # an ISO 8601 time as HH:MM on this machine's clock, as the caregiver reads it
+    return datetime.fromisoformat(time).astimezone().strftime("%H:%M")  # 10:01 UTC is 12:01 in Berlin on 19 October 2026
+
+
+def help_at(time: str) -> dict:  # a help request as the server lists it: its time, no text
+    return {"text": None, "time": time, "kind": "help", "question_text": None}  # kind help
+
+
+def test_what_did_sam_say_mentions_a_help_request_first(stub, turn):  # the help request matters most
+    stub.messages = [{"text": "Tea", "time": "2026-10-19T10:00:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"}, help_at("2026-10-19T10:01:00.000Z")]  # a reply, then a help request
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": f'Sam asked for help at {local("2026-10-19T10:01:00.000Z")}. To "Would you like tea or coffee?", Sam said: Tea.'})  # the help request, then the reply
+
+
+def test_a_help_request_alone_is_recapped(stub, turn):  # nothing said, only the help request
+    stub.messages = [help_at("2026-10-19T10:01:00.000Z")]  # one help request
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": f"Sam asked for help at {local('2026-10-19T10:01:00.000Z')}."})  # one sentence
+
+
+def test_the_recap_names_the_latest_help_request_and_keeps_to_two_sentences(stub, turn):  # several of each
+    stub.messages = [help_at("2026-10-19T10:00:00Z"), {"text": "Yes", "time": "2026-10-19T10:01:00Z", "kind": "reply", "question_text": "Shall we go out?"}, help_at("2026-10-19T10:02:00Z"), {"text": "Not now", "time": "2026-10-19T10:03:00Z", "kind": "reply", "question_text": "Shall we watch the news?"}]  # oldest first
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": f'Sam asked for help at {local("2026-10-19T10:02:00Z")}. To "Shall we watch the news?", Sam said: Not now.'})  # the latest help request, then the newest reply
 
 
 def test_what_did_sam_say_with_no_messages(stub, turn):  # nothing yet
@@ -99,7 +118,8 @@ def test_every_mock_reply_is_at_most_two_short_sentences():  # spoken like a voi
     def sentences(text: str) -> int:  # closing punctuation before a space or the end; a "?" inside quotes is not one
         return len(re.findall(r"[.!?](?=\s|$)", text))  # one per sentence
     many = {"messages": [{"text": f"Reply {i}", "time": f"2026-10-19T10:0{i}:00Z", "kind": "reply", "question_text": f"Question {i}?"} for i in range(5)]}  # five distinct replies
-    said = [HELP, FAILED, NOT_YET, next_step("get_answer", True, {"status": "answered", "answer_text": "Cricket game, maybe"}), next_step("get_recent_messages", True, many), next_step("get_recent_messages", True, {"messages": []}), next_step("add_profile_fact", True, {"fact_id": "f-1"}, fact="Sam loves gardening")]  # every sentence the mock can speak
+    helped = {"messages": [help_at("2026-10-19T09:59:00Z"), *many["messages"]]}  # a help request and five replies
+    said = [HELP, FAILED, NOT_YET, next_step("get_answer", True, {"status": "answered", "answer_text": "Cricket game, maybe"}), next_step("get_recent_messages", True, many), next_step("get_recent_messages", True, helped), next_step("get_recent_messages", True, {"messages": []}), next_step("add_profile_fact", True, {"fact_id": "f-1"}, fact="Sam loves gardening")]  # every sentence the mock can speak
     assert [s for s in said if not 1 <= sentences(s) <= 2] == []  # one or two each
     assert [s for s in said if len(s) > 160] == []  # and short
 

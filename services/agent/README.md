@@ -101,7 +101,7 @@ into "would you like"; the rest is kept as typed. Case and closing punctuation a
 | "Ask Sam if he wants tea or coffee" | `ask_question` "Would you like tea or coffee?" with options Tea and Coffee, then `get_answer` (wait 20 s) | "Sam says: Tea." or "Sam hasn't answered yet." |
 | "Ask Sam if he wants a walk" | `ask_question` "Would you like a walk?" without options (the server adds Yes and No), then `get_answer` | as above |
 | "Ask Sam what he wants to watch" | `ask_question` "What would you like to watch?" without options, then `get_answer` | as above |
-| "What did Sam say?" | `get_recent_messages` (limit 5) | `To "Would you like tea or coffee?", Sam said: Tea. To "Shall we go out?", Sam said: Not now.` (newest first), or "Sam hasn't said anything recently." |
+| "What did Sam say?" | `get_recent_messages` (limit 5) | `To "Would you like tea or coffee?", Sam said: Tea. To "Shall we go out?", Sam said: Not now.` (newest first), `Sam asked for help at 14:05. To "Would you like tea or coffee?", Sam said: Tea.` after a help request, or "Sam hasn't said anything recently." |
 | "Remember that Sam loves gardening" | `add_profile_fact` "Sam loves gardening", category `likes` (`dislikes` for hates, dislikes or a negated like, `other` otherwise) | "Noted: Sam loves gardening." |
 | Anything else | none | "In mock mode I can ask Sam a question, tell you what Sam said, or remember something about Sam." |
 
@@ -112,7 +112,9 @@ Every reply is at most two short sentences. The recap speaks the newest one or t
 sentence each:
 `To "<question>", Sam said: <reply>.`, or `Sam said: <reply>.` for a message without a question. A reply said more
 than once (case and spacing ignored) is spoken once, with its newest question. A help request from the TV, which the
-server lists as a message of kind `help` without text, is not recapped.
+server lists as a message of kind `help` with its time and no text, comes first: "Sam asked for help at 14:05." for
+the latest one, at the hour and minute on the agent's computer, then the newest reply, so the recap stays at two
+sentences. The live mode's recap is composed by the same code (see Speech guard), so it says the same.
 
 ## Interface
 
@@ -149,8 +151,8 @@ Bedrock's usage metadata (Strands' `accumulated_usage`). They are 0 in mock mode
 failed. Never caregiver text, answers or the token. Strands' own log lines are switched off, because they can quote
 model-written tool input or tool names; the agent reports failures itself.
 
-**Known limits.** Tool calls have no timeout of their own. A second SSE stream for help alerts (plan §4.5) comes with the
-alerts.
+**Known limits.** Tool calls have no timeout of their own. There is no second SSE stream for help alerts (plan §4.5):
+the caregiver panel takes them from the server's trace stream, and "What did Sam say?" mentions the latest one.
 
 ## Layout
 

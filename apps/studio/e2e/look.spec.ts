@@ -5,10 +5,11 @@
 // and no motion under prefers-reduced-motion.
 
 import { expect, test, type Page } from '@playwright/test'; // Playwright Test
+import { sendHelp } from './sendHelp'; // a help request, as the TV sends it
 
 const CREDITS = 'Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash'; // the footer line
 const LOCAL = ['localhost:5173', '127.0.0.1:8787', '127.0.0.1:8790']; // the studio, the server and the agent: no other host, so no font or image CDN
-const TEXT = ['h2', '.mirror', '.mode-line', '.drive', '.banner', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.credits']; // the main text, on the photo and on the panels
+const TEXT = ['h2', '.mirror', '.mode-line', '.drive', '.banner', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.credits', '.alert']; // the main text, on the photo and on the panels, a help alert's too
 
 /** One caregiver turn in mock mode, so the bubble, the chips and the speech are on screen too. */
 async function remember(page: Page): Promise<void> { // "Noted: ..."
@@ -66,6 +67,8 @@ for (const drive of [false, true]) test(`gives every main text WCAG AA contrast 
   await page.goto('/'); // the studio
   if (drive) await page.getByTestId('drive-mode').check(); // the virtual TV's head and label, and the engine panel
   await remember(page); // the bubble, the chips and the speech
+  expect(await sendHelp(page, `contrast-${drive}`)).toBe(201); // and a help alert, after them
+  await expect(page.getByTestId('help-alert')).toBeVisible(); // shown
   await page.evaluate(() => document.fonts.ready); // the final type
   const lines = await page.evaluate((selectors) => selectors.flatMap((selector) => [...document.querySelectorAll(selector)].flatMap((el) => { // each text's line boxes
     const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); // its text only: not a checkbox inside a label

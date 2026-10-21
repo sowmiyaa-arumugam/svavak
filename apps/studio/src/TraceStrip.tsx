@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // The system trace (plan §4.7): the server's live spans (GET /v1/trace, read with fetch and the device token) as a strip
 // of hops, caregiver -> agent -> MCP -> server -> Bedrock or Polly -> TV. Each hop lights up with its last duration when
-// a span for it arrives; the caregiver and agent hops come from the caregiver panel. A badge shows mock or live.
+// a span for it arrives; the caregiver and agent hops come from the caregiver panel. A badge shows mock or live. A help
+// request from the TV lights TV, server and caregiver, and becomes an alert for the caregiver panel.
 
 import { useCallback, useEffect, useState } from 'react'; // hooks
 import { DEVICE_TOKEN, SERVER_URL } from './config'; // where the trace is, and its token
@@ -20,12 +21,12 @@ export const HOPS = [ // key and label
 export type HopKey = (typeof HOPS)[number]['key']; // one of the keys
 
 /** One span as GET /v1/trace sends it (no message text, ever). */
-interface Span { at: string; hop: string; operation: string; duration_ms: number; mode: 'mock' | 'live' } // the fields used here
+interface Span { id: string; at: string; hop: string; operation: string; duration_ms: number; mode: 'mock' | 'live' } // the fields used here
 
 /** A hop's latest span. */
 interface HopState { operation: string; ms: number; litUntil: number } // what ran, how long, and until when it glows
 
-/** Lights a hop from the studio itself (the caregiver and agent hops have no server span). */
+/** Lights a hop from the studio itself (a caregiver turn and the agent have no server span). */
 export type LocalHop = (key: HopKey, operation: string, ms: number) => void; // passed to the caregiver panel
 
 const GLOW_MS = 1500; // a hop glows this long after its span
@@ -38,17 +39,20 @@ function hopOf(span: Span): { key: HopKey; operation: string } | null { // serve
   if (span.hop === 'server→llm') return { key: 'model', operation: `Bedrock${mock}: ${span.operation}` }; // the reply model
   if (span.hop === 'server→tts') return { key: 'model', operation: `Polly${mock}: ${span.operation}` }; // speech
   if (span.hop === 'server→tv') return { key: 'tv', operation: span.operation }; // question.created or question.candidates
+  if (span.hop === 'server→caregiver') return { key: 'caregiver', operation: span.operation }; // help.requested: for the caregiver panel
   return null; // a hop the strip does not draw
 } // end of hopOf
 
-/** The trace's state: each hop's latest span, the mode of the latest server span, and the local-hop function. */
-export function useTrace(): { hops: Partial<Record<HopKey, HopState>>; mode: 'mock' | 'live' | null; local: LocalHop } { // for App
+/** The trace's state: each hop's latest span, the mode of the latest server span, the local-hop function, and the help requests. */
+export function useTrace(): { hops: Partial<Record<HopKey, HopState>>; mode: 'mock' | 'live' | null; local: LocalHop; helps: string[] } { // for App
   const [hops, setHops] = useState<Partial<Record<HopKey, HopState>>>({}); // nothing yet
   const [mode, setMode] = useState<'mock' | 'live' | null>(null); // unknown until a span arrives
+  const [helps, setHelps] = useState<string[]>([]); // the times of the help requests since the page opened, oldest first
   const light = useCallback<LocalHop>((key, operation, ms) => setHops((h) => ({ ...h, [key]: { operation, ms, litUntil: performance.now() + GLOW_MS } })), []); // one hop lights
 
   useEffect(() => { // the trace stream, reconnecting every 2 s while the server is away
     const opened = Date.now(); // spans from before the page opened are history: not drawn
+    const alerted = new Set<string>(); // the help spans already alerted: a reconnect replays the server's buffer
     const controller = new AbortController(); // stops the fetch on unmount
     let stopped = false; // no reconnect after unmount
     void (async () => { // runs until unmount
@@ -61,6 +65,11 @@ export function useTrace(): { hops: Partial<Record<HopKey, HopState>>; mode: 'mo
             if (Date.parse(span.at) < opened) continue; // replayed history lights no hop
             const hop = hopOf(span); // where it goes on the strip
             if (hop) light(hop.key, hop.operation, span.duration_ms); // it lights
+            if (span.hop === 'server→caregiver' && !alerted.has(span.id)) { // a help request from the TV, not seen before
+              alerted.add(span.id); // once
+              light('tv', 'help request', span.duration_ms); // where it came from
+              setHelps((h) => [...h, span.at]); // an alert for the caregiver panel, at the time the server took it
+            } // end of the help request
           } // end of the stream
         } catch { // the server is down, or the page is going away
         } // nothing to report: the strip just stays as it is
@@ -70,7 +79,7 @@ export function useTrace(): { hops: Partial<Record<HopKey, HopState>>; mode: 'mo
     return () => { stopped = true; controller.abort(); }; // stop
   }, [light]); // once
 
-  return { hops, mode, local: light }; // for App
+  return { hops, mode, local: light, helps }; // for App
 } // end of useTrace
 
 export function TraceStrip({ hops, mode }: { hops: Partial<Record<HopKey, HopState>>; mode: 'mock' | 'live' | null }) { // the bottom strip

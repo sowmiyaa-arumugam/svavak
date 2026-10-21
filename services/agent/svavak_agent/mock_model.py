@@ -6,6 +6,7 @@
 import json  # tool inputs and outputs
 import re  # phrase matching
 from collections.abc import AsyncIterator  # stream()'s type
+from datetime import datetime  # a help request's time
 from typing import Any  # loose dict values
 
 from strands.models import Model  # the custom model provider base class
@@ -45,14 +46,20 @@ def next_step(tool: str, ok: bool, output: dict[str, Any], fact: str = "") -> tu
         return ("get_answer", {"question_id": output["question_id"], "wait_seconds": 20})  # at most 20 s (plan §4.6)
     if tool == "get_answer":  # answered, or not yet
         return f"Sam says: {sentence(output['answer_text'])}" if output["status"] == "answered" else NOT_YET  # verbatim, attributed
-    if tool == "get_recent_messages":  # what Sam said lately
+    if tool == "get_recent_messages":  # what Sam said lately, and any help request
+        helps = [m for m in output["messages"] if m["kind"] == "help"]  # Sam's help requests, oldest first
         distinct: dict[str, dict[str, Any]] = {}  # one message per reply, newest first
         for m in reversed(output["messages"]):  # the list is oldest first
             if m["kind"] != "help":  # a help request has no text to recap
                 distinct.setdefault(m["text"].strip().casefold(), m)  # the newest occurrence wins; case and spacing ignored
-        said = [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[:2]]  # one sentence each, at most two
+        said = [f"Sam asked for help at {clock(helps[-1]['time'])}."] if helps else []  # the latest help request first: it matters most
+        said += [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[: 2 - len(said)]]  # then one sentence per reply, two sentences in all
         return " ".join(said) if said else "Sam hasn't said anything recently."  # a short spoken recap
     return f"Noted: {sentence(fact)}"  # add_profile_fact: the fact, and nothing more
+
+
+def clock(time: str) -> str:  # an ISO 8601 time as the hour and minute on this machine's clock, the caregiver's
+    return datetime.fromisoformat(time).astimezone().strftime("%H:%M")  # "2026-10-19T10:01:00.000Z" to "12:01" in Berlin (summer time)
 
 
 def sentence(text: str) -> str:  # Sam's words, closed with a full stop when they have no closing punctuation

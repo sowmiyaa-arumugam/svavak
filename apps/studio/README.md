@@ -16,6 +16,14 @@ stage that is scaled to fit the window (see Look).
   [agent](../../services/agent)'s `POST /agent/turn`, read as a stream. Each tool call shows as a chip (outlined while
   it runs, filled when it has worked, red on a tool error). The agent's answer is shown at 32 px and spoken with the
   browser's speech synthesis. The conversation sits just above the text box, chat style.
+  - **Help alerts.** A help request from the TV (the app on the emulator, or the virtual TV) shows in the conversation
+    as "Sam is asking for help." with its time (HH:MM on this computer's clock, as the agent's recap says it), bold on
+    a deep red box framed in the TV's help red, and is spoken once with the browser's speech, as the agent's answers
+    are. Chrome lets a page speak only after a click or a key has activated it (Shift or Esc does not), so an alert
+    that comes before that is spoken then. It comes from the server's `help.requested` span on the trace stream, so a
+    help request from before the page opened is not shown; a span replayed after a reconnect is shown once. Alerts
+    stay in the conversation: those from before the latest turn above it, those from during or after it below it. The
+    conversation scrolls to its newest part.
 - **Virtual TV** (right), labelled "Web version of the TV app: the real app runs on Fire OS". It and the engine view
   are shown only with Drive mode on, which is off by default, so the TV never competes with the app on the emulator
   for the household's questions.
@@ -38,6 +46,7 @@ stage that is scaled to fit the window (see Look).
     the time until the agent's stream opened, and the whole turn.
   - A badge shows MOCK or LIVE, from the latest server span. The mock adapters are marked "(mock)" on the Bedrock or
     Polly hop.
+  - A help request lights TV ("help request"), server (`POST /v1/alerts`) and caregiver (`help.requested`).
   - Spans from before the page opened are not drawn.
 - **Credits** (along the bottom): "Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash".
 
@@ -60,8 +69,8 @@ Dark and calm, in the spirit of [Hamish Williams' portfolio](https://hamishw.com
   page out at its final size, so text is drawn at that size and stays sharp. The page never scrolls.
 - **Type:** Montserrat (SIL Open Font License), self-hosted from `@fontsource/montserrat` in weights 400, 600 and 700.
   No font or image CDN is called at runtime. The virtual TV keeps the TV's own look and its system type.
-- **Motion:** the page rises into place on load, and each part of a caregiver turn as it arrives. Under
-  `prefers-reduced-motion: reduce` nothing animates or transitions.
+- **Motion:** the page rises into place on load, and each part of a caregiver turn, and each help alert, as it
+  arrives. Under `prefers-reduced-motion: reduce` nothing animates or transitions.
 
 ## Run a demo
 
@@ -114,18 +123,31 @@ tokens and no AWS profile. Ports 8787, 8790 and 5173 must be free. The end-to-en
 It drives the page through stable `data-testid` attributes, with `data-mode`, `data-label`, `data-lit`, `data-state`,
 `data-hop` and `data-seen` for state. It saves 1080p screenshots to `test-results/b5/` (git-ignored).
 
-The Help tests ([e2e/help.spec.ts](e2e/help.spec.ts)) hold the space bar for 2 s in Drive mode: Help opens at 2 s
-with the key still down, one request goes to `POST /v1/alerts` and the virtual TV shows "Help request sent."; a short
-press closes Help. With that request held back for 1 s and then refused, the virtual TV shows "Asking for help…" and
-then "Couldn't send the help request.".
+The Help tests ([e2e/help.spec.ts](e2e/help.spec.ts)) check six things, with the browser's speech recorded instead
+of played where they count it:
+
+- A help request sent from the page as the TV sends it (and its retry, with the same key) shows one alert, "Sam is
+  asking for help." with its time, spoken once; the TV, server and caregiver hops light up; and "What did Sam say?"
+  answers "Sam asked for help at …" first.
+- Holding the space bar for 2 s in Drive mode opens Help at 2 s with the key still down, sends one request to
+  `POST /v1/alerts`, shows "Help request sent." and the same alert, spoken once; a short press closes Help.
+- With that request held back for 2 s and then refused, the virtual TV shows "Asking for help…", then "Couldn't send
+  the help request.", and no alert appears.
+- An alert that arrives before any click or key on the page is shown at once and spoken at the first click, not at a
+  Shift: Chrome refuses speech ("not-allowed") until a click or a key other than a modifier or Esc. The test
+  reproduces that rule, which `page.evaluate` would lift.
+- After nine alerts the newest is in full view: the conversation scrolls to its end.
+- An alert stays the same element when the caregiver starts a turn after it, so a screen reader does not announce it
+  again.
 
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
 - The page draws the darkened photo in Montserrat, with the credits line, the banner, the virtual TV's label and the
   mode badge, and shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
 - Every request goes to the studio, the server or the agent.
-- Every line of the main text has WCAG AA contrast (4.5:1, or 3:1 for large text) against the pixels drawn behind
-  it, with Drive mode off and on. They are measured in a 1080p screenshot taken with the text made transparent.
+- Every line of the main text, a help alert's included, has WCAG AA contrast (4.5:1, or 3:1 for large text) against
+  the pixels drawn behind it, with Drive mode off and on. They are measured in a 1080p screenshot taken with the text
+  made transparent.
 - Nothing animates or transitions under `prefers-reduced-motion: reduce`.
 
 The layout tests ([e2e/layout.spec.ts](e2e/layout.spec.ts)) run at 1920 × 1080, 1920 × 960, 1366 × 768,
@@ -154,9 +176,9 @@ Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 
 | `src/App.tsx` | The page layout, the Drive mode switch and the credits |
 | `src/styles.css` | The look |
 | `src/assets/` | The background photo (Unsplash License, see NOTICE) |
-| `src/CaregiverPanel.tsx` | The simulated Alexa+: text, tool chips, speech |
+| `src/CaregiverPanel.tsx` | The simulated Alexa+: text, tool chips, speech, help alerts |
 | `src/VirtualTv.tsx` | The web version of the TV app, on the TV's own modules |
 | `src/EngineView.tsx` | The posterior bars and θ |
-| `src/TraceStrip.tsx` | The trace stream and the strip of hops |
+| `src/TraceStrip.tsx` | The trace stream, the strip of hops and the help requests |
 | `src/sse.ts` | Server-sent events read with `fetch` |
-| `e2e/` | The Playwright tests: the loop, the look and the layout |
+| `e2e/` | The Playwright tests: the loop, Help, the look and the layout (`sendHelp.ts` sends a help request as the TV does) |
