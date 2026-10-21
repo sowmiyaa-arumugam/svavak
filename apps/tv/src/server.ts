@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The Say When server, as the TV sees it (plan §4.2): where it is, and POST /v1/utterances with a timeout and one retry.
+// The SvaVāk server, as the TV sees it (plan §4.2): where it is, and POST /v1/utterances with a timeout and one retry.
 
 import Constants from 'expo-constants'; // the app config embedded at build time
 import type { Reply } from './conversation'; // what gets posted
@@ -8,7 +8,7 @@ import type { Reply } from './conversation'; // what gets posted
 /** Server address and device token. */
 export interface ServerConfig { // from app.config.js
   url: string; // http://10.0.2.2:8787 on the emulator
-  token: string; // SAY_WHEN_DEVICE_TOKEN from the repository's .env
+  token: string; // SVAVAK_DEVICE_TOKEN from the repository's .env
 } // end of ServerConfig
 
 /** This build's server, or null when it was built without a token: then the app runs on its fixtures only. */

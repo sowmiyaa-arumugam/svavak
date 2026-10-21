@@ -73,7 +73,7 @@ export function mcpHandlers(o: McpOptions): RequestHandler[] { // for app.all('/
 
 /** An McpServer with the four tools of Table 16 (P0, plus add_profile_fact). */
 function toolServer(o: McpOptions): McpServer { // one per session
-  const server = new McpServer({ name: 'say-when', version: '0.1.0' }); // the product's name and the server package's version
+  const server = new McpServer({ name: 'svavak', title: 'SvaVāk', version: '0.1.0' }); // an ASCII identifier, the product's name as people read it, and the server package's version
 
   /** Runs a tool: its JSON output, or a tool error for a refused request. The span comes from handle(). */
   async function run(name: string, tool: () => object | Promise<object>): Promise<CallToolResult> { // shared by every tool

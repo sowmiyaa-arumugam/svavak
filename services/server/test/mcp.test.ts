@@ -124,7 +124,7 @@ describe('sessions and protocol (Streamable HTTP, spec 2025-11-25)', () => { // 
     expect(a.transport.sessionId).toMatch(UUID); // a secure random, visible-ASCII id
     expect(b.transport.sessionId).not.toBe(a.transport.sessionId); // one per session
     expect(a.transport.protocolVersion).toBe('2025-11-25'); // the latest version
-    expect(a.client.getServerVersion()).toEqual({ name: 'say-when', version: '0.1.0' }); // who answered
+    expect(a.client.getServerVersion()).toEqual({ name: 'svavak', title: 'SvaVāk', version: '0.1.0' }); // who answered: an ASCII identifier, and the product's name for people
   }); // end of the case
 
   it('ends a session on DELETE; its id then gets 404', async () => { // session lifecycle

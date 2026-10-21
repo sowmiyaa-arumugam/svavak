@@ -1,4 +1,6 @@
-# Say When TV app
+# SvaVāk TV app
+
+*Your Voice. Your Choice*
 
 The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It shows a question band, a 2 × 4 grid of
 reply cards and two control pills (Something else, Help). All ten are options of one
@@ -43,7 +45,7 @@ Appstore submission instead.
 
 Started from the `expo-multi-tv` app of Amazon's React Native multi-TV sample (MIT-0; see [NOTICE](../../NOTICE)):
 Expo SDK 54, react-native-tvos 0.81 on React Native's legacy architecture, the TV config plugin, and key events
-through react-native-keyevent. Android package `dev.saywhen.tv`, minSdk 28 (Fire OS 7).
+through react-native-keyevent. Android package `dev.svavak.tv`, minSdk 28 (Fire OS 7).
 
 ## Input
 
@@ -60,7 +62,7 @@ question.
 
 - **Where it connects.** The app opens `GET /v1/stream` on `http://10.0.2.2:8787`, the emulator's address for the
   host, and reconnects with back-off (0.5 to 8 s, jittered).
-- **The token.** The device token is `SAY_WHEN_DEVICE_TOKEN` from the repository's `.env`. `app.config.js` reads it,
+- **The token.** The device token is `SVAVAK_DEVICE_TOKEN` from the repository's `.env`. `app.config.js` reads it,
   and expo-constants embeds it in the APK at build time, so changing the token needs a rebuild. A build without a
   token runs on the fixtures only.
 - **Posting replies.** `POST /v1/utterances` has a 4 s timeout and one retry under the same idempotency key.

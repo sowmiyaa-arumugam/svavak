@@ -224,7 +224,9 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Expected:** a one-time check per session or per folder. *(proposed)*
 - **Actual:** the hook blocked the first Bash command and the first edit of each file, including throwaway scratchpad
   files, until the session restated the callers, the purpose and the user's instruction: about 20 blocks in one session.
-  Met again on 2026-10-19 (B4): the first Bash command of the session was blocked once.
+  Met again on 2026-10-19 (B4): the first Bash command of the session was blocked once. Met again on 2026-10-21 (B5):
+  the first Bash command, the first file in the session's scratchpad folder (a throwaway rename script) and a
+  `rm -rf` of a git-ignored `__pycache__` folder were each blocked until the facts were restated.
 - **Severity:** low; each block costs one retry. *(proposed)*
 - **Workaround:** stated the facts and retried each time. Since 2026-10-18 the git-ignored `.claude/settings.local.json`
   sets `GATEGUARD_EXEMPT_GLOBS=**`, which exempts edits to the repository's own paths; destructive-command checks stay
@@ -517,3 +519,56 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** kept temperature 0 and maxTokens 1000 until real responses can be measured (the server logs output
   tokens and stop reason per call).
 - **Suggestion:** one recommended setting for tool use with Nova 2, and one documented output limit. *(proposed)*
+
+## 2026-10-21: `git mv` of a folder fails with "Permission denied" on Windows
+
+- **Tool:** Git for Windows (Git Bash), Windows 11
+- **Task attempted:** rename the agent's Python package folder for the SvaVāk rename (B5).
+- **Steps:** ran `git mv services/agent/say_when_agent services/agent/svavak_agent`.
+- **Expected:** the folder and its tracked files are renamed.
+- **Actual:** `fatal: renaming 'services/agent/say_when_agent' failed: Permission denied`. No process of this session
+  held the folder; it still had a git-ignored `__pycache__` folder in it.
+- **Severity:** low; a short workaround exists. *(proposed)*
+- **Workaround:** created the new folder and ran `git mv` on each tracked file, then removed the old `__pycache__` and
+  the empty folder.
+- **Suggestion:** fall back to moving the tracked files one by one when renaming the folder fails, or name the file
+  that blocked it. *(proposed)*
+
+## 2026-10-21: With a scheme set, `expo run:android` opens the app through a dev-client link
+
+- **Tool:** Expo CLI (SDK 54) `expo run:android --no-bundler`, React Native 0.81 debug build (react-native-tvos)
+- **Task attempted:** install and start the renamed TV app after adding the `svavak` scheme (B5).
+- **Steps:** ran `yarn workspace tv expo run:android --no-bundler` with Metro on port 8081.
+- **Expected:** the app starts as it does from the launcher. *(proposed)*
+- **Actual:** the CLI opened `svavak://expo-development-client/?url=http%3A%2F%2F<host LAN address>%3A8081`, although
+  the app has no dev client. The app started, but a LogBox banner ("Open debugger to view warnings") covered the
+  question band. After `am force-stop` and a normal start, no banner appeared.
+- **Severity:** low; it only affects the first start after an install. *(proposed)*
+- **Workaround:** restart the app normally (`adb shell am force-stop dev.svavak.tv`, then start it from the launcher or
+  with `am start`) before recording.
+- **Suggestion:** open the launcher activity when the project has no `expo-dev-client`. *(proposed)*
+
+## 2026-10-21: The Google TV launcher on the emulator draws blank app tiles
+
+- **Tool:** Android TV emulator image with the Google TV home (API 30, no internet on its Wi-Fi)
+- **Task attempted:** confirm that the launcher shows the renamed app's banner and label (B5).
+- **Steps:** pressed Home, then opened the Apps tab with the D-pad.
+- **Expected:** the installed apps' banners. *(proposed)*
+- **Actual:** five empty tiles; the banners appeared only after focus moved onto the row, and the label only on the
+  focused tile.
+- **Severity:** low. *(proposed)*
+- **Workaround:** moved focus onto the row, then onto the app, before the screenshot.
+- **Suggestion:** draw installed apps' banners without waiting for focus or network. *(proposed)*
+
+## 2026-10-21: Metro falls back to a full crawl when another Metro shares the project
+
+- **Tool:** Metro (Expo CLI, SDK 54)
+- **Task attempted:** start a second Metro for the renamed TV app on port 8081, while an earlier one still ran on 8082
+  for the same project (B5).
+- **Steps:** ran `yarn workspace tv expo start --port 8081`.
+- **Expected:** a normal start. *(proposed)*
+- **Actual:** `Error while reading cache, falling back to a full crawl: Error: Unable to deserialize cloned data.`
+  The bundle then built and served normally.
+- **Severity:** low; nothing failed. *(proposed)*
+- **Workaround:** none needed.
+- **Suggestion:** say which cache file was unreadable and whether another Metro is using it. *(proposed)*

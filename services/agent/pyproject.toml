@@ -1,11 +1,11 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The Say When sim agent (plan §4.5): a Strands agent over the server's MCP tools, managed with uv.
+# The SvaVāk sim agent (plan §4.5): a Strands agent over the server's MCP tools, managed with uv.
 
 [project]  # package metadata
-name = "say-when-agent"  # the service's name
+name = "svavak-agent"  # the service's name
 version = "0.1.0"  # first version
-description = "Say When sim agent: a Strands agent over the server's MCP tools, streaming its turns over SSE"  # what it is
+description = "SvaVāk sim agent: a Strands agent over the server's MCP tools, streaming its turns over SSE"  # what it is
 license = "Apache-2.0"  # SPDX licence expression
 authors = [{ name = "Sowmiya Arumugam" }]  # the author
 requires-python = "==3.12.*"  # Python 3.12, as in the agent's Compose image (plan Table 21)
@@ -27,8 +27,8 @@ dev = [  # tests and lint
 
 [tool.pytest.ini_options]  # pytest settings
 testpaths = ["tests"]  # where the tests are
-pythonpath = ["."]  # so the tests import say_when_agent from this folder
-addopts = "--cov=say_when_agent --cov-report=term-missing --cov-fail-under=80"  # coverage gate: 80%, as the server's
+pythonpath = ["."]  # so the tests import svavak_agent from this folder
+addopts = "--cov=svavak_agent --cov-report=term-missing --cov-fail-under=80"  # coverage gate: 80%, as the server's
 filterwarnings = [  # known warnings from the libraries, not from this code (docs/friction-log.md); anything else still shows
   "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",  # Starlette 1.9's TestClient
   "ignore:Use `streamable_http_client` instead:DeprecationWarning",  # Strands' MCPClient(url=...) calls mcp's deprecated helper

@@ -1,15 +1,17 @@
-# Say When agent
+# SvaVāk agent
+
+*Your Voice. Your Choice*
 
 The simulated Alexa+ of plan §4.5: a [Strands](https://strandsagents.com) agent that reaches Sam only through the
 [server](../server)'s MCP tools. It streams each caregiver turn as server-sent events, for the studio's caregiver panel
 (plan §4.7).
 
 - **Tools from MCP.** At start-up the agent connects to `http://127.0.0.1:8787/mcp` with Strands' `MCPClient` over
-  Streamable HTTP, sending `SAY_WHEN_AGENT_TOKEN`, and lists the server's tools: `ask_question`, `get_answer`,
+  Streamable HTTP, sending `SVAVAK_AGENT_TOKEN`, and lists the server's tools: `ask_question`, `get_answer`,
   `get_recent_messages` and `add_profile_fact`. The session stays open until the agent stops.
 - **One Strands agent per turn.** Every turn runs the real Strands tool loop with a fresh `Agent` and no memory of
   earlier turns; the model and the tool list are shared.
-- **Mock first.** `SAY_WHEN_MODE=mock` (the default) needs no AWS account. Live mode is tested only with a stub model
+- **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. Live mode is tested only with a stub model
   so far.
 - Bound to `127.0.0.1:8790`. Logs are JSON lines without caregiver text or answers.
 
@@ -21,14 +23,14 @@ Requirements: [uv](https://docs.astral.sh/uv/). It installs Python 3.12 itself w
 cd services/agent
 uv sync                                  # Python 3.12 and the exact versions in uv.lock
 yarn workspace server start              # first, in another terminal: the MCP server on 127.0.0.1:8787
-uv run python -m say_when_agent          # the agent; reads the repository's .env
+uv run python -m svavak_agent            # the agent; reads the repository's .env
 uv run pytest                            # tests with coverage (gate: 80%), against a stub MCP server
 uv run ruff check .                      # lint
 ```
 
 The agent stops at start-up with one line saying why, for example
-`say-when-agent: the MCP server at http://127.0.0.1:8787/mcp is unreachable: is it running? (yarn workspace server start)`,
-or `... refused SAY_WHEN_AGENT_TOKEN (HTTP 401): use the server's agent token from the repository's .env`.
+`svavak-agent: the MCP server at http://127.0.0.1:8787/mcp is unreachable: is it running? (yarn workspace server start)`,
+or `... refused SVAVAK_AGENT_TOKEN (HTTP 401): use the server's agent token from the repository's .env`.
 Any other HTTP error is named as such (`... answered HTTP 500 at initialize`).
 
 Pinned: `strands-agents` 1.61.1, `mcp` 1.30.0, `boto3[crt]` 1.43.114, `starlette` 1.9.0, `uvicorn` 0.54.0 and
@@ -42,15 +44,15 @@ It reads the repository's `.env`, and the process environment overrides it. The 
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SAY_WHEN_MODE` | `mock` | `mock` or `live`, as the server's |
-| `SAY_WHEN_AGENT_TOKEN` | none (required) | The server's agent token for `/mcp`: at least 16 visible ASCII characters, no spaces; never logged or printed |
+| `SVAVAK_MODE` | `mock` | `mock` or `live`, as the server's |
+| `SVAVAK_AGENT_TOKEN` | none (required) | The server's agent token for `/mcp`: at least 16 visible ASCII characters, no spaces; never logged or printed |
 | `AWS_PROFILE` | none | IAM Identity Center (SSO) profile; required in live mode, which refuses to start while `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) is set |
 | `AWS_REGION` | `eu-central-1` | Bedrock region |
-| `SAY_WHEN_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |
+| `SVAVAK_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |
 
 ## Modes
 
-**Live.** A Strands `BedrockModel` with the model set explicitly to `SAY_WHEN_MODEL_ID`, at temperature 0.2. Its region
+**Live.** A Strands `BedrockModel` with the model set explicitly to `SVAVAK_MODEL_ID`, at temperature 0.2. Its region
 is `AWS_REGION`, and its credentials come from the `AWS_PROFILE` session, never from access keys. The system prompt is
 the agent policy of plan §4.6:
 
@@ -77,7 +79,7 @@ Strands' `BedrockModel` streams (ConverseStream) by default and leaves `<thinkin
 below.
 
 **Mock.** The same agent and tool loop, driven by `MockModel`, a deterministic Strands model provider
-([say_when_agent/mock_model.py](say_when_agent/mock_model.py)). It reads the caregiver's words and the tool results
+([svavak_agent/mock_model.py](svavak_agent/mock_model.py)). It reads the caregiver's words and the tool results
 from the conversation and calls the tools as follows. Questions are asked as Alex, with "he (she, they) wants" turned
 into "would you like"; the rest is kept as typed. Case and closing punctuation are ignored.
 
@@ -140,8 +142,8 @@ alerts.
 
 | Path | Contents |
 | --- | --- |
-| `say_when_agent/config.py` | Settings |
-| `say_when_agent/mock_model.py` | The mock model provider |
-| `say_when_agent/service.py` | The MCP session, the policy and the turns |
-| `say_when_agent/app.py` | The HTTP interface and `main()` |
+| `svavak_agent/config.py` | Settings |
+| `svavak_agent/mock_model.py` | The mock model provider |
+| `svavak_agent/service.py` | The MCP session, the policy and the turns |
+| `svavak_agent/app.py` | The HTTP interface and `main()` |
 | `tests/` | pytest, against `tests/stub_server.py`: FastMCP with the server's four tool names, input types, limits and required fields, and its bearer-token check |

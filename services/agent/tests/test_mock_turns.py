@@ -6,7 +6,7 @@
 import asyncio  # drives a turn directly
 import json  # log lines
 
-from say_when_agent.mock_model import FAILED, HELP  # the mock's fixed sentences
+from svavak_agent.mock_model import FAILED, HELP  # the mock's fixed sentences
 
 TEA = {"question": "Would you like tea or coffee?", "asked_by": "Alex", "options": ["Tea", "Coffee"]}  # ask_question's input
 

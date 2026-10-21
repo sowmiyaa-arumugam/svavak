@@ -3,8 +3,8 @@
 // Gate K3 and the evaluation set's live run (plan §4.6, §10): asks the 30 evaluation questions on a running server,
 // one at a time, and takes from the server's trace the time from each ask to its question.candidates. Writes
 // test-results/k3/eval.md (each question's top four replies, the automatic checks, the time) and eval.json.
-// Usage, from the repository root, with the server running (SAY_WHEN_MODE=live for the gate): node tools/k3-eval.mjs
-// Reads SAY_WHEN_DEVICE_TOKEN from the git-ignored .env and never prints it. Exits 1 when the gate fails.
+// Usage, from the repository root, with the server running (SVAVAK_MODE=live for the gate): node tools/k3-eval.mjs
+// Reads SVAVAK_DEVICE_TOKEN from the git-ignored .env and never prints it. Exits 1 when the gate fails.
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'; // .env and the results
 import { EVAL_SET, evalChecks } from '../services/server/test/evalSet.ts'; // the questions and the checks (Node strips the types)
@@ -15,8 +15,8 @@ const GATE_MS = 2000; // K3: candidates p50 at most 2.0 s
 const OUT = 'test-results/k3'; // git-ignored
 
 if (existsSync('.env')) process.loadEnvFile('.env'); // the local settings, as the server reads them
-const token = process.env.SAY_WHEN_DEVICE_TOKEN; // the device token
-if (!token) fail('SAY_WHEN_DEVICE_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
+const token = process.env.SVAVAK_DEVICE_TOKEN; // the device token
+if (!token) fail('SVAVAK_DEVICE_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
 const headers = { Authorization: `Bearer ${token}` }; // on every call
 
 const events = []; // the stream's events

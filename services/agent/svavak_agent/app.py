@@ -68,13 +68,13 @@ async def sse(events: AsyncIterator[tuple[str, dict[str, Any]]]) -> AsyncIterato
         yield f"event: {name}\ndata: {json.dumps(data)}\n\n"  # json.dumps never writes a newline
 
 
-def main() -> None:  # python -m say_when_agent
+def main() -> None:  # python -m svavak_agent
     try:  # settings, model and MCP session
         config = load_config(read_env())  # from the repository's .env and the environment
         service = AgentService(config, MCP_URL)  # live mode resolves the AWS profile here
         tools = service.start()  # connects and lists the tools
     except (ValueError, StartupError, BotoCoreError) as error:  # a setting, the server or the profile
-        sys.exit(f"say-when-agent: {error}")  # the reason, without a traceback
+        sys.exit(f"svavak-agent: {error}")  # the reason, without a traceback
     log("agent.started", url=f"http://{HOST}:{PORT}", mode=config.mode, tools=tools)  # never the token
     try:  # serve until Ctrl+C
         uvicorn.run(create_app(service), host=HOST, port=PORT)  # loopback only

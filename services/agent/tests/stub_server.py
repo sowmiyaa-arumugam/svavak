@@ -51,7 +51,7 @@ class StubServer:  # `with StubServer(token) as stub:` serves on stub.url
         self.calls.append((name, {k: v for k, v in args.items() if v is not None}))  # unset optional inputs left out
 
     def tools(self) -> FastMCP:  # the four tools of plan Table 16, as the server declares them
-        mcp = FastMCP("say-when-stub", log_level="WARNING")  # loopback host: FastMCP allows Host 127.0.0.1:<any port>
+        mcp = FastMCP("svavak-stub", log_level="WARNING")  # loopback host: FastMCP allows Host 127.0.0.1:<any port>
 
         @mcp.tool(title="Ask a question on the TV", annotations=ToolAnnotations(readOnlyHint=False, idempotentHint=False))  # as the server
         def ask_question(  # puts a question on the TV

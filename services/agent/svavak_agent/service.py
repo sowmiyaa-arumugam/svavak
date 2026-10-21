@@ -127,7 +127,7 @@ def speak(said: str, heard: tuple[str, bool, dict[str, Any]] | None) -> str:  # 
 def explain(error: BaseException, url: str) -> str:  # a start-up failure in words
     status = find(error, httpx.HTTPStatusError)  # the server answered with an error
     if status is not None and status.response.status_code in (401, 403):  # the token: missing, wrong, or the device token
-        return f"the MCP server at {url} refused SAY_WHEN_AGENT_TOKEN (HTTP {status.response.status_code}): use the server's agent token from the repository's .env"  # what to do
+        return f"the MCP server at {url} refused SVAVAK_AGENT_TOKEN (HTTP {status.response.status_code}): use the server's agent token from the repository's .env"  # what to do
     if status is not None:  # any other error status
         return f"the MCP server at {url} answered HTTP {status.response.status_code} at initialize"  # what it was
     if find(error, httpx.TransportError) is not None:  # refused connection, timeout or DNS

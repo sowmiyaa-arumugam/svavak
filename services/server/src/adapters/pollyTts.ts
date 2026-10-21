@@ -9,8 +9,8 @@ import type { TtsPort } from '../ports/index.ts'; // the port
 /** The live speech adapter. */
 export class PollyTts implements TtsPort { // live speech adapter
   private readonly client: PollyClient; // configured with Polly's region and the SSO profile in compose.ts
-  private readonly voice: string; // a voice available in that region for the engine, from SAY_WHEN_VOICE
-  private readonly engine: 'neural' | 'standard'; // SAY_WHEN_POLLY_ENGINE
+  private readonly voice: string; // a voice available in that region for the engine, from SVAVAK_VOICE
+  private readonly engine: 'neural' | 'standard'; // SVAVAK_POLLY_ENGINE
   private readonly cache = new Map<string, Uint8Array>(); // SHA-256 of voice and text to MP3
 
   constructor(client: PollyClient, voice: string, engine: 'neural' | 'standard') { // a client, a voice and an engine

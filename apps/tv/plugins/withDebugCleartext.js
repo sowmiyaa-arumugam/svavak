@@ -15,7 +15,7 @@ const XML = [ // res/xml/network_security_config.xml, one line per entry
   '<network-security-config>', // root element
   '  <base-config cleartextTrafficPermitted="false" />', // every host: HTTPS only
   '  <domain-config cleartextTrafficPermitted="true">', // except
-  '    <domain includeSubdomains="false">10.0.2.2</domain>', // the emulator's alias for the host: Metro and the Say When server
+  '    <domain includeSubdomains="false">10.0.2.2</domain>', // the emulator's alias for the host: Metro and the SvaVāk server
   '  </domain-config>', // end of the exception
   '</network-security-config>', // end of root
   '', // final newline

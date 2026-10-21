@@ -4,7 +4,7 @@
 // TV, then get_recent_messages. Uses the official MCP SDK client over Streamable HTTP, as an agent would.
 // Usage, from the repository root, with the server running: node tools/mcp-smoke.mjs ["expected answer"]
 // Press the switch on the TV (Enter on the emulator) when the expected answer (Tea by default) lights up.
-// Reads SAY_WHEN_AGENT_TOKEN from the git-ignored .env and never prints it.
+// Reads SVAVAK_AGENT_TOKEN from the git-ignored .env and never prints it.
 
 import { existsSync } from 'node:fs'; // does .env exist?
 import { createRequire } from 'node:module'; // resolves the SDK from the server workspace
@@ -18,8 +18,8 @@ const ROUNDS = 8; // up to 200 s for the presses
 const expected = process.argv[2] ?? 'Tea'; // the answer to choose on the TV
 
 if (existsSync('.env')) process.loadEnvFile('.env'); // the local settings, as the server reads them
-const token = process.env.SAY_WHEN_AGENT_TOKEN; // the agent token, never the TV's
-if (!token) fail('SAY_WHEN_AGENT_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
+const token = process.env.SVAVAK_AGENT_TOKEN; // the agent token, never the TV's
+if (!token) fail('SVAVAK_AGENT_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
 
 const sdk = createRequire(new URL('../services/server/package.json', import.meta.url)); // the SDK lives in the server workspace only (nmHoistingLimits: workspaces)
 const load = (path) => import(pathToFileURL(sdk.resolve(`@modelcontextprotocol/sdk/${path}`)).href); // one SDK module

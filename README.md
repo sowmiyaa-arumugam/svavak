@@ -1,4 +1,6 @@
-# Say When
+# SvaVāk
+
+*Your Voice. Your Choice*
 
 A single-switch AAC (augmentative and alternative communication) communicator for Fire TV, built for the
 Amazon Developer Hackathon 2026.

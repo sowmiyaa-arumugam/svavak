@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Smoke test for a running server: posts a question and checks that it reaches a WebSocket client.
 // Usage, from the repository root, with the server running: node tools/smoke-stream.mjs ["question text"]
-// Needs only Node 24: fetch and WebSocket are built in. Reads SAY_WHEN_DEVICE_TOKEN from the git-ignored .env.
+// Needs only Node 24: fetch and WebSocket are built in. Reads SVAVAK_DEVICE_TOKEN from the git-ignored .env.
 
 import { existsSync } from 'node:fs'; // does .env exist?
 
@@ -11,8 +11,8 @@ const TIMEOUT_MS = 5000; // the whole check must finish within this
 const text = process.argv[2] ?? 'Would you like tea or coffee?'; // the question; the demo question by default
 
 if (existsSync('.env')) process.loadEnvFile('.env'); // the local settings, as the server reads them
-const token = process.env.SAY_WHEN_DEVICE_TOKEN; // the device token
-if (!token) fail('SAY_WHEN_DEVICE_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
+const token = process.env.SVAVAK_DEVICE_TOKEN; // the device token
+if (!token) fail('SVAVAK_DEVICE_TOKEN is not set (copy .env.example to .env and set it)'); // nothing to authenticate with
 const headers = { Authorization: `Bearer ${token}` }; // on every call
 
 const timer = setTimeout(() => fail(`no question.created within ${TIMEOUT_MS} ms`), TIMEOUT_MS); // overall deadline

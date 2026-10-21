@@ -9,9 +9,9 @@ import pytest  # fixtures
 from starlette.testclient import TestClient  # in-process HTTP client
 from stub_server import StubServer  # the stub of the server's /mcp
 
-from say_when_agent.app import create_app  # the HTTP interface
-from say_when_agent.config import Config  # settings
-from say_when_agent.service import AgentService  # the agent
+from svavak_agent.app import create_app  # the HTTP interface
+from svavak_agent.config import Config  # settings
+from svavak_agent.service import AgentService  # the agent
 
 TOKEN = "agent-token-for-tests-0123"  # a synthetic agent token
 BASE_URL = "http://127.0.0.1:8790"  # so requests carry Host 127.0.0.1:8790, as a real client's do

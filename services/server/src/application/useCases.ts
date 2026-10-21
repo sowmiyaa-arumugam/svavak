@@ -12,7 +12,7 @@ import type { LlmPort, Log, NotifierPort, StorePort, SuggestRequest, TracePort, 
 
 /** Everything the use-cases need, wired by compose.ts (or by a test). */
 export interface Deps { // ports and settings
-  mode: 'mock' | 'live'; // SAY_WHEN_MODE
+  mode: 'mock' | 'live'; // SVAVAK_MODE
   store: StorePort; // persistence
   notifier: NotifierPort; // pushes to the TV
   trace: TracePort; // spans for the studio

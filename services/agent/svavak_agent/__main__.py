@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# Entry point: `uv run python -m say_when_agent` from services/agent.
+# Entry point: `uv run python -m svavak_agent` from services/agent.
 
 from .app import main  # starts the agent
 

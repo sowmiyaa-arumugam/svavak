@@ -152,8 +152,8 @@ describe('PollyTts', () => { // neural MP3 with a cache
   }); // end of the case
 }); // end of PollyTts
 
-describe('compose', () => { // adapter selection by SAY_WHEN_MODE
-  const config: Config = { mode: 'live', deviceToken: 'x'.repeat(32), agentToken: 'y'.repeat(32), mcpAllowedHosts: ['localhost'], mcpAllowedOrigins: [], awsProfile: 'say-when-dev', awsRegion: 'eu-central-1', modelId: MODEL, voice: 'Brian', pollyRegion: 'eu-north-1', pollyEngine: 'standard' }; // live settings, Polly in its own region
+describe('compose', () => { // adapter selection by SVAVAK_MODE
+  const config: Config = { mode: 'live', deviceToken: 'x'.repeat(32), agentToken: 'y'.repeat(32), mcpAllowedHosts: ['localhost'], mcpAllowedOrigins: [], awsProfile: 'svavak-dev', awsRegion: 'eu-central-1', modelId: MODEL, voice: 'Brian', pollyRegion: 'eu-north-1', pollyEngine: 'standard' }; // live settings, Polly in its own region
 
   it('wires Bedrock and Polly with their regions and the SSO profile in live mode, without calling AWS', async () => { // live
     const { deps } = compose(config, () => {}); // no network until a request
@@ -164,7 +164,7 @@ describe('compose', () => { // adapter selection by SAY_WHEN_MODE
     expect([llm.modelId, tts.voice, tts.engine]).toEqual([MODEL, 'Brian', 'standard']); // from the config
     expect(await llm.client.config.region()).toBe('eu-central-1'); // Bedrock in Frankfurt
     expect(await tts.client.config.region()).toBe('eu-north-1'); // Polly in its own region
-    expect([llm.client.config.profile, tts.client.config.profile]).toEqual(['say-when-dev', 'say-when-dev']); // the SSO profile
+    expect([llm.client.config.profile, tts.client.config.profile]).toEqual(['svavak-dev', 'svavak-dev']); // the SSO profile
     expect(bedrock.calls()).toHaveLength(0); // nothing sent
   }); // end of the case
 

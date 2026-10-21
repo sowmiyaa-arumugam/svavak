@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Composition root: picks the adapters for SAY_WHEN_MODE and wires them to the use-cases and interfaces.
+// Composition root: picks the adapters for SVAVAK_MODE and wires them to the use-cases and interfaces.
 
 import { randomUUID } from 'node:crypto'; // random ids
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime'; // live model

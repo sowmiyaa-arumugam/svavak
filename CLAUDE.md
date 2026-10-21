@@ -1,8 +1,10 @@
-# CLAUDE.md: Say When
+# CLAUDE.md: SvaVāk
 
 Single-switch AAC communicator for Fire TV, entered in the Amazon Developer Hackathon 2026
-(deadline Fri 23 Oct 2026, 21:00 CEST). The product is "Say When" (decision D1), replacing the working name
-"Aloud", which folder and package names still use. Author and owner: Sowmiya Arumugam.
+(deadline Fri 23 Oct 2026, 21:00 CEST). The product is "SvaVāk", tagline "Your Voice. Your Choice" (decision D1,
+20 Oct 2026), replacing the working name "Aloud", which the repository folder and the root workspace package still
+use. Where ā cannot go, it is plain ASCII: "svavak" in package ids, slugs and identifiers, `SVAVAK_` in settings.
+Author and owner: Sowmiya Arumugam.
 Licence: Apache-2.0.
 
 ## Plan (source of truth)

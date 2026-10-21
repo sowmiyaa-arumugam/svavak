@@ -1,13 +1,15 @@
-# Say When server
+# SvaVāk server
+
+*Your Voice. Your Choice*
 
 One Node.js service for the TV and for caregiver agents (plan §3.2, §4.3, §4.4): REST, the WebSocket question stream
 and the trace stream for the TV, and an MCP endpoint for agents, over a ports-and-adapters core. It covers flow S1:
 questions, their reply candidates and utterances, asked and answered through MCP.
 
-- **Mock first.** `SAY_WHEN_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
+- **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
   the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
   AWS.
-- **Live mode** (`SAY_WHEN_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It has been tested only
+- **Live mode** (`SVAVAK_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It has been tested only
   against AWS SDK client mocks so far: the first live calls were refused while the AWS account was being verified. See
   [Live mode](#live-mode) for what to set up.
 - **In memory.** Nothing survives a restart; SQLite is cut for now.
@@ -16,7 +18,7 @@ questions, their reply candidates and utterances, asked and answered through MCP
 ## Run
 
 ```bash
-yarn workspace server start        # reads the repository's .env; mock mode unless SAY_WHEN_MODE=live
+yarn workspace server start        # reads the repository's .env; mock mode unless SVAVAK_MODE=live
 node tools/smoke-stream.mjs        # with the server running: posts a question and checks it reaches a WebSocket client
 node tools/mcp-smoke.mjs           # with the server and the TV running: ask_question, answer Tea on the TV, get_answer
 node tools/k3-eval.mjs             # with the server running: the 30 evaluation questions, gate K3 timing, test-results/k3/eval.md
@@ -33,21 +35,21 @@ Copy `.env.example` to `.env` at the repository root. The server refuses to star
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SAY_WHEN_MODE` | `mock` | `mock` or `live` |
-| `SAY_WHEN_DEVICE_TOKEN` | none (required) | The TV's static bearer token, at least 16 characters; the TV's debug build embeds it |
-| `SAY_WHEN_AGENT_TOKEN` | none (required) | Bearer token for caregiver or agent MCP clients, at least 16 characters and different from the device token |
-| `SAY_WHEN_MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host names `/mcp` accepts, comma-separated (any port) |
-| `SAY_WHEN_MCP_ALLOWED_ORIGINS` | `http://localhost:5173` | Browser origins `/mcp` accepts, comma-separated; requests without an `Origin` header are allowed |
+| `SVAVAK_MODE` | `mock` | `mock` or `live` |
+| `SVAVAK_DEVICE_TOKEN` | none (required) | The TV's static bearer token, at least 16 characters; the TV's debug build embeds it |
+| `SVAVAK_AGENT_TOKEN` | none (required) | Bearer token for caregiver or agent MCP clients, at least 16 characters and different from the device token |
+| `SVAVAK_MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Host names `/mcp` accepts, comma-separated (any port) |
+| `SVAVAK_MCP_ALLOWED_ORIGINS` | `http://localhost:5173` | Browser origins `/mcp` accepts, comma-separated; requests without an `Origin` header are allowed |
 | `AWS_PROFILE` | none | An `aws login` or IAM Identity Center (SSO) profile; required in live mode |
-| `AWS_REGION` | `eu-central-1` | Region for Bedrock, and for Polly unless `SAY_WHEN_POLLY_REGION` is set |
-| `SAY_WHEN_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |
-| `SAY_WHEN_VOICE` | `Brian` | Polly voice; it must exist for the engine in Polly's region |
-| `SAY_WHEN_POLLY_REGION` | `AWS_REGION` | Region for Polly |
-| `SAY_WHEN_POLLY_ENGINE` | `neural` | `neural` or `standard`; standard where the region has no neural voices, such as eu-north-1 |
+| `AWS_REGION` | `eu-central-1` | Region for Bedrock, and for Polly unless `SVAVAK_POLLY_REGION` is set |
+| `SVAVAK_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |
+| `SVAVAK_VOICE` | `Brian` | Polly voice; it must exist for the engine in Polly's region |
+| `SVAVAK_POLLY_REGION` | `AWS_REGION` | Region for Polly |
+| `SVAVAK_POLLY_ENGINE` | `neural` | `neural` or `standard`; standard where the region has no neural voices, such as eu-north-1 |
 
 ## API
 
-Every route except `/healthz` and `/mcp` needs `Authorization: Bearer <SAY_WHEN_DEVICE_TOKEN>`: a missing or wrong
+Every route except `/healthz` and `/mcp` needs `Authorization: Bearer <SVAVAK_DEVICE_TOKEN>`: a missing or wrong
 token gets 401, and the agent token gets 403, so an agent can never post an answer. Errors are
 `application/problem+json` (RFC 9457). These routes have no Host check: the emulator reaches the server as `10.0.2.2`.
 
@@ -109,10 +111,10 @@ audio; past the daily cap, the reply gets the mock's tone.
   live in memory and end on DELETE, after 30 minutes without requests, or on a restart.
 - **Protocol version.** The SDK negotiates it at `initialize`: 2025-11-25 is the latest. On later requests an
   unsupported `MCP-Protocol-Version` header gets 400; a missing one is accepted.
-- **Access.** Only `Authorization: Bearer <SAY_WHEN_AGENT_TOKEN>`: a missing or wrong token gets 401 (with
+- **Access.** Only `Authorization: Bearer <SVAVAK_AGENT_TOKEN>`: a missing or wrong token gets 401 (with
   `WWW-Authenticate: Bearer`), the device token 403. Tokens are compared in constant time. Against DNS rebinding,
-  the Host name (any port) must be in `SAY_WHEN_MCP_ALLOWED_HOSTS` (the SDK's `hostHeaderValidation`), and an `Origin`
-  header, when there is one, must be in `SAY_WHEN_MCP_ALLOWED_ORIGINS`; otherwise 403. Bodies are JSON, at most 32 KB.
+  the Host name (any port) must be in `SVAVAK_MCP_ALLOWED_HOSTS` (the SDK's `hostHeaderValidation`), and an `Origin`
+  header, when there is one, must be in `SVAVAK_MCP_ALLOWED_ORIGINS`; otherwise 403. Bodies are JSON, at most 32 KB.
   The token check answers with problem+json; the Host, Origin and session checks answer with a JSON-RPC error, as the
   SDK does.
 - **Trace.** Each tool call adds a span `{hop: "mcp", operation: <tool name>, duration_ms, mode}` when its response
@@ -144,7 +146,7 @@ To try it with the MCP Inspector v2 CLI (with `--stored-auth-only` it never star
 headers), with the token loaded from `.env` into the shell first:
 
 ```bash
-npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8787/mcp --transport http --header "Authorization: Bearer $SAY_WHEN_AGENT_TOKEN" --method tools/list --stored-auth-only
+npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8787/mcp --transport http --header "Authorization: Bearer $SVAVAK_AGENT_TOKEN" --method tools/list --stored-auth-only
 ```
 
 ## Live mode
@@ -159,11 +161,11 @@ Not run against AWS yet: on 2026-10-20 every Bedrock Converse call in eu-central
 2. In `.env`, set:
    - `AWS_PROFILE=<profile>`
    - `AWS_REGION=eu-central-1`
-   - `SAY_WHEN_MODEL_ID=eu.amazon.nova-2-lite-v1:0`
-   - `SAY_WHEN_VOICE`, `SAY_WHEN_POLLY_REGION` and `SAY_WHEN_POLLY_ENGINE`: a voice this check lists for the engine,
+   - `SVAVAK_MODEL_ID=eu.amazon.nova-2-lite-v1:0`
+   - `SVAVAK_VOICE`, `SVAVAK_POLLY_REGION` and `SVAVAK_POLLY_ENGINE`: a voice this check lists for the engine,
      for example `aws polly describe-voices --region eu-north-1 --language-code en-GB --profile <profile>`, which lists
      Amy, Brian and Emma with the standard engine only.
-3. Start the server with `SAY_WHEN_MODE=live` set in the shell for that run; the environment overrides `.env`.
+3. Start the server with `SVAVAK_MODE=live` set in the shell for that run; the environment overrides `.env`.
 
 The SDK's default credential chain resolves the profile: `aws login` profiles since SDK 3.936.0 (installed: 3.1146.0),
 SSO profiles always. The server never reads or stores access keys, and when a profile is set the chain skips

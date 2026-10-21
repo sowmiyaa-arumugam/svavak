@@ -1,7 +1,7 @@
 {
   "name": "tv",
   "version": "0.1.0",
-  "description": "Say When TV app for Fire TV: the conversation screen",
+  "description": "SvaVāk TV app for Fire TV: the conversation screen",
   "license": "Apache-2.0",
   "author": "Sowmiya Arumugam",
   "private": true,

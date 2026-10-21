@@ -704,43 +704,6 @@ wheels = [
 ]
 
 [[package]]
-name = "say-when-agent"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "boto3", extra = ["crt"] },
-    { name = "mcp" },
-    { name = "python-dotenv" },
-    { name = "starlette" },
-    { name = "strands-agents" },
-    { name = "uvicorn" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "boto3", extras = ["crt"], specifier = "==1.43.114" },
-    { name = "mcp", specifier = "==1.30.0" },
-    { name = "python-dotenv", specifier = "==1.2.4" },
-    { name = "starlette", specifier = "==1.9.0" },
-    { name = "strands-agents", specifier = "==1.61.1" },
-    { name = "uvicorn", specifier = "==0.54.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = "==9.1.1" },
-    { name = "pytest-cov", specifier = "==7.1.0" },
-    { name = "ruff", specifier = "==0.17.1" },
-]
-
-[[package]]
 name = "six"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -797,6 +760,43 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b7/38/1b15f10b681acf682521382af050f0a16cb498f0cfa949d77487797c1b8b/strands_agents-1.61.1.tar.gz", hash = "sha256:ccf14ac4b7a036f0460ca0a9e09407540910c0d2906729e8ceed097eb502e803", size = 1769033, upload-time = "2026-10-15T20:26:10.608Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/89/00/f04e7113e9d25e81a0affac2c686e0387869d29126108758121ebd8774be/strands_agents-1.61.1-py3-none-any.whl", hash = "sha256:ee0720a0dacdfa2fc745f7260a58d9868067d7bd16c2cfbcb7631475fc0258dd", size = 886728, upload-time = "2026-10-15T20:26:08.58Z" },
+]
+
+[[package]]
+name = "svavak-agent"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "boto3", extra = ["crt"] },
+    { name = "mcp" },
+    { name = "python-dotenv" },
+    { name = "starlette" },
+    { name = "strands-agents" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", extras = ["crt"], specifier = "==1.43.114" },
+    { name = "mcp", specifier = "==1.30.0" },
+    { name = "python-dotenv", specifier = "==1.2.4" },
+    { name = "starlette", specifier = "==1.9.0" },
+    { name = "strands-agents", specifier = "==1.61.1" },
+    { name = "uvicorn", specifier = "==0.54.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+    { name = "ruff", specifier = "==0.17.1" },
 ]
 
 [[package]]

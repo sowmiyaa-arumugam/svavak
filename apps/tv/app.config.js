@@ -7,16 +7,17 @@ const fs = require('fs'); // file checks
 const path = require('path'); // path helpers
 
 const envFile = path.resolve(__dirname, '../../.env'); // the repository's git-ignored settings, shared with the server
-if (fs.existsSync(envFile)) process.loadEnvFile(envFile); // SAY_WHEN_DEVICE_TOKEN, when set
+if (fs.existsSync(envFile)) process.loadEnvFile(envFile); // SVAVAK_DEVICE_TOKEN, when set
 
 module.exports = { // read by the Expo CLI for prebuild, build and start
   expo: { // the Expo app config
-    name: 'Say When', // display name on the TV
-    slug: 'say-when', // Expo project identifier
-    android: { package: 'dev.saywhen.tv' }, // Android application id
+    name: 'SvaVāk', // display name on the TV
+    slug: 'svavak', // Expo project identifier: plain ASCII, as the name's ā cannot go here
+    scheme: 'svavak', // deep-link scheme (svavak://), plain ASCII too
+    android: { package: 'dev.svavak.tv' }, // Android application id
     newArchEnabled: false, // the sample's setting: React Native's legacy architecture
     extra: { // embedded in the APK by expo-constants at build time; read by src/server.ts
-      server: { url: 'http://10.0.2.2:8787', token: process.env.SAY_WHEN_DEVICE_TOKEN ?? '' }, // the emulator's host; no token: fixtures only
+      server: { url: 'http://10.0.2.2:8787', token: process.env.SVAVAK_DEVICE_TOKEN ?? '' }, // the emulator's host; no token: fixtures only
     }, // end of extra
     plugins: [ // config plugins applied at prebuild
       './plugins/withKeyEvent', // forwards every key event to JavaScript (react-native-keyevent)

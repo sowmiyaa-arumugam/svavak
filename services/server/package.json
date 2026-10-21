@@ -1,7 +1,7 @@
 {
   "name": "server",
   "version": "0.1.0",
-  "description": "Say When server: REST, WebSocket stream and trace for the TV, and an MCP endpoint for agents, with mock and live (Bedrock, Polly) adapters",
+  "description": "SvaVāk server: REST, WebSocket stream and trace for the TV, and an MCP endpoint for agents, with mock and live (Bedrock, Polly) adapters",
   "license": "Apache-2.0",
   "author": "Sowmiya Arumugam",
   "private": true,

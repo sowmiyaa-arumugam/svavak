@@ -10,10 +10,10 @@ from botocore.exceptions import ProfileNotFound  # boto's error for an unknown p
 from conftest import BASE_URL, config, parse  # shared helpers
 from starlette.testclient import TestClient  # in-process HTTP client
 
-from say_when_agent.app import create_app  # the HTTP interface
-from say_when_agent.service import POLICY, AgentService  # the system prompt and the agent
+from svavak_agent.app import create_app  # the HTTP interface
+from svavak_agent.service import POLICY, AgentService  # the system prompt and the agent
 
-PROFILE = "say-when-test"  # a profile that exists only in the test's AWS config file
+PROFILE = "svavak-test"  # a profile that exists only in the test's AWS config file
 
 
 @pytest.fixture  # AWS settings with one profile and no credentials anywhere
