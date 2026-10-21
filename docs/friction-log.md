@@ -650,13 +650,16 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Expected:** a short reply, or an error from Bedrock.
 - **Actual:** the CLI stopped before calling Bedrock, exit code 255: `aws: [ERROR]: Unable to create or refresh login
   credentials due to insufficient permissions. You may be missing permission for the 'signin:CreateOAuth2Token'
-  action.` As the task brief says, all AWS work stopped there, with no retry; one more single call is to be tried
-  later.
+  action.` As the task brief says, all AWS work stopped there, with no retry. The one further call the brief allows,
+  made at 07:17 UTC after the studio was committed, failed the same way before reaching Bedrock, with a different
+  message: `aws: [ERROR]: Your session has expired. Please reauthenticate using 'aws login'.` No other AWS call was
+  made; the live part of gate K3 is still to be run.
 - **Severity:** high: it blocks every live step of gate K3. *(proposed)*
 - **Workaround:** none from the repository; signing in again, or granting the identity `signin:CreateOAuth2Token`, is
   the account owner's call.
 - **Suggestion:** say whether the stored sign-in expired or the identity lacks the permission, and name the command
-  that fixes it. *(proposed)*
+  that fixes it: the two calls, 100 minutes apart, gave two different reasons for what looks like one expired sign-in.
+  *(proposed)*
 
 ## 2026-10-21: TypeScript's DOM and Node typings disagree on `TextDecoderStream`
 

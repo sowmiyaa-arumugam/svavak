@@ -164,7 +164,8 @@ npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8
 ## Live mode
 
 Not run against AWS yet: on 2026-10-20 every Bedrock Converse call in eu-central-1 was refused with
-`AccessDeniedException` while the AWS account was being verified. To set it up:
+`AccessDeniedException` while the AWS account was being verified, and on 2026-10-21 the `aws login` session could not
+be refreshed (`Your session has expired. Please reauthenticate using 'aws login'.`). To set it up:
 
 1. Sign in with `aws login --profile <profile>` (AWS CLI 2.32 or later), or create an IAM Identity Center profile with
    `aws configure sso` and sign in with `aws sso login --profile <profile>`. The identity needs `bedrock:InvokeModel`
