@@ -1,0 +1,28 @@
+{
+  "name": "studio",
+  "version": "0.1.0",
+  "description": "SvaVāk studio: caregiver panel, virtual TV, engine view and system trace on localhost",
+  "license": "Apache-2.0",
+  "author": "Sowmiya Arumugam",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "switchclock": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.19.1",
+    "@types/react": "19.1.17",
+    "@types/react-dom": "19.1.11",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  }
+}

@@ -4,6 +4,8 @@
 
 export const HOST = '127.0.0.1'; // loopback only; the Android emulator reaches it as 10.0.2.2
 export const PORT = 8787; // the server's port
+export const STUDIO_ORIGIN = 'http://localhost:5173'; // the studio (plan §4.7): the browser origin /v1/trace and /v1/stream accept
+export const TV_ORIGIN = `http://10.0.2.2:${PORT}`; // the emulator TV: React Native's Android WebSocket sends the URL's own origin
 
 /** Validated settings. AWS credentials are never part of it: the SDK's default chain resolves the SSO profile. */
 export interface Config { // what compose.ts needs

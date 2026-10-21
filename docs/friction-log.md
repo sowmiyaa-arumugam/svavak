@@ -226,7 +226,8 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   files, until the session restated the callers, the purpose and the user's instruction: about 20 blocks in one session.
   Met again on 2026-10-19 (B4): the first Bash command of the session was blocked once. Met again on 2026-10-21 (B5):
   the first Bash command, the first file in the session's scratchpad folder (a throwaway rename script) and a
-  `rm -rf` of a git-ignored `__pycache__` folder were each blocked until the facts were restated.
+  `rm -rf` of a git-ignored `__pycache__` folder were each blocked until the facts were restated. A script that only
+  appended to this log was also blocked as destructive, because the text it wrote mentioned that command.
 - **Severity:** low; each block costs one retry. *(proposed)*
 - **Workaround:** stated the facts and retried each time. Since 2026-10-18 the git-ignored `.claude/settings.local.json`
   sets `GATEGUARD_EXEMPT_GLOBS=**`, which exempts edits to the repository's own paths; destructive-command checks stay
@@ -530,7 +531,8 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   held the folder; it still had a git-ignored `__pycache__` folder in it.
 - **Severity:** low; a short workaround exists. *(proposed)*
 - **Workaround:** created the new folder and ran `git mv` on each tracked file, then removed the old `__pycache__` and
-  the empty folder.
+  the empty folder. Met again the same day (Part D) with a plain `mv` of an untracked draft folder, one of whose
+  files the Claude desktop app had just opened in its Browser pane; copying the folder and deleting the old one worked.
 - **Suggestion:** fall back to moving the tracked files one by one when renaming the folder fails, or name the file
   that blocked it. *(proposed)*
 
@@ -636,3 +638,65 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** none; left as is.
 - **Suggestion:** let `MCPClient.stop()` wait for its own clean-up task, and have the SDK treat a stream closed by its
   own client as a normal end. *(proposed)*
+
+## 2026-10-21: An `aws login` profile cannot refresh its credentials
+
+- **Tool:** AWS CLI 2.38.2 with an `aws login` profile (the new AWS sign-in experience), Bedrock Runtime in
+  eu-central-1
+- **Task attempted:** the single Bedrock probe call that starts the live part of gate K3 (B5 Part C).
+- **Steps:** at 2026-10-21 05:35 UTC, one `aws bedrock-runtime converse` call to `eu.amazon.nova-2-lite-v1:0` with
+  `--profile <profile>`, `maxTokens` 16 and retries off (`AWS_MAX_ATTEMPTS=1`); the user had signed in with
+  `aws login` that morning.
+- **Expected:** a short reply, or an error from Bedrock.
+- **Actual:** the CLI stopped before calling Bedrock, exit code 255: `aws: [ERROR]: Unable to create or refresh login
+  credentials due to insufficient permissions. You may be missing permission for the 'signin:CreateOAuth2Token'
+  action.` As the task brief says, all AWS work stopped there, with no retry; one more single call is to be tried
+  later.
+- **Severity:** high: it blocks every live step of gate K3. *(proposed)*
+- **Workaround:** none from the repository; signing in again, or granting the identity `signin:CreateOAuth2Token`, is
+  the account owner's call.
+- **Suggestion:** say whether the stored sign-in expired or the identity lacks the permission, and name the command
+  that fixes it. *(proposed)*
+
+## 2026-10-21: TypeScript's DOM and Node typings disagree on `TextDecoderStream`
+
+- **Tool:** TypeScript 5.9.3 with `lib: ["DOM"]` and `@types/node` 24.19.1 in one project (the studio, B5 Part D)
+- **Task attempted:** decode a `fetch` response body as text with `body.pipeThrough(new TextDecoderStream())`.
+- **Steps:** ran `yarn workspace studio typecheck`; the project includes Node types for its Vite and Playwright configs.
+- **Expected:** it compiles, as the same code runs in the browser. *(proposed)*
+- **Actual:** `TS2345: Argument of type 'TextDecoderStream' is not assignable to parameter of type
+  'ReadableWritablePair<string, Uint8Array<ArrayBufferLike>>' ... Type 'BufferSource' is not assignable to type
+  'Uint8Array<ArrayBufferLike>'`.
+- **Severity:** low. *(proposed)*
+- **Workaround:** read the body with `getReader()` and a `TextDecoder` in streaming mode instead.
+- **Suggestion:** align the two typings of the streams API, or say in the docs which to use when both are loaded.
+  *(proposed)*
+
+## 2026-10-21: React Native's Android WebSocket sends an Origin header
+
+- **Tool:** React Native 0.81 (react-native-tvos 0.81.5-2), `WebSocketModule.kt`
+- **Task attempted:** refuse `/v1/stream` to any browser Origin but the studio's, on the understanding that the TV
+  sends none (B5 Part D).
+- **Steps:** added the Origin check; the server's tests passed; then the TV app on the emulator was left on practice
+  questions, and the server logged no connection from it.
+- **Expected:** a native client sends no `Origin`, as Node's `ws` and the TV's `fetch` do not. *(proposed)*
+- **Actual:** when the app sets no `Origin`, React Native's Android WebSocket adds one derived from the URL
+  (`getDefaultOrigin`): `http://10.0.2.2:8787` on the emulator. The check answered 403, so the TV fell back to
+  practice.
+- **Severity:** medium; nothing on the TV said why it could not connect. *(proposed)*
+- **Workaround:** the server also accepts the emulator TV's origin, `http://10.0.2.2:8787`, as a fixed value (not the
+  request's own Host, which a DNS-rebound page could match); a test covers it, and the emulator connected again.
+- **Suggestion:** document the default `Origin` in React Native's WebSocket guide. *(proposed)*
+
+## 2026-10-21: Metro stops serving the bundle after `yarn install`
+
+- **Tool:** Metro (Expo CLI, SDK 54) with Yarn 4.5 workspaces (`nodeLinker: node-modules`)
+- **Task attempted:** keep the TV app on the emulator running while the studio's dependencies were added (B5 Part D).
+- **Steps:** Metro ran on port 8081; `yarn install` added the studio workspace; the app was then restarted.
+- **Expected:** Metro picks up the changed `node_modules` and serves the bundle. *(proposed)*
+- **Actual:** the app showed "Refreshing..." and then "Loading from 10.0.2.2:8081..." with no end; Metro answered
+  `/status` but its bundle stayed at 0%.
+- **Severity:** low; a restart fixes it. *(proposed)*
+- **Workaround:** restarted Metro with `--clear`, then the app.
+- **Suggestion:** Metro could notice that `node_modules` was relinked and rebuild its file map, or say so in its log.
+  *(proposed)*

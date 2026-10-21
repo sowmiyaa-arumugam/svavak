@@ -28,6 +28,8 @@ export interface HttpOptions { // wired by compose.ts or a test
   log: Log; // JSON log lines
   pingMs: number; // ping interval on the stream
   mcpIdleMs: number; // an MCP session ends after this long without requests
+  studioOrigin: string; // the studio's browser origin: CORS on /v1, and one of the two Origins /v1/trace and /v1/stream accept
+  tvOrigin: string; // the emulator TV's origin, which React Native's Android WebSocket derives from the URL: the other one
 } // end of HttpOptions
 
 /** POST /v1/questions: the dev endpoint (tools/smoke-stream.mjs); agents use ask_question on /mcp. */
@@ -67,6 +69,15 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
 
   app.get('/healthz', (_req, res) => { res.json({ status: 'ok' }); }); // liveness, no token, no data
 
+  const allowedOrigin = (origin: string | undefined) => origin === undefined || origin === o.studioOrigin || origin === o.tvOrigin; // none (tools), the studio's, or the emulator TV's; a fixed list, so a DNS-rebound page cannot pass
+  app.use('/v1', (req, res, next) => { // the studio's browser calls (plan §4.7): CORS for its origin only
+    if (req.get('origin') !== o.studioOrigin) return next(); // the TV and tools send no Origin; other sites get no CORS headers
+    res.set({ 'Access-Control-Allow-Origin': o.studioOrigin, Vary: 'Origin' }); // the studio may read the response
+    if (req.method !== 'OPTIONS') return next(); // the request itself
+    res.set({ 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key', 'Access-Control-Max-Age': '600' }); // what the studio sends
+    res.status(204).end(); // its preflight, answered before the span and the token check: browsers send no token on it
+  }); // end of CORS
+
   app.use((req, res, next) => { // one span per request (plan §4.3 observability), except the trace stream itself
     if (req.path === '/v1/trace') return next(); // an SSE stream never finishes
     const started = performance.now(); // request start
@@ -76,6 +87,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
 
   app.all('/mcp', ...mcpHandlers({ useCases: o.useCases, trace: o.trace, mode: o.mode, log: o.log, allowedHosts: o.mcpAllowedHosts, allowedOrigins: o.mcpAllowedOrigins, authorize: allow('agent'), idleMs: o.mcpIdleMs })); // MCP: Host, Origin and the agent token; no Host check on the TV's routes (the emulator calls the host 10.0.2.2)
 
+  app.use('/v1/trace', (req, res, next) => (allowedOrigin(req.get('origin')) ? next() : problem(res, 403, 'Origin not allowed'))); // plan §6.1: another site's page must not read the trace
   app.use(allow('device')); // the device token on every call below; the agent token gets 403
 
   app.use(express.json({ limit: '32kb' })); // plan §6.2: 32 KB JSON limit; parsed only after authentication
@@ -125,7 +137,8 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
   server.on('upgrade', (req, socket, head) => { // GET /v1/stream (WebSocket)
     const path = new URL(req.url ?? '/', 'http://localhost').pathname; // the path, without a query
     if (path !== '/v1/stream') return refuse(socket, 404); // the only WebSocket route
-    const who = caller(req.headers.authorization); // the device token here too
+    if (!allowedOrigin(req.headers.origin)) return refuse(socket, 403); // another site's page, even with the token
+    const who = caller(req.headers.authorization ?? subprotocolBearer(req.headers['sec-websocket-protocol'])); // the device token here too: a header, or the studio's subprotocol pair
     if (who !== 'device') return refuse(socket, who === null ? 401 : 403); // the agent token gets 403, as on the REST routes
     o.wss.handleUpgrade(req, socket, head, (ws) => { // accepted
       o.log('stream.connected', { clients: o.wss.clients.size }); // a TV connected
@@ -161,6 +174,15 @@ function refuse(socket: { end(data: string): void }, status: number): void { // 
 function issues(error: z.ZodError): string { // validation errors as one line, without the submitted values
   return error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '); // "text: Too big: ..."
 } // end of issues
+
+/**
+ * The browser form of the device token: browsers cannot set a WebSocket's headers, so the studio offers the subprotocol
+ * list "bearer, <token>". Only that exact pair counts; ws then answers with the first, "bearer", never the token.
+ */
+function subprotocolBearer(header: string | undefined): string | undefined { // as an Authorization value, or nothing
+  const [scheme, token, ...rest] = (header ?? '').split(',').map((s) => s.trim()); // the offered subprotocols, in order
+  return scheme === 'bearer' && token && rest.length === 0 ? `Bearer ${token}` : undefined; // the pair, or no token
+} // end of subprotocolBearer
 
 function sha256(value: string): Buffer { // fixed-length digest, so timingSafeEqual can compare any two tokens
   return createHash('sha256').update(value).digest(); // 32 bytes

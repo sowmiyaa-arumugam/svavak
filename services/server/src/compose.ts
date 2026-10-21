@@ -14,7 +14,7 @@ import { PollyTts } from './adapters/pollyTts.ts'; // live speech adapter
 import { SseTraceSink } from './adapters/traceSink.ts'; // trace adapter
 import { WsNotifier } from './adapters/wsNotifier.ts'; // notifier adapter
 import { createUseCases, type Deps } from './application/useCases.ts'; // use-cases
-import type { Config } from './config.ts'; // settings
+import { STUDIO_ORIGIN, TV_ORIGIN, type Config } from './config.ts'; // settings, and the studio's and the TV's origins
 import { DailyCap } from './domain/dailyCap.ts'; // cost guard
 import { DEMO_FACTS, DEMO_HOUSEHOLD } from './domain/facts.ts'; // the demo persona's facts
 import { createServer } from './interfaces/http.ts'; // REST, WebSocket, SSE
@@ -49,6 +49,6 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
     llm: { live: live ? new BedrockLlm(new BedrockRuntimeClient({ region: config.awsRegion, profile }), config.modelId, log) : null, mock: new MockLlm(), cap: new DailyCap(LLM_CALLS_PER_DAY, clock), budgetMs: BUDGET_MS }, // replies
     tts: { live: live ? new PollyTts(new PollyClient({ region: config.pollyRegion, profile }), config.voice, config.pollyEngine) : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock) }, // speech, in Polly's own region
   }; // end of deps
-  const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS, mcpIdleMs: MCP_IDLE_MS }); // interfaces
+  const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS, mcpIdleMs: MCP_IDLE_MS, studioOrigin: STUDIO_ORIGIN, tvOrigin: TV_ORIGIN }); // interfaces
   return { server, deps }; // the caller listens
 } // end of compose

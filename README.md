@@ -25,7 +25,28 @@ Amazon Developer Hackathon 2026.
 - **Agent** ([services/agent](services/agent)): the simulated Alexa+, a Python Strands agent over the server's MCP tools
   that streams each caregiver turn as SSE on `127.0.0.1:8790`, mock-first (live mode: Nova 2 Lite, tested only with a
   stub model).
-- **Not built yet:** the studio, SQLite storage and Docker.
+- **Studio** ([apps/studio](apps/studio)): one localhost page (React and Vite, http://localhost:5173) with the caregiver
+  panel (the simulated Alexa+), a virtual TV in drive mode on the TV's own modules (the space bar is the switch), the
+  engine's posterior after each press, and the system trace. A Playwright test drives the whole loop in mock mode.
+- **Not built yet:** SQLite storage and Docker.
+
+## Run a demo
+
+Mock mode needs no AWS account. Copy `.env.example` to `.env` and set the two tokens, then start each part in its own
+terminal, from the repository root, in this order:
+
+```sh
+yarn install                                         # 0. once: the workspaces' dependencies (Yarn 4 through Corepack)
+yarn workspace server start                          # 1. the server on 127.0.0.1:8787 (mock unless SVAVAK_MODE=live)
+cd services/agent && uv run python -m svavak_agent   # 2. the agent on 127.0.0.1:8790; it needs the server
+yarn workspace studio dev                            # 3. the studio on http://localhost:5173
+yarn workspace tv start                              # 4. Metro for the TV app, then start SvaVāk on the emulator
+```
+
+The TV app is built and installed once with `yarn workspace tv android` (see [apps/tv](apps/tv)); its debug build
+connects to the server through the emulator's host address. In the studio, leave Drive mode off while the emulator
+answers; without an emulator, switch it on and answer with the space bar. Live mode (`SVAVAK_MODE=live` for the
+server and the agent) needs an AWS sign-in; see [services/server](services/server).
 
 ## Contributing set-up
 

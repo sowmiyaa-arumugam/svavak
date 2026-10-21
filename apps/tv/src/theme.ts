@@ -4,15 +4,7 @@
 
 import { Dimensions } from 'react-native'; // screen size
 
-/** Colour tokens (plan Table 18); only the ones this screen uses. */
-export const colors = { // defined once, shared by every component
-  bg: '#0B1220', // background
-  surface: '#15233A', // option card
-  text: '#F4F7FB', // primary text
-  text2: '#B8C4D6', // secondary text
-  ring: '#4FD1C5', // the plan's posterior-ring teal, used for the scan highlight
-  help: '#FF5A5F', // help and alerts
-} as const; // end of colors
+export { colors } from './colors'; // the colour tokens, in a module the studio can import without React Native
 
 const scale = Dimensions.get('window').width / 1920; // layout units per design pixel (0.5 on a 1080p TV at 320 dpi)
 

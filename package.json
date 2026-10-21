@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "eslint apps/tv packages/switchclock services/server"
+    "lint": "eslint apps/tv apps/studio packages/switchclock services/server"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "8.58.1",

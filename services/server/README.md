@@ -53,6 +53,17 @@ Every route except `/healthz` and `/mcp` needs `Authorization: Bearer <SVAVAK_DE
 token gets 401, and the agent token gets 403, so an agent can never post an answer. Errors are
 `application/problem+json` (RFC 9457). These routes have no Host check: the emulator reaches the server as `10.0.2.2`.
 
+**The studio in a browser** ([apps/studio](../../apps/studio), origin `http://localhost:5173`):
+- **Origin.** `GET /v1/trace` and the `GET /v1/stream` upgrade accept no `Origin` (tools send none), the studio's
+  (`http://localhost:5173`) or the emulator TV's (`http://10.0.2.2:8787`: React Native's Android WebSocket sends the URL's
+  own origin). Any other, a DNS-rebound page's included, gets 403 before the token is checked.
+- **CORS.** On `/v1/*`, a request from the studio's origin gets `Access-Control-Allow-Origin` for it. Its preflights
+  (`OPTIONS`, which browsers send without a token) are answered with 204, allowing `GET` and `POST` with
+  `Authorization`, `Content-Type` and `Idempotency-Key`. Other origins get no CORS headers.
+- **Stream token.** Browsers cannot set a WebSocket's headers, so `/v1/stream` also takes the device token as the
+  subprotocol pair `bearer, <token>`, in that order and nothing else. The server answers with `bearer`, never the
+  token. Like the header, a wrong or missing token gets 401 and the agent token 403.
+
 | Method and path | Purpose |
 | --- | --- |
 | `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s). On connect, a TV first gets `question.created` for the newest question, if it is unanswered and was asked in the last 2 minutes, with its current candidates; nothing otherwise |

@@ -120,8 +120,8 @@ for a body over 4 KiB). The response is `text/event-stream`, with one event per 
 curl -N -X POST http://127.0.0.1:8790/agent/turn -H "Content-Type: application/json" -d '{"text": "Ask Sam if he wants tea or coffee"}'
 ```
 
-**Access.** The endpoint is loopback-only, with no token of its own; the studio's authentication will be settled with
-the studio.
+**Access.** The endpoint is loopback-only, with no token of its own: the [studio](../../apps/studio)'s caregiver panel
+calls it from `http://localhost:5173`.
 - **Host.** It must be `localhost` or `127.0.0.1` (any port), or the request gets 403 (DNS-rebinding protection).
 - **Origin.** An `Origin` header, when there is one, must be `http://localhost:5173` (the studio), or the request gets
   403, preflight included. Requests without `Origin`, such as curl's, are allowed.

@@ -33,7 +33,7 @@ async function start(options: { tts?: TtsPort; pingMs?: number } = {}) { // the 
   const logs: Record<string, unknown>[] = []; // log lines
   const log = (msg: string, fields?: Record<string, unknown>) => { logs.push({ msg, ...fields }); }; // records them
   const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: options.tts ?? new MockTts(), cap: new DailyCap(100_000, clock) } }; // mock wiring
-  const server = createServer({ token: TOKEN, agentToken: 'a'.repeat(32), mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: ['http://localhost:5173'], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: options.pingMs ?? 60_000, mcpIdleMs: 60_000 }); // interfaces
+  const server = createServer({ token: TOKEN, agentToken: 'a'.repeat(32), mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: ['http://localhost:5173'], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: options.pingMs ?? 60_000, mcpIdleMs: 60_000, studioOrigin: 'http://localhost:5173', tvOrigin: 'http://10.0.2.2:8787' }); // interfaces
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); // any free port
   running = { server, wss }; // for clean-up
   const port = (server.address() as AddressInfo).port; // the chosen port
@@ -228,6 +228,90 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
     expect(Buffer.from(await audio.arrayBuffer()).toString('latin1', 0, 4)).toBe('RIFF'); // a RIFF file
   }); // end of the case
 }); // end of utterances
+
+describe('the studio in a browser (plan §4.7)', () => { // Origin checks, CORS and the WebSocket token in a subprotocol
+  const STUDIO = 'http://localhost:5173'; // the studio's origin
+  const FOREIGN = 'http://evil.example'; // any other site
+  const TV = 'http://10.0.2.2:8787'; // the emulator TV's origin, as React Native derives it from the URL
+
+  /** Opens the stream as a browser would (no headers but Origin, the token in the subprotocol list) and says how it went. */
+  function browser(url: string, protocols: string[], origin = STUDIO): Promise<{ status: number; protocol?: string }> { // 101, or the refusal's status
+    return new Promise((resolve) => { // resolves once
+      const socket = new WebSocket(`${url}/v1/stream`, protocols, { origin }); // what a browser sends
+      socket.once('open', () => { resolve({ status: 101, protocol: socket.protocol }); socket.close(); }); // accepted: which subprotocol the server chose
+      socket.once('unexpected-response', (_req, res) => { resolve({ status: res.statusCode ?? 0 }); res.resume(); }); // refused
+    }); // end of the promise
+  } // end of browser
+
+  it('lets the studio read the trace with CORS, and refuses any other Origin on it with 403', async () => { // GET /v1/trace
+    const { http } = await start(); // server
+    const ok = await fetch(`${http}/v1/trace`, { headers: { ...AUTH, Origin: STUDIO } }); // the studio's fetch
+    expect([ok.status, ok.headers.get('access-control-allow-origin')]).toEqual([200, STUDIO]); // readable by the studio
+    await ok.body!.cancel(); // unsubscribe
+    const none = await fetch(`${http}/v1/trace`, { headers: AUTH }); // a tool, which sends no Origin
+    expect([none.status, none.headers.get('access-control-allow-origin')]).toEqual([200, null]); // allowed, no CORS
+    await none.body!.cancel(); // unsubscribe
+    await expectProblem(await fetch(`${http}/v1/trace`, { headers: { ...AUTH, Origin: FOREIGN } }), 403); // another site's page, even with the token
+    await expectProblem(await fetch(`${http}/v1/trace`, { headers: { Origin: FOREIGN } }), 403); // or without it
+  }); // end of the case
+
+  it("answers the studio's preflights without a token, and gives other origins no CORS headers", async () => { // OPTIONS
+    const { http } = await start(); // server
+    for (const [path, method] of [['/v1/trace', 'GET'], ['/v1/utterances', 'POST']]) { // the studio's two cross-origin requests with headers
+      const res = await fetch(`${http}${path}`, { method: 'OPTIONS', headers: { Origin: STUDIO, 'Access-Control-Request-Method': method!, 'Access-Control-Request-Headers': 'authorization,content-type,idempotency-key' } }); // the browser's preflight
+      expect(res.status).toBe(204); // answered, no body
+      expect(res.headers.get('access-control-allow-origin')).toBe(STUDIO); // the studio only
+      expect(res.headers.get('access-control-allow-methods')).toContain(method); // the method it will send
+      expect(res.headers.get('access-control-allow-headers')!.toLowerCase().split(/,\s*/)).toEqual(expect.arrayContaining(['authorization', 'content-type', 'idempotency-key'])); // the headers it will send
+    } // end of the preflights
+    const foreign = await fetch(`${http}/v1/utterances`, { method: 'OPTIONS', headers: { Origin: FOREIGN, 'Access-Control-Request-Method': 'POST' } }); // another site's preflight
+    expect(foreign.headers.get('access-control-allow-origin')).toBeNull(); // no CORS: the browser blocks the request
+  }); // end of the case
+
+  it("still needs the token on the studio's real requests: only its preflights go without one", async () => { // CORS is not authentication
+    const { http, ws } = await start(); // server
+    await expectProblem(await fetch(`${http}/v1/trace`, { headers: { Origin: STUDIO } }), 401); // the trace
+    await expectProblem(await fetch(`${http}/v1/utterances`, { method: 'POST', headers: { Origin: STUDIO, 'Content-Type': 'application/json', 'Idempotency-Key': 'k' }, body: JSON.stringify(reply) }), 401); // a reply
+    expect(await refusedWith(`${ws}/v1/stream`, { Origin: STUDIO })).toBe(401); // the stream
+    await expectProblem(await fetch(`${http}/v1/trace`, { headers: { ...AUTH, Origin: 'null' } }), 403); // a sandboxed or file page sends the Origin "null"
+  }); // end of the case
+
+  it("takes the studio's reply with CORS, as the household's TV", async () => { // POST /v1/utterances from the virtual TV
+    const { http } = await start(); // server
+    const res = await fetch(`${http}/v1/utterances`, { method: 'POST', headers: { ...JSON_AUTH, Origin: STUDIO, 'Idempotency-Key': 'studio-1' }, body: JSON.stringify(reply) }); // the virtual TV's post
+    expect([res.status, res.headers.get('access-control-allow-origin')]).toEqual([201, STUDIO]); // committed, and readable by the studio
+  }); // end of the case
+
+  it('takes the device token from the subprotocol pair "bearer, <token>" and answers with "bearer" only', async () => { // browsers cannot set headers on a WebSocket
+    const { ws } = await start(); // server
+    expect(await browser(ws, ['bearer', TOKEN])).toEqual({ status: 101, protocol: 'bearer' }); // accepted; the token is never echoed
+    expect(await browser(ws, ['bearer', 'wrong-token-0123456789'])).toEqual({ status: 401 }); // a wrong token
+    expect(await browser(ws, ['bearer', 'a'.repeat(32)])).toEqual({ status: 403 }); // the agent token, as on the REST routes
+    expect(await browser(ws, ['bearer'])).toEqual({ status: 401 }); // no token
+    expect(await browser(ws, [TOKEN, 'bearer'])).toEqual({ status: 401 }); // only the pair in this order counts
+    expect(await browser(ws, ['bearer', TOKEN, 'extra'])).toEqual({ status: 401 }); // and nothing after it
+    const both = await new Promise<number>((resolve) => { // a wrong header with a right pair: the header wins, as for a TV
+      const socket = new WebSocket(`${ws}/v1/stream`, ['bearer', TOKEN], { headers: { Authorization: 'Bearer wrong' } }); // both
+      socket.once('open', () => { resolve(101); socket.close(); }); // accepted (wrong)
+      socket.once('unexpected-response', (_req, res) => { resolve(res.statusCode ?? 0); res.resume(); }); // refused
+    }); // end of the promise
+    expect(both).toBe(401); // the subprotocol is only a fallback
+  }); // end of the case
+
+  it("refuses a stream from any Origin but the studio's or the emulator TV's with 403", async () => { // GET /v1/stream
+    const { http, ws } = await start(); // server
+    expect(await browser(ws, ['bearer', TOKEN], FOREIGN)).toEqual({ status: 403 }); // another site's page, even with the token
+    expect(await refusedWith(`${ws}/v1/stream`, { ...AUTH, Origin: FOREIGN })).toBe(403); // a header token does not help either
+    expect(await refusedWith(`${ws}/v1/stream`, { ...AUTH, Origin: 'http://evil.example:8787', Host: 'evil.example:8787' })).toBe(403); // a DNS-rebound page, whose Origin matches its Host
+    const tool = await connect(ws); // a tool: the token in a header, no Origin
+    expect(tool.socket.readyState).toBe(WebSocket.OPEN); // accepted
+    tool.socket.close(); // done
+    const tv = new WebSocket(`${ws}/v1/stream`, { headers: AUTH, origin: TV }); // the TV: React Native's Android WebSocket sends the URL's own origin
+    await new Promise((resolve, reject) => { tv.once('open', resolve); tv.once('unexpected-response', (_req, res) => reject(new Error(`refused with ${res.statusCode}`))); }); // accepted
+    tv.close(); // done
+    await expectProblem(await fetch(`${http}/v1/trace`, { headers: { ...AUTH, Origin: http } }), 403); // the server's own address is no exception
+  }); // end of the case
+}); // end of the studio
 
 describe('GET /v1/trace and unknown routes', () => { // the rest of Table 13
   it('streams spans (hop, operation, duration, mode) as SSE, without message text', async () => { // trace

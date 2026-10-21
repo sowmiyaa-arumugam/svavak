@@ -1,0 +1,18 @@
+// Copyright 2026 Sowmiya Arumugam
+// SPDX-License-Identifier: Apache-2.0
+{ // TypeScript settings for the studio, its end-to-end test and the TV source it imports
+  "compilerOptions": { // strict, no emit: Vite bundles, tsc only checks
+    "target": "ES2022", // modern browsers
+    "lib": ["ES2022", "DOM", "DOM.Iterable"], // the browser
+    "module": "ESNext", // ES modules
+    "moduleResolution": "bundler", // as Vite resolves, package exports included
+    "jsx": "react-jsx", // automatic JSX runtime
+    "strict": true, // all strict type checks
+    "noUncheckedIndexedAccess": true, // array reads may be undefined, as in the TV and the engine
+    "allowImportingTsExtensions": true, // the engine's source names its .ts files in imports
+    "noEmit": true, // checking only
+    "skipLibCheck": true, // the libraries' own declaration files are not ours to check
+    "types": ["vite/client", "node"] // Vite's client types; Node for the two config files
+  }, // end of the options
+  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"] // the studio; the TV source comes in through its imports
+} // end of the config

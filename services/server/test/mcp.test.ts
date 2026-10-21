@@ -40,7 +40,7 @@ async function start(mcpIdleMs = 60_000) { // the system under test
   const notifier = new WsNotifier(wss); // pushes
   const log = () => {}; // quiet
   const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: new MockTts(), cap: new DailyCap(100_000, clock) } }; // mock wiring
-  const server = createServer({ token: DEVICE, agentToken: AGENT, mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: [STUDIO], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: 60_000, mcpIdleMs }); // interfaces
+  const server = createServer({ token: DEVICE, agentToken: AGENT, mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: [STUDIO], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: 60_000, mcpIdleMs, studioOrigin: STUDIO, tvOrigin: 'http://10.0.2.2:8787' }); // interfaces
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); // any free port
   running = { server, wss, clients: [] }; // for clean-up
   const port = (server.address() as AddressInfo).port; // the chosen port

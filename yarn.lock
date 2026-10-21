@@ -2357,6 +2357,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@playwright/test@npm:1.64.1":
+  version: 1.64.1
+  resolution: "@playwright/test@npm:1.64.1"
+  dependencies:
+    playwright: "npm:1.64.1"
+  bin:
+    playwright: cli.js
+  checksum: 10c0/0a1a853d76d6c532cafaf0366a5448584b766737ebd39bbd23dc0580f3d3b6ef4c833082af47a792e7fc2501f444debdfaad37a87a76cc5b195f3803fc80ea3c
+  languageName: node
+  linkType: hard
+
 "@react-native-tvos/config-tv@npm:0.1.7":
   version: 0.1.7
   resolution: "@react-native-tvos/config-tv@npm:0.1.7"
@@ -2650,7 +2661,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rolldown/pluginutils@npm:^1.0.0":
+"@rolldown/pluginutils@npm:^1.0.0, @rolldown/pluginutils@npm:^1.0.1":
   version: 1.0.1
   resolution: "@rolldown/pluginutils@npm:1.0.1"
   checksum: 10c0/99d9b06d90196823e4d8c841f258db7a16e5dbba5824a2962b05d907b79f1ba929d56f22dd744fd530936e568c865ee56a719dc31e57e13bc0a8eb4764a8d8dd
@@ -2988,6 +2999,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/react-dom@npm:19.1.11":
+  version: 19.1.11
+  resolution: "@types/react-dom@npm:19.1.11"
+  peerDependencies:
+    "@types/react": ^19.0.0
+  checksum: 10c0/417da6414f43ea2e416ab19666f78f8a29b349f4273ee6d8d468516606c65ee0e6f31939cd3255dfaf466a50a5cdf16b6fd988cf7e9aaf678c61d1fff81e5c20
+  languageName: node
+  linkType: hard
+
 "@types/react@npm:19.1.17":
   version: 19.1.17
   resolution: "@types/react@npm:19.1.17"
@@ -3248,6 +3268,27 @@ __metadata:
   peerDependencies:
     "@urql/core": ^5.0.0
   checksum: 10c0/3d7e9879aef81714ca04c8b4dc1633d61b2090f5a6d5b8aac538633d41c26e8749e18bf66bed2936b209d038b3acdd21f20bc5ec4229a449b5a0b13d5694effe
+  languageName: node
+  linkType: hard
+
+"@vitejs/plugin-react@npm:6.1.2":
+  version: 6.1.2
+  resolution: "@vitejs/plugin-react@npm:6.1.2"
+  dependencies:
+    "@rolldown/pluginutils": "npm:^1.0.1"
+  peerDependencies:
+    "@rolldown/plugin-babel": ^0.1.7 || ^0.2.0
+    babel-plugin-react-compiler: ^1.0.0
+    oxc-transform-react: ^0.152.0
+    vite: ^8.0.0
+  peerDependenciesMeta:
+    "@rolldown/plugin-babel":
+      optional: true
+    babel-plugin-react-compiler:
+      optional: true
+    oxc-transform-react:
+      optional: true
+  checksum: 10c0/5c49e9098455e40662c60e7e3daf81088f8f3dc94dbd55746c310fc08a47962321c432dab202d5c240c91bf951c6a62ea64784b183e7ed47e6f9378d6e00e565
   languageName: node
   linkType: hard
 
@@ -9019,6 +9060,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"playwright-core@npm:1.64.1":
+  version: 1.64.1
+  resolution: "playwright-core@npm:1.64.1"
+  bin:
+    playwright-core: cli.js
+  checksum: 10c0/91c4f5ed1cff4b0e18b6ac62f66770f5f1b6c204d4aebd6a321c07466dca18a70822ac692597c6059705a703f9768097ac551df179fb49294d639509148e04f3
+  languageName: node
+  linkType: hard
+
+"playwright@npm:1.64.1":
+  version: 1.64.1
+  resolution: "playwright@npm:1.64.1"
+  dependencies:
+    playwright-core: "npm:1.64.1"
+  bin:
+    playwright: cli.js
+  checksum: 10c0/edf52d0a79feca37bf383e841a467aa68750684128218eac560063991c9e4b615a94901f580cd8a088bb05fd53008ab4a0e5e8d976067698b60ae5d1de2459f3
+  languageName: node
+  linkType: hard
+
 "plist@npm:^3.0.5":
   version: 3.1.1
   resolution: "plist@npm:3.1.1"
@@ -9264,6 +9325,17 @@ __metadata:
     shell-quote: "npm:^1.6.1"
     ws: "npm:^7"
   checksum: 10c0/7ef95213d06ad4b294f5dca73736641e2d8ff46861d3deacdc56a143b27de60ac6310898a52c7efd9fbd1bdef20c09305d05be80e6beb560f0f975aad6afbc5e
+  languageName: node
+  linkType: hard
+
+"react-dom@npm:19.1.0":
+  version: 19.1.0
+  resolution: "react-dom@npm:19.1.0"
+  dependencies:
+    scheduler: "npm:^0.26.0"
+  peerDependencies:
+    react: ^19.1.0
+  checksum: 10c0/3e26e89bb6c67c9a6aa86cb888c7a7f8258f2e347a6d2a15299c17eb16e04c19194e3452bc3255bd34000a61e45e2cb51e46292392340432f133e5a5d2dfb5fc
   languageName: node
   linkType: hard
 
@@ -10378,6 +10450,23 @@ __metadata:
   checksum: 10c0/b7d326f6fec7e7f7901d1e0542577293b5d029bf3e1fb84995e33d9aabe47d03259f64ca2d778ef5c427f6f00c78bafa051b6f233131e1556f8bb9102b11ed64
   languageName: node
   linkType: hard
+
+"studio@workspace:apps/studio":
+  version: 0.0.0-use.local
+  resolution: "studio@workspace:apps/studio"
+  dependencies:
+    "@playwright/test": "npm:1.64.1"
+    "@types/node": "npm:24.19.1"
+    "@types/react": "npm:19.1.17"
+    "@types/react-dom": "npm:19.1.11"
+    "@vitejs/plugin-react": "npm:6.1.2"
+    react: "npm:19.1.0"
+    react-dom: "npm:19.1.0"
+    switchclock: "workspace:*"
+    typescript: "npm:5.9.3"
+    vite: "npm:8.3.1"
+  languageName: unknown
+  linkType: soft
 
 "sucrase@npm:~3.35.1":
   version: 3.35.1
