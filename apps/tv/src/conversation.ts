@@ -118,7 +118,7 @@ export class Conversation { // one per screen
    * A short press whose key went down at time t on the shared clock. The engine's debounce restarts with every
    * setOptions, so it is applied here as well: a press within debounceMs of the last one is ignored in any state.
    */
-  press(t: number): void { // from the switch input, at key-up
+  press(t: number): void { // from the switch input, once the key has stayed up for 150 ms
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
     if (this.snap.mode === 'waiting') return; // nothing is lit yet
@@ -134,16 +134,16 @@ export class Conversation { // one per screen
 
   /**
    * A switch key went down at time t. In the "Saying it" window that cancels the reply at once, so a reply is only
-   * posted when its window ends with no key-down; in any other state the press is handled at its key-up.
+   * posted when its window ends with no key-down; in any other state the press is handled once the key has stayed up.
    */
   down(t: number): void { // from the switch input, at key-down
     if (this.snap.mode !== 'saying' || t - this.lastPress < this.debounceMs) return; // not in the window, or debounced
-    this.lastPress = t; // the same press, handed over again at key-up, is debounced away
+    this.lastPress = t; // the same press, handed over again once the key has stayed up, is debounced away
     this.set(this.show(this.snap.question)); // cancels "Saying it": scan the same question again
   } // end of down
 
   /** A hold of 2 s or more whose key went down at time _t (not needed here), in any state: the Help screen. */
-  help(_t: number): void { // from the switch input, at key-up
+  help(_t: number): void { // from the switch input, as soon as the hold reaches 2 s
     if (this.snap.mode === 'help') return; // already shown
     clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
     this.idleHelp = this.snap.mode === 'idle'; // where dismissing it goes back to
@@ -206,7 +206,7 @@ export class Conversation { // one per screen
     const reply: Reply = { questionId: question.id ?? null, questionText: question.id ? null : question.text, text: label, clicks: this.presses.length, durationMs: Math.round(this.now() - this.askedAt) }; // stats
     this.set({ ...this.snap, mode: 'saying', reply: label }); // the reply fills the screen
     this.timer = setTimeout(() => { // the window passed without a key-down notice
-      if (this.held()) return this.set(this.show(question)); // a switch key is still down (a bounce, say): cancel
+      if (this.held()) return this.set(this.show(question)); // a switch key is still down: cancel
       this.onSay(reply); // the reply stands: posted (and spoken) only now, so a cancelled reply never leaves the TV
       if (question.id !== undefined) this.last = label; // for the idle screen; a practice reply cannot reach the server
       this.set(this.next()); // the next question, or the idle screen

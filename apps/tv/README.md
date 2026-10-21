@@ -67,12 +67,13 @@ through react-native-keyevent. Android package `dev.svavak.tv`, minSdk 28 (Fire 
 
 The switch is Select: Enter on the emulator's keyboard, or the centre button on a remote. Press when your answer
 lights up; hold for 2 s for Help. Each press is timestamped at key-down, when the key handler is entered, on the same
-clock the engine and the highlight use; whether it was a press or a hold is decided at key-up. Key auto-repeat is
-ignored, a press within 150 ms of the last one is ignored (the engine's debounce, kept across every state), and so is
-a key-down within 150 ms after any release, so a bounce after a hold or a long press does nothing. Inside the 2 s
-"Saying it" window the reply is cancelled at the key-down, without waiting for the key-up; a switch key still held
-when the window ends, a bounce included, cancels it too, and a hold that began in the window opens Help on that
-question.
+clock the engine and the highlight use. A release followed by a new key-down within 150 ms is the same press or hold
+(a bounce, a tremor, or the emulator's version of a held PC key; see Gate K2), so a press is handed over once the key
+has stayed up for 150 ms, and a hold opens Help as soon as it reaches 2 s, while the key is still down; its final
+release does nothing. Key auto-repeat is ignored, and a press within 150 ms of the last one is ignored (the engine's
+debounce, kept across every state). Inside the 2 s "Saying it" window the reply is cancelled at the key-down, without
+waiting for the key-up; a switch key still held when the window ends cancels it too, and a hold that began in the
+window opens Help on that question.
 
 ## Server connection
 
@@ -139,5 +140,11 @@ for 30 s never opened Help. The app is not the cause. Checked on 2026-10-20 (emu
 - **What did not work.** `adb emu event send` answered OK, but no event reached any input device. `adb shell
   sendevent` was refused on this `user` build, which also cannot run `adb root`.
 
-So test the hold with a physical remote or switch, or with a clean key-down and key-up as above. A long press on the
-PC keyboard cannot reach the app as one press. The key handling is unchanged.
+**Changed on 2026-10-21 (B7).** The app now treats a release followed by a new key-down within 150 ms as the same
+hold, as real switches can chatter the same way. The PC keyboard's pattern is therefore one hold: Help opens 2 s after
+its first key-down, while the key is still down, and its final release does nothing. A short press is handed over
+once the key has stayed up for 150 ms, still stamped at its key-down. Replaying the K3 pattern on the emulator
+through the same gRPC `sendKey` (a key-down every 33 ms, which reached the kernel as press/release pairs about 46 ms
+apart: 55 pairs in 2.5 s, 88 in 4 s) opened "Help is coming" while the keys were still coming, and a short press then
+dismissed it. Holding Enter on the PC keyboard itself, which the emulator turns into the same pattern, was not tried
+by hand.

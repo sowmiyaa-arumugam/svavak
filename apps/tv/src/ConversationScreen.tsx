@@ -43,10 +43,11 @@ export function ConversationScreen() { // the screen
 
   useEffect(() => { // the switch: key-downs, presses and holds go to the conversation
     KeyEvent.onKeyDownListener(input.keyDown); // key down, from MainActivity
-    KeyEvent.onKeyUpListener(input.keyUp); // key up decides between a press and a hold
+    KeyEvent.onKeyUpListener(input.keyUp); // key up: a press once the key stays up, the end of a hold
     return () => { // on unmount
       KeyEvent.removeKeyDownListener(); // stop listening to key down
       KeyEvent.removeKeyUpListener(); // and key up
+      input.dispose(); // no press or Help handed over after this
       conversation.dispose(); // cancel pending timers
     }; // end of clean-up
   }, [conversation, input]); // once

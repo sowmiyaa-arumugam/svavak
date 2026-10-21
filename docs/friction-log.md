@@ -731,3 +731,29 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** the policy now names the case: "Never make options up: for an open question, such as what Sam would
   like to watch, leave options out". The next turns asked without options.
 - **Suggestion:** none for the model; a prompt rule needs an example of the case it forbids. *(proposed)*
+
+## 2026-10-21: The Android TV emulator's clock ran about 52 minutes behind the host
+
+- **Tool:** Android Emulator 37.2.12 (Android TV, API 30), Windows 11
+- **Task attempted:** find out why the TV app on the emulator did not answer `tools/mcp-smoke.mjs` (B7).
+- **Steps:** read `adb logcat` for the app's process and compared its times with the server's log.
+- **Expected:** the guest's clock follows the host's. *(proposed)*
+- **Actual:** `adb shell date` showed 09:19:56 GMT while the host showed 10:12:12 UTC, so the app's latest log lines
+  looked about an hour old and the app looked frozen. It was running; the smoke script had pressed before the app
+  reconnected.
+- **Severity:** low; it cost time while reading logs. *(proposed)*
+- **Workaround:** compare `adb shell date` with the host's time before reading guest log times.
+- **Suggestion:** the emulator should keep the guest clock in step with the host after the host sleeps or resumes,
+  or show the offset in its extended controls. *(proposed)*
+
+## 2026-10-21: Metro started with CI=1 does not pick up code changes
+
+- **Tool:** Expo CLI (Expo SDK 54.0.37), `expo run:android` and `expo start`
+- **Task attempted:** load a change to the TV app's key handling on the emulator (B7).
+- **Steps:** started the app with `CI=1 yarn workspace tv android` from a script, then changed
+  `apps/tv/src/switchInput.ts`.
+- **Expected:** the app reloads with the change, or the CLI says how to get it. *(proposed)*
+- **Actual:** Metro printed "Metro is running in CI mode, reloads are disabled. Remove CI=true to enable watch mode."
+- **Severity:** low; the message names the cause. *(proposed)*
+- **Workaround:** stop Metro, start it again with `CI=1 yarn workspace tv start`, then force-stop and start the app.
+- **Suggestion:** a flag for a non-interactive Metro that still watches files. *(proposed)*

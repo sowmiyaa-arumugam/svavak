@@ -9,7 +9,7 @@ import { now } from '../../tv/src/clock'; // the TV's shared clock
 import { cardsOf, CONFIG, CONTROLS, Conversation, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules and grid
 import { QUESTIONS } from '../../tv/src/questions'; // the TV's practice questions
 import { StreamClient, type SocketLike } from '../../tv/src/stream'; // the TV's stream client: parsing and reconnects
-import { SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
+import { RELEASE_DEBOUNCE_MS, SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
 import { DEVICE_TOKEN, SERVER_URL } from './config'; // where the server is, and the household TV's token
 
 const ENTER = { keyCode: 66 }; // the space bar stands for the TV's Enter key (KEYCODE_ENTER)
@@ -63,9 +63,10 @@ function DriveScreen({ onEngine }: { onEngine: (state: EngineState | null) => vo
     }; // end of report
     report(); // the priors, once a question is scanned
     const unsubscribe = conversation.subscribe(report); // a new question, a commit, a rescan
-    const up = (e: KeyboardEvent) => { if (e.code === 'Space' && !typing(e)) report(); }; // after each press the posterior moved
+    let later: ReturnType<typeof setTimeout> | undefined; // the report after the switch hands a press over
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space' && !typing(e)) { clearTimeout(later); later = setTimeout(report, RELEASE_DEBOUNCE_MS); } }; // the posterior moves once the key has stayed up, after the switch's own timer (set first, below); one report pending at a time
     window.addEventListener('keyup', up); // after the switch's own handler (added first, below)
-    return () => { unsubscribe(); window.removeEventListener('keyup', up); onEngine(null); }; // off: no engine to show
+    return () => { clearTimeout(later); unsubscribe(); window.removeEventListener('keyup', up); onEngine(null); }; // off: no engine to show
   }, [conversation, onEngine]); // once
 
   useEffect(() => { // the switch: the space bar, except while typing
@@ -74,10 +75,10 @@ function DriveScreen({ onEngine }: { onEngine: (state: EngineState | null) => vo
       e.preventDefault(); // no page scroll, no button or checkbox activation
       if (!e.repeat) input.keyDown(ENTER); // auto-repeat is ignored, as on the TV
     }; // end of down
-    const up = (e: KeyboardEvent) => { // key up decides between a press and a hold
+    const up = (e: KeyboardEvent) => { // key up: a press once the key stays up, the end of a hold
       if (e.code !== 'Space') return; // another key
       if (!typing(e)) e.preventDefault(); // as above
-      input.keyUp(ENTER); // a press, or Help after 2 s; nothing for a key-down it never took (a space typed in the box)
+      input.keyUp(ENTER); // a press once the key stays up, or the end of a hold; nothing for a key-down it never took (a space typed in the box)
     }; // end of up
     const release = () => input.keyUp(ENTER); // the window lost focus with the key down: its key-up will never come
     window.addEventListener('keydown', down, true); // capture: before any focused control sees it
@@ -94,8 +95,8 @@ function DriveScreen({ onEngine }: { onEngine: (state: EngineState | null) => vo
       else conversation.update(event.questionId, event.replies, event.scores); // its final replies
     }, connect); // the subprotocol socket
     stream.start(); // connect
-    return () => { stream.stop(); conversation.dispose(); }; // hang up and cancel timers
-  }, [conversation]); // once
+    return () => { stream.stop(); input.dispose(); conversation.dispose(); }; // hang up and cancel timers
+  }, [conversation, input]); // once
 
   useEffect(() => { // one animation clock: each frame checks what the engine highlights now
     const { engine } = conversation; // the highlight's source

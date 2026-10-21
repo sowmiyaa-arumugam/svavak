@@ -6,7 +6,7 @@ import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights 
 import { BUDGET_MS, cardsOf, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
-import { HOLD_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
+import { HOLD_MS, RELEASE_DEBOUNCE_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
 
 const ENTER = { keyCode: 66 }; // KEYCODE_ENTER: the switch
 
@@ -46,6 +46,14 @@ function select(i: number, lateMs = 0): number { // a simulated selection; retur
   } // end of the presses
   throw new Error('no commit within 10 presses'); // fails the test
 } // end of select
+
+/** Moves the shared clock and the timers on together by `ms`, a millisecond at a time, for the switch input's timers. */
+function wait(ms: number): void { // time passes
+  for (let i = 0; i < ms; i++) { // each millisecond
+    time += 1; // the clock the handlers read
+    jest.advanceTimersByTime(1); // the timers they set
+  } // end of the milliseconds
+} // end of wait
 
 describe('Conversation', () => { // the state machine
   it('uses a fixture of questions with eight replies each', () => { // the 2 x 4 grid
@@ -88,12 +96,12 @@ describe('Conversation', () => { // the state machine
 
   it('cancels when the key went down inside the window but came up after it closed, and posts nothing', () => { // straddling press
     select(0); // "Coffee, please": Saying
-    time += SAY_MS - 50; // 50 ms before the window closes
+    wait(SAY_MS - 50); // 50 ms before the window closes
     input.keyDown(ENTER); // the key goes down
-    time += 50; // the window's end
-    jest.advanceTimersByTime(SAY_MS); // passed, with the key still down
-    time += 100; // key-up, when the press is handed over
-    input.keyUp(ENTER); // stamped at key-down
+    wait(50); // the window's end, passed with the key still down
+    wait(100); // later
+    input.keyUp(ENTER); // the key comes up
+    wait(RELEASE_DEBOUNCE_MS); // stayed up: the press is handed over, stamped at key-down
     expect(said).toEqual([]); // the reply never left the TV
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question again
     expect(selections).toHaveLength(1); // and nothing was chosen after it
@@ -119,7 +127,7 @@ describe('Conversation', () => { // the state machine
 
   it('opens Help on a hold while Asking; another hold changes nothing and a press dismisses it', () => { // Help by hold
     time = 700; // the hold's key-down
-    conversation.help(time); // handed over at its key-up
+    conversation.help(time); // handed over once it has lasted 2 s
     expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help
     const listener = jest.fn(); // the screen's re-render callback
     conversation.subscribe(listener); // subscribed from here on
@@ -129,21 +137,23 @@ describe('Conversation', () => { // the state machine
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // scanned again
   }); // end of the case
 
-  it('cancels at the key-down of a hold that starts in the Saying window, and opens Help on its question at key-up', () => { // hold
+  it('cancels at the key-down of a hold that starts in the Saying window, and opens Help on its question at 2 s, before the key comes up', () => { // hold
     select(0); // "Coffee, please": Saying from `time`
-    time += 300; // 300 ms into the window
+    wait(300); // 300 ms into the window
     input.keyDown(ENTER); // the hold starts
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the reply is cancelled
-    time += HOLD_MS; // released after 2 s
-    jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
-    input.keyUp(ENTER); // a hold
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help on that question
+    wait(HOLD_MS); // held for 2 s, past the cancelled window's end
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help on that question, the key still down
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS); // the hold's final release
+    expect(conversation.snapshot().mode).toBe('help'); // does nothing
     expect(said).toEqual([]); // the reply was never posted
-    time += 1000; // later
+    wait(1000); // later
     input.keyDown(ENTER); // a press goes down
     expect(conversation.snapshot().mode).toBe('help'); // a key-down outside the window decides nothing
-    time += 100; // a short press
-    input.keyUp(ENTER); // handed over: dismisses Help
+    wait(100); // a short press
+    input.keyUp(ENTER); // up
+    wait(RELEASE_DEBOUNCE_MS); // handed over: dismisses Help
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // that question again
   }); // end of the case
 
@@ -154,30 +164,42 @@ describe('Conversation', () => { // the state machine
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // cancelled at once
     expect(conversation.engine.scanAt(time).epoch).toBe(time); // its scan restarted from the key-down
     const asking = conversation.snapshot(); // the restarted scan
-    time += 120; // a short press
-    input.keyUp(ENTER); // the same press, handed over again: debounced away
+    wait(120); // a short press
+    input.keyUp(ENTER); // up
+    wait(RELEASE_DEBOUNCE_MS); // stayed up: the same press, handed over again, is debounced away
     expect(conversation.snapshot()).toBe(asking); // nothing more happened
     expect(conversation.engine.scanAt(time).items).toHaveLength(10); // and no rescan started
     jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
     expect(said).toEqual([]); // nothing posted
   }); // end of the case
 
-  it("cancels when a switch key is still down at the window's end, even a bounce", () => { // held at the end
+  it('cancels at once when the key goes down again just after the press was handed over', () => { // a bounce after the commit
     time = nextOnset(conversation.engine, CONFIG, 0, time) + AIM_MS + CONFIG.biasMs; // aimed at "Coffee, please"
     input.keyDown(ENTER); // the committing press goes down
-    expect(conversation.snapshot().mode).toBe('asking'); // decided at key-up, as ever
-    time += 100; // a short press
-    input.keyUp(ENTER); // handed over: committed with one press
+    wait(100); // a short press
+    input.keyUp(ENTER); // up
+    expect(conversation.snapshot().mode).toBe('asking'); // not handed over yet: a key-down now would continue it
+    wait(RELEASE_DEBOUNCE_MS); // stayed up: handed over, committed with one press
     expect(conversation.snapshot().mode).toBe('saying'); // Saying
-    time += 20; // 20 ms after the release
-    input.keyDown(ENTER); // a contact bounce: no key-down notice, but a switch key is down
-    expect(conversation.snapshot().mode).toBe('saying'); // no cancel yet
-    time += SAY_MS; // the window's end, the key still down
-    jest.advanceTimersByTime(SAY_MS); // reached
+    wait(20); // 20 ms later
+    input.keyDown(ENTER); // a contact bounce: a new press, so a key-down notice
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // cancelled at once
+    wait(20); // a short bounce
+    input.keyUp(ENTER); // it ends
+    wait(SAY_MS); // past the cancelled window's end; the bounce was handed over as the same press as the cancel, and debounced away
+    expect(said).toEqual([]); // not posted
+    expect(conversation.snapshot().mode).toBe('asking'); // still Asking
+  }); // end of the case
+
+  it("cancels when a switch key is still down at the window's end", () => { // held at the end, the input's other guard
+    let held = false; // the screen's switch state, set by hand here
+    conversation.dispose(); // the set-up's conversation is not used
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => held); // under test
+    select(0); // "Coffee, please": Saying
+    held = true; // a switch key is down without a key-down notice in the window
+    jest.advanceTimersByTime(SAY_MS); // the window's end
     expect(said).toEqual([]); // not posted
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question again
-    input.keyUp(ENTER); // the bounce ends: neither a press nor a hold
-    expect(conversation.snapshot().mode).toBe('asking'); // still Asking
   }); // end of the case
 
   it("rescans the top two after a press that does not commit, and logs offsets from the chosen card's onsets", () => { // rescan
@@ -548,7 +570,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
     conversation.receive(LIVE); // shown, waiting
     time = 700; // its replies arrive
     conversation.update('q1', LIVE.replies, LIVE.scores!); // the scan starts
-    conversation.press(down); // handed over at key-up
+    conversation.press(down); // handed over once the key has stayed up
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // nothing happened
     expect(conversation.engine.scanAt(time).items).toHaveLength(10); // no rescan started
   }); // end of the case
