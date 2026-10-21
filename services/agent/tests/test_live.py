@@ -126,7 +126,7 @@ def test_every_turn_starts_without_the_earlier_ones(aws, stub):  # a fresh Agent
 
 
 def test_the_policy_carries_the_plan_rules():  # plan §4.6 and the agent brief
-    for rule in ("call ask_question", "get_answer", "at most 20", "hasn't answered yet", '"Sam says: "', "word for word", "Never invent, guess", "second person", "options only when the caregiver named them", "passwords, health records or financial data"):  # each rule
+    for rule in ("call ask_question", "get_answer", "at most 20", "hasn't answered yet", '"Sam says: "', "word for word", "Never invent, guess", "second person", "options only when the caregiver named them", "Never make options up", "leave options out", "passwords, health records or financial data"):  # each rule
         assert rule in POLICY  # present
 
 

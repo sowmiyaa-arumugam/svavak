@@ -14,8 +14,8 @@ The simulated Alexa+ of plan §4.5: a [Strands](https://strandsagents.com) agent
   again.
 - **One Strands agent per turn.** Every turn runs the real Strands tool loop with a fresh `Agent` and no memory of
   earlier turns, over the tools of its own MCP session; the model is shared.
-- **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. Live mode is tested only with a stub model
-  so far.
+- **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. Live mode (Nova 2 Lite) ran on 2026-10-21 for the
+  footage turns, and is tested with a stub model.
 - Bound to `127.0.0.1:8790`. Logs are JSON lines without caregiver text or answers.
 
 ## Set-up and run
@@ -62,7 +62,8 @@ the agent policy of plan §4.6:
 - Call `ask_question` (as Alex), then `get_answer` with a wait of at most 20 s.
 - If the answer is still pending, say that Sam hasn't answered yet.
 - Report an answer word for word as "Sam says: …", and never invent or guess one.
-- Keep questions short, in the second person, and pass options only when the caregiver named them.
+- Keep questions short, in the second person, and pass options only when the caregiver named them ("tea or coffee");
+  never make options up, so an open question gets the server's replies, which know Sam's profile facts.
 - Never ask for passwords, health records or financial data.
 
 **Speech guard.** The model proposes; code decides what is spoken, so the agent never speaks an answer the TV didn't
@@ -77,7 +78,9 @@ commit. It applies in both modes (in mock mode it changes nothing).
 
 The `tool_call` and `tool_result` events are not changed.
 
-It has not been run against AWS yet: on 2026-10-20 Bedrock refused calls while the AWS account was being verified.
+On the live run of 2026-10-21 the model first passed made-up options ("Movie", "TV show", ...) for "Ask Sam what he'd
+like to watch tonight", which hid the server's replies; the policy now says never to make options up and to leave them
+out of an open question.
 Strands' `BedrockModel` streams (ConverseStream) by default and leaves `<thinking>` text in place, hence the guard
 below.
 

@@ -79,7 +79,7 @@ export class BedrockLlm implements LlmPort { // Bedrock adapter
         tools: [{ toolSpec: { name: TOOL_NAME, description: 'Return the reply candidates', inputSchema: { json: TOOL_SCHEMA } } }], // one tool
         toolChoice: { tool: { name: TOOL_NAME } }, // Nova supports forcing one tool
       }, // end of toolConfig
-      inferenceConfig: { maxTokens: 1000, temperature: 0 }, // the Nova guide recommends temperature 0 (greedy) for tool use
+      inferenceConfig: { maxTokens: 512, temperature: 0 }, // settled on the live K3 run (2026-10-21): temperature 0 (greedy, as the Nova guide recommends for tool use) gave a valid forced tool call on all 33 calls; their output was 138 to 187 tokens, so 512 leaves 2.7x headroom
     }), { abortSignal: signal }); // aborted when the budget runs out
     this.log('llm.usage', { input_tokens: response.usage?.inputTokens, output_tokens: response.usage?.outputTokens, latency_ms: response.metrics?.latencyMs, stop_reason: response.stopReason }); // numbers only: for the cost report and maxTokens
     const block = response.output?.message?.content?.find((b) => b.toolUse !== undefined); // a text block may come first

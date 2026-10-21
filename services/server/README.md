@@ -9,9 +9,8 @@ questions, their reply candidates and utterances, asked and answered through MCP
 - **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
   the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
   AWS.
-- **Live mode** (`SVAVAK_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It has been tested only
-  against AWS SDK client mocks so far: the first live calls were refused while the AWS account was being verified. See
-  [Live mode](#live-mode) for what to set up.
+- **Live mode** (`SVAVAK_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It ran live on
+  2026-10-21 (gate K3 passed; see [Live mode](#live-mode)), and is tested against AWS SDK client mocks.
 - **In memory.** Nothing survives a restart; SQLite is cut for now.
 - Bound to `127.0.0.1:8787`. The Android emulator reaches it as `10.0.2.2:8787`.
 
@@ -163,9 +162,14 @@ npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8
 
 ## Live mode
 
-Not run against AWS yet: on 2026-10-20 every Bedrock Converse call in eu-central-1 was refused with
-`AccessDeniedException` while the AWS account was being verified, and on 2026-10-21 the `aws login` session could not
-be refreshed (`Your session has expired. Please reauthenticate using 'aws login'.`). To set it up:
+**Live run, 2026-10-21** (Nova 2 Lite in eu-central-1, Polly standard Brian in eu-north-1, the emulator TV):
+- Gate K3 passed: ask to `question.candidates` p50 1,024 ms and p95 1,559 ms over the 30 evaluation questions
+  (gate: p50 at most 2.0 s), with the automatic checks passing for all 30 and the seeded fact in the top four for 3 of 3.
+- Polly's speech played on the TV for 10 of 10 replies: from the end of the 2 s cancel window to audio start, p50
+  290 ms and p95 879 ms (FR-04 target: 1.2 s p50).
+- An `aws login` session lasts about an hour; sign in again just before a live run.
+
+To set it up:
 
 1. Sign in with `aws login --profile <profile>` (AWS CLI 2.32 or later), or create an IAM Identity Center profile with
    `aws configure sso` and sign in with `aws sso login --profile <profile>`. The identity needs `bedrock:InvokeModel`
@@ -185,10 +189,12 @@ SSO profiles always. The server never reads or stores access keys, and when a pr
 environment-variable keys.
 
 The model call uses a forced tool call (`toolChoice` on `suggest_replies`), not Bedrock's structured outputs, which
-the Nova 2 Lite model card lists as unsupported. Its settings are `temperature` 0 and `maxTokens` 1000. The Nova 2
-docs disagree on both: temperature 0 for tool calls (Troubleshooting) against 0.7 with topP 0.9 (prompting guide), and
-a maximum of 5,000 output tokens (request schema) against 64K or 65,000 (model card, Converse page). They are still to
-be checked against real responses: the `llm.usage` log lines give the output tokens and stop reason of each call.
+the Nova 2 Lite model card lists as unsupported. Its settings are `temperature` 0 and `maxTokens` 512, settled
+on the live run. The Nova 2 docs disagree on both: temperature 0 for tool calls (Troubleshooting) against 0.7 with
+topP 0.9 (prompting guide), and a maximum of 5,000 output tokens (request schema) against 64K or 65,000 (model card,
+Converse page). On the live run all 33 calls at temperature 0 ended in the forced tool call (stop reason `tool_use`),
+with valid candidates, and used 138 to 187 output tokens (from the `llm.usage` log lines), so 512 leaves 2.7 times
+headroom; input was about 1,300 tokens per call and Bedrock's own latency 744 to 1,551 ms.
 
 ## Evaluation set
 

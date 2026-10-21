@@ -18,13 +18,13 @@ Amazon Developer Hackathon 2026.
   - It runs on the Android TV emulator; gate K2 on a device is still open.
 - **Server** ([services/server](services/server)): REST, the WebSocket question stream and the SSE trace for flow S1,
   mock-first. It has default replies at once and model candidates within 3.5 s, idempotent utterances, a device token
-  and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) is tested only against AWS SDK mocks. The store is in
+  and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) ran on 2026-10-21 and passed gate K3 (candidates p50 1.0 s). The store is in
   memory.
   - An MCP endpoint (`/mcp`, Streamable HTTP) gives caregiver agents `ask_question`, `get_answer`,
     `get_recent_messages` and `add_profile_fact`, with its own agent token (gate K4: conformance suite and Inspector).
 - **Agent** ([services/agent](services/agent)): the simulated Alexa+, a Python Strands agent over the server's MCP tools
-  that streams each caregiver turn as SSE on `127.0.0.1:8790`, mock-first (live mode: Nova 2 Lite, tested only with a
-  stub model).
+  that streams each caregiver turn as SSE on `127.0.0.1:8790`, mock-first (live mode: Nova 2 Lite, run live on
+  2026-10-21).
 - **Studio** ([apps/studio](apps/studio)): one localhost page (React and Vite, http://localhost:5173) with the caregiver
   panel (the simulated Alexa+), a virtual TV in drive mode on the TV's own modules (the space bar is the switch), the
   engine's posterior after each press, and the system trace. A Playwright test drives the whole loop in mock mode.

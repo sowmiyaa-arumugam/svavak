@@ -39,7 +39,7 @@ describe('BedrockLlm', () => { // Converse with a forced tool call
       system: [{ text: SYSTEM_PROMPT }], // the rules
       messages: [{ role: 'user', content: [{ text: userPrompt(REQUEST) }] }], // the question with context
       toolConfig: { tools: [{ toolSpec: { name: TOOL_NAME, description: 'Return the reply candidates', inputSchema: { json: TOOL_SCHEMA } } }], toolChoice: { tool: { name: TOOL_NAME } } }, // forced tool
-      inferenceConfig: { maxTokens: 1000, temperature: 0 }, // greedy decoding
+      inferenceConfig: { maxTokens: 512, temperature: 0 }, // greedy decoding; the live K3 run's 33 calls used at most 187 output tokens
     }); // end of the input
     expect((call!.args as unknown[])[1]).toEqual({ abortSignal: signal }); // the budget can abort the HTTP call
   }); // end of the case

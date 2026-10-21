@@ -703,3 +703,31 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** restarted Metro with `--clear`, then the app.
 - **Suggestion:** Metro could notice that `node_modules` was relinked and rebuild its file map, or say so in its log.
   *(proposed)*
+
+## 2026-10-21: An `aws login` session lasts about an hour
+
+- **Tool:** AWS CLI 2.38.2 and the AWS SDKs with an `aws login` profile
+- **Task attempted:** the live part of gate K3 (B5 Part C), started after signing in with `aws login`.
+- **Steps:** the user signed in at about 06:30 and again at 09:20 CEST; calls at 07:35 and 09:17 CEST failed, and a
+  call at 09:26 CEST worked.
+- **Expected:** a sign-in that lasts a working session, or a clear expiry time. *(proposed)*
+- **Actual:** the credentials stopped refreshing about an hour after each sign-in, with two different messages (see
+  the entry "An `aws login` profile cannot refresh its credentials"). The live run was done within the hour: the probe
+  at 07:26 UTC, the last call at about 07:32 UTC.
+- **Severity:** medium; a live session has to be planned around the hour. *(proposed)*
+- **Workaround:** sign in just before a live run and do the AWS calls first.
+- **Suggestion:** print the session's expiry at sign-in, and say "expired" in both messages. *(proposed)*
+
+## 2026-10-21: Nova 2 Lite made up options the agent policy forbids
+
+- **Tool:** Amazon Nova 2 Lite (`eu.amazon.nova-2-lite-v1:0`) through Strands Agents 1.61.1, temperature 0.2
+- **Task attempted:** the live footage turn "Ask Sam what he'd like to watch tonight" (B5 Part C).
+- **Steps:** the agent's system prompt said "Pass options only when the caregiver named them."
+- **Expected:** `ask_question` without options, so the server suggests replies from Sam's profile (cricket).
+  *(proposed)*
+- **Actual:** the model passed six options of its own ("Movie", "TV show", "Documentary", "News", "Game show",
+  "Not sure"), so no cricket reply could appear.
+- **Severity:** medium; the footage turn failed. *(proposed)*
+- **Workaround:** the policy now names the case: "Never make options up: for an open question, such as what Sam would
+  like to watch, leave options out". The next turns asked without options.
+- **Suggestion:** none for the model; a prompt rule needs an example of the case it forbids. *(proposed)*

@@ -33,7 +33,7 @@ POLICY = " ".join((  # the system prompt: plan §4.6's agent policy
     'Report an answer word for word, as "Sam says: " followed by its answer_text.',  # verbatim and attributed
     "Never invent, guess or complete an answer: only Sam's own selection is ever reported.",  # the model proposes, Sam decides
     'Keep questions short and ask them in the second person, such as "Would you like tea or coffee?".',  # how to ask
-    "Pass options only when the caregiver named them.",  # otherwise the server suggests replies
+    'Pass options only when the caregiver named them, as in "tea or coffee". Never make options up: for an open question, such as what Sam would like to watch, leave options out, and the server suggests replies from what it knows about Sam.',  # a live run's model invented options, which hid the server's replies
     "To say what Sam said recently, call get_recent_messages; to remember something about Sam, call add_profile_fact.",  # the other tools
     "Never ask for passwords, health records or financial data.",  # plan §4.4's safety rule
     "Answer in one or two short sentences, as they will be spoken.",  # a voice assistant
