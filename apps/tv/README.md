@@ -9,33 +9,45 @@ example one asked with options; the pills then follow its last card. One thick t
 best guess first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan
 repeats.
 
-Questions come from the [server](../../services/server) when it can be reached, and otherwise from mock fixtures
-([src/questions.ts](src/questions.ts)), listed best guess first.
-- **A server question** takes over at once while the scan runs or another server question waits for its replies. If it
-  arrives during "Saying it" or Help, it waits until that window ends or Help is dismissed.
+Questions come from the [server](../../services/server). While the app is connected to it, a calm idle screen waits
+between the caregiver's questions: the name, "Waiting for a question" and the last reply ("You said: …"), with nothing
+lit or moving; a press of the switch opens Help. Only while the server can't be reached does the app ask practice
+questions from mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first and labelled "Practice"
+instead of "Alex asks". A build with a server starts on the idle screen and turns to practice if its first connection
+attempt fails.
+- **A server question** takes over at once while the scan runs, another server question waits for its replies, or the
+  screen is idle. If it arrives during "Saying it" or Help, it waits until that window ends or Help is dismissed.
 - It shows the question and the server's default replies at once, but the highlight starts only when the model's
   replies arrive (then on them, best guess first, using the server's priors) or when the server's 3.5 s budget for
-  them has passed (then on the defaults). Replies that come later are ignored, so the list never changes while the
+  them has passed (then on the defaults). Until then the question band reads "Alex asks · Finding replies…", so the
+  unlit defaults look intentional. Replies that come later are ignored, so the list never changes while the
   highlight moves. A question asked with options gets its final replies straight after it, so its highlight starts at
   once; replayed after a reconnect, it waits out the budget like any other question.
 - After a reconnect the server sends the open question again. If the screen already has it (shown, or held until
   "Saying it" or Help ends), new replies in it are the model's, taken within the budget as above, and the same replies
   again change nothing; a running scan never restarts.
-- Once it is answered, the fixtures resume.
+- Once it is answered, the idle screen returns, with that reply. If the connection dropped meanwhile, practice
+  follows instead. Practice replies are never shown as the last reply, since they cannot reach the server.
+- **When the connection comes back** during practice, the practice question gives way to the idle screen at once, or
+  when its reply's "Saying it" window ends (a cancel ends it too) or Help is dismissed. A server question on screen is
+  never interrupted by the connection coming or going.
 
 Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04) and each control
 1%, as in the second case of gate K1-scan.
 
 - **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A key-down in that
-  window cancels it at once and scans the same question again, and so does a switch key still held when the window
-  ends. Otherwise the reply is posted to `POST /v1/utterances`, its speech is played with Expo's audio module
-  (Polly's MP3, or a short tone in mock mode), and the next question appears. A cancelled reply never leaves the TV.
+  window cancels it at once and scans the same question again (a practice question once the connection is back gives
+  way to the idle screen instead), and so does a switch key still held when the window ends. Otherwise the reply is
+  posted to `POST /v1/utterances`, its speech is played with Expo's audio module (Polly's MP3, or a short tone in mock
+  mode), and the idle screen (or, offline, the next practice question) appears. A cancelled reply never leaves the TV.
 - **Not sure yet.** When a press leaves no option at θ = 0.97, only the top two are scanned once more and the other
   cards dim. If nobody presses, the full scan resumes.
 - **Something else** on a fixture question loads the next fixture question and its replies. On a server question
   it is the answer: it is said and posted like any reply.
 - **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, shows "Help is coming". A press
   dismisses it and the scan starts again (a server question still within its budget waits for its replies first).
+  On the idle screen a short press opens Help too, and dismissing it returns to the idle screen (or to a server
+  question that arrived meanwhile).
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
 delay of about 150 ms (the engine's window model). Every card and both pills carry an accessibility label and the

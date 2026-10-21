@@ -37,7 +37,7 @@ def service(stub: StubServer) -> Iterator[AgentService]:  # mock mode against th
     agent = AgentService(config(), stub.url)  # mock model
     agent.start()  # connects and lists the tools
     yield agent  # for the test
-    agent.stop()  # ends the MCP session before the stub stops
+    agent.stop()  # safe to call: start() and every turn closed their own sessions
 
 
 @pytest.fixture  # the HTTP interface

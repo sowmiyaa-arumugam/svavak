@@ -25,7 +25,7 @@ def free_url() -> str:  # an MCP URL on a loopback port with nothing listening
 def test_start_lists_the_server_tools(stub):  # the four tools at start-up
     agent = AgentService(config(), stub.url)  # mock mode
     assert agent.start() == ["ask_question", "get_answer", "get_recent_messages", "add_profile_fact"]  # their names
-    agent.stop()  # end the session
+    agent.stop()  # safe to call: start() closed its session already
 
 
 def test_an_unreachable_server_fails_with_a_clear_message():  # nothing listening
@@ -63,7 +63,7 @@ def test_main_serves_on_loopback_and_closes_the_session(stub, monkeypatch, capsy
     monkeypatch.setattr(AgentService, "stop", lambda self: (stopped.append(True), real_stop(self)))  # recorded, then run
     app.main()  # start, "serve", stop
     assert served == {"host": "127.0.0.1", "port": 8790}  # loopback, the agent's port
-    assert stopped == [True]  # the MCP session was ended once uvicorn returned
+    assert stopped == [True]  # stop() ran once uvicorn returned
     started = json.loads(capsys.readouterr().out.splitlines()[0])  # the first log line
     assert (started["msg"], started["mode"], started["tools"]) == ("agent.started", "mock", ["ask_question", "get_answer", "get_recent_messages", "add_profile_fact"])  # mode and tools, never the token
     assert TOKEN not in json.dumps(started)  # the token is never printed

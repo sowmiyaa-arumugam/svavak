@@ -33,6 +33,12 @@ describe('mockReplies', () => { // the rules
     for (const q of ['Would you like tea or coffee?', 'What shall we watch tonight?', 'Where is my book?', 'Who called?']) expect(yesNo(q)).toEqual([]); // choice and open questions
     expect(cleanDrafts({ candidates: mockReplies('Where is my book?') })).toHaveLength(8); // still eight valid, distinct replies
   }); // end of the case
+
+  it('classifies the question as asked, "?" included: Yes and No for a yes/no question, the open replies for a sentence', () => { // not the text without its final punctuation
+    const texts = (question: string) => mockReplies(question).map((d) => d.text); // the eight replies
+    for (const q of ['Tea?', 'Shall I open the window?']) expect(texts(q).slice(0, 2)).toEqual(['Yes, please', 'No, thanks']); // yes/no: Yes and No first
+    for (const q of ['Tell me about your day.', 'Tell me about your day']) expect(texts(q)).toEqual(texts('Where shall we go today?')); // no "?": the same eight as any other open question
+  }); // end of the case
 }); // end of mockReplies
 
 const CRICKET: ProfileFact = { text: 'Sam follows cricket', category: 'likes' }; // a demo fact

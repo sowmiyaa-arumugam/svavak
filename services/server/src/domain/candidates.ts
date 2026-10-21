@@ -45,13 +45,15 @@ const WH_WORD = /^(?:what|which|who|whom|whose|where|when|why|how)\b/i; // whole
 
 /**
  * The kind of answer a question wants, ignoring a leading name ("Sam, ..."): "... or not?" is yes/no, " or " makes a
- * choice, a question starting with a wh-word is open, and everything else ("Tea?" too) is yes/no.
+ * choice, a question starting with a wh-word is open, a text with no "?" anywhere ("Tell me about your day.") is open
+ * too, and everything else ("Tea?" too) is yes/no.
  */
 export function questionKind(question: string): 'yesno' | 'choice' | 'open' { // the kind of answer it wants
   const q = question.replace(LEADING_NAME, ''); // without the name
   if (OR_NOT.test(q)) return 'yesno'; // "Would you like tea or not?"
   if (OR.test(q)) return 'choice'; // "Tea or coffee?", even after a wh-word
-  return WH_WORD.test(q) ? 'open' : 'yesno'; // "What ...?", or anything else
+  if (WH_WORD.test(q)) return 'open'; // "What ...?"
+  return q.includes('?') ? 'yesno' : 'open'; // "Tea?", or a sentence such as "Tell me about your day."
 } // end of questionKind
 
 /** The defaults that fit the question: all eight for a yes/no question, the four of CHOICE_OR_OPEN for any other. */

@@ -135,7 +135,7 @@ describe('defaults that fit the question', () => { // Yes, No and Not now only f
   const intents = (question: string) => defaultCandidates(question).map((c) => c.intent); // and their intents
 
   it('offers Yes, No and Not now first for a yes/no question: anything that is neither a choice nor open', () => { // yes/no
-    for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?", 'Tea?', 'Tell me about your day.', 'Whatever next?']) { // yes/no questions, with no auxiliary verb in the last three
+    for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?", 'Tea?', 'Whatever next?']) { // yes/no questions, with no auxiliary verb in the last two
       expect(questionKind(q)).toBe('yesno'); // classified
       expect(texts(q)).toEqual(DEFAULT_REPLIES.map((d) => d.text)); // all eight defaults, Yes, No and Not now first
     } // end of the questions
@@ -165,6 +165,14 @@ describe('defaults that fit the question', () => { // Yes, No and Not now only f
       expect(questionKind(q)).toBe('open'); // classified
       expect(texts(q)).toEqual(FOUR); // four defaults, best first
     } // end of the questions
+  }); // end of the case
+
+  it('treats a text without a "?" as open too, after the "or not", " or " and wh-word rules', () => { // a sentence, not a question
+    for (const q of ['Tell me about your day.', 'Tell me about your day', 'Sam, tell me about your day.']) { // with and without a full stop, and after a name
+      expect(questionKind(q)).toBe('open'); // classified
+      expect(texts(q)).toEqual(FOUR); // the same four defaults, without Yes or No
+    } // end of the texts
+    expect(['Tea?', 'Ready? Tell me when.', 'Tea or coffee.', 'Tea or not.'].map(questionKind)).toEqual(['yesno', 'yesno', 'choice', 'yesno']); // a "?" anywhere keeps yes/no; "or" and "or not" still come first
   }); // end of the case
 }); // end of defaults that fit the question
 

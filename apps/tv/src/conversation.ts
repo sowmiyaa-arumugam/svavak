@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), and Help.
+// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), Help, and Idle.
 
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
@@ -20,9 +20,9 @@ export const CONFIG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, controlShare: 0.01 }
 
 /** What the screen shows. Replaced as a whole on every change. */
 export interface Snapshot { // the screen state
-  mode: 'asking' | 'waiting' | 'saying' | 'help'; // scanning; a server question before its scan starts; the reply and its cancel window; Help
-  question: Question; // the current question
-  reply: string | null; // the committed reply, while it is being said
+  mode: 'asking' | 'waiting' | 'saying' | 'help' | 'idle'; // scanning; a server question before its scan starts; the reply and its cancel window; Help; connected, between server questions
+  question: Question; // the current question; when idle, the one last on screen (not shown)
+  reply: string | null; // the committed reply, while it is being said; when idle, the last reply to a server question that stood, if any
 } // end of Snapshot
 
 /** A reply that stood through its cancel window, with its selection statistics, for POST /v1/utterances. */
@@ -55,9 +55,10 @@ function labelOf(question: Question, i: number): string { // option index to lab
 
 /**
  * Runs the screen: owns the engine, turns presses and holds into states and reports each committed selection.
- * Fixture questions rotate; a question from the server takes over at once while scanning, or as soon as "Saying it"
- * or Help ends, and the fixtures resume after it. Its scan starts when the model's replies arrive or its budget ends,
- * whichever comes first, so the list never changes while the highlight moves.
+ * While the server can be reached the screen is idle between its questions; otherwise fixture questions rotate as
+ * practice. A question from the server takes over at once while scanning, waiting or idle, or as soon as "Saying it"
+ * or Help ends, and the idle screen (or practice, offline) follows it. Its scan starts when the model's replies arrive
+ * or its budget ends, whichever comes first, so the list never changes while the highlight moves.
  */
 export class Conversation { // one per screen
   readonly engine: ScanEngine; // the screen reads its highlight on every frame
@@ -69,6 +70,9 @@ export class Conversation { // one per screen
   private readonly held: () => boolean; // whether a switch key is down now
   private readonly listeners = new Set<() => void>(); // the screen's change callbacks
   private index = 0; // the fixture question shown last
+  private online: boolean; // whether the stream is connected: then no practice question is asked
+  private last: string | null = null; // the last reply to a server question that stood, for the idle screen
+  private idleHelp = false; // Help was opened from the idle screen, so dismissing it goes back there
   private pending: Question | null = null; // a server question that arrived during "Saying it" or Help
   private readonly budgets = new Map<string, number>(); // server questions whose scan has not started: when their budget ends
   private askedAt = 0; // when the current selection's scan started
@@ -77,7 +81,7 @@ export class Conversation { // one per screen
   private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, or of a budget
   private snap: Snapshot; // what the screen shows now
 
-  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, held: () => boolean) { // start
+  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, held: () => boolean, online = false) { // start
     this.engine = new ScanEngine(config, now); // engine on the shared clock
     this.now = now; // the clock
     this.debounceMs = config.debounceMs; // 150 ms by default
@@ -85,7 +89,12 @@ export class Conversation { // one per screen
     this.onSelection = onSelection; // log hook
     this.onSay = onSay; // reply hook
     this.held = held; // the switch's state
-    this.snap = this.ask(questions[0]!); // Asking the first question
+    this.online = online; // a build with a server counts as connected until its first attempt fails
+    this.snap = this.ask(questions[0]!); // Asking the first question; the engine holds a scan from the start
+    if (online) { // a build with a server: idle from the start, so no practice question flashes up
+      this.index = -1; // no fixture shown yet: practice, if the server cannot be reached, starts at the first
+      this.snap = this.idle(); // waiting for a question
+    } // end of the online start
   } // end of constructor
 
   /** The current snapshot: the same object until something changes (for useSyncExternalStore). */
@@ -105,7 +114,8 @@ export class Conversation { // one per screen
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
     if (this.snap.mode === 'waiting') return; // nothing is lit yet
-    if (this.snap.mode === 'help' && this.pending) return this.set(this.next()); // closes Help: a server question asked meanwhile comes first
+    if (this.snap.mode === 'idle') return this.help(t); // nothing to answer: a press opens Help
+    if (this.snap.mode === 'help' && (this.pending || this.idleHelp)) return this.set(this.next()); // closes Help: a server question asked meanwhile comes first, then the idle screen
     if (this.snap.mode !== 'asking') return this.set(this.show(this.snap.question)); // cancels "Saying it" or closes Help: the same question
     if (t < this.askedAt) return; // a key-down before this scan started: the press meant nothing here
     const offsets = this.engine.offsets(t); // where this press falls against each option's highlight, for K2
@@ -128,11 +138,24 @@ export class Conversation { // one per screen
   help(_t: number): void { // from the switch input, at key-up
     if (this.snap.mode === 'help') return; // already shown
     clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
+    this.idleHelp = this.snap.mode === 'idle'; // where dismissing it goes back to
     this.set({ ...this.snap, mode: 'help', reply: null }); // "Help is coming"
   } // end of help
 
   /**
-   * A question from the server: shown at once while scanning or waiting, otherwise when "Saying it" ends or Help is
+   * Whether the stream is connected. Once it is, a practice question gives way to a queued server question or the idle
+   * screen: at once while it is asked, else when its reply's window ends or Help is dismissed. Once it is not, the idle screen gives way to practice.
+   * A server question on screen is never interrupted.
+   */
+  setOnline(online: boolean): void { // from the stream's connected and disconnected
+    if (online === this.online) return; // no change: no new snapshot
+    this.online = online; // the new state
+    if (online && this.snap.mode === 'asking' && this.snap.question.id === undefined) this.set(this.next()); // practice is over: a queued server question first, else the idle screen
+    if (!online && this.snap.mode === 'idle') this.set(this.next()); // practice, with the next fixture
+  } // end of setOnline
+
+  /**
+   * A question from the server: shown at once while scanning, waiting or idle, otherwise when "Saying it" ends or Help is
    * dismissed. Its budget for the model's replies runs from now. After a reconnect the server sends the open question
    * again: for the question on screen or the queued one, new replies are only an update, which never restarts a running
    * scan, and the same replies (the defaults again, before the model's arrive) change nothing.
@@ -143,8 +166,8 @@ export class Conversation { // one per screen
     if (known && known.replies.join('\n') === question.replies.join('\n')) return; // the same replies: nothing new
     if (known) return this.update(id, question.replies, question.scores ?? []); // the model's replies: an update
     this.budgets.set(id, this.now() + BUDGET_MS); // a new question: its budget runs from its arrival here
-    if (this.snap.mode === 'asking' || this.snap.mode === 'waiting') this.set(this.show(question)); // replaces the current question
-    else this.pending = question; // the next question, ahead of the fixtures
+    if (this.snap.mode !== 'saying' && this.snap.mode !== 'help') this.set(this.show(question)); // replaces the current question, or the idle screen
+    else this.pending = question; // the next question, ahead of the fixtures and the idle screen
   } // end of receive
 
   /** The final candidates for server question `id` (the model's, or its options): they replace its replies only within its budget, before its scan. */
@@ -170,21 +193,23 @@ export class Conversation { // one per screen
     const label = labelOf(question, chosen); // its text
     const offsetsMs = this.presses.map((p) => p[chosen]).filter((d): d is number => typeof d === 'number'); // where shown
     this.onSelection({ label, offsetsMs }); // K2 log
-    if (label === 'Help') return this.set({ ...this.snap, mode: 'help' }); // the same screen as a hold
+    if (label === 'Help') return this.help(this.now()); // the same screen as a hold
     if (label === 'Something else' && question.id === undefined) return this.set(this.next()); // on a fixture: the next question
     const reply: Reply = { questionId: question.id ?? null, questionText: question.id ? null : question.text, text: label, clicks: this.presses.length, durationMs: Math.round(this.now() - this.askedAt) }; // stats
     this.set({ ...this.snap, mode: 'saying', reply: label }); // the reply fills the screen
     this.timer = setTimeout(() => { // the window passed without a key-down notice
       if (this.held()) return this.set(this.show(question)); // a switch key is still down (a bounce, say): cancel
       this.onSay(reply); // the reply stands: posted (and spoken) only now, so a cancelled reply never leaves the TV
-      this.set(this.next()); // the next question
+      if (question.id !== undefined) this.last = label; // for the idle screen; a practice reply cannot reach the server
+      this.set(this.next()); // the next question, or the idle screen
     }, SAY_MS); // 2 s
   } // end of commit
 
-  private next(): Snapshot { // the question after the current one: a waiting server question first, else the next fixture
+  private next(): Snapshot { // after the current question: a waiting server question first, else the idle screen when online, else the next fixture
     const waiting = this.pending; // arrived during "Saying it" or Help
     this.pending = null; // taken
     if (waiting) return this.show(waiting); // show it now
+    if (this.online) return this.idle(); // connected: wait for the next server question
     this.index = this.nearby(1); // the fixture after the last one shown
     return this.ask(this.questions[this.index]!); // ask it
   } // end of next
@@ -194,6 +219,7 @@ export class Conversation { // one per screen
   } // end of nearby
 
   private show(question: Question): Snapshot { // a server question within its budget waits for its replies; others are asked
+    if (this.online && question.id === undefined) return this.next(); // a practice question again (after a cancel or Help), now connected: what comes next instead
     const end = this.budgets.get(question.id ?? ''); // when its budget ends; fixtures have none
     if (end === undefined || this.now() >= end) return this.ask(question); // nothing to wait for: the scan starts now
     clearTimeout(this.timer); // one pending timer at a time
@@ -209,6 +235,11 @@ export class Conversation { // one per screen
     this.presses = []; // no presses yet
     return { mode: 'asking', question, reply: null }; // Asking
   } // end of ask
+
+  private idle(): Snapshot { // connected, between server questions: nothing lit or moving
+    clearTimeout(this.timer); // a cancelled reply's "Saying it" window is over
+    return { mode: 'idle', question: this.snap.question, reply: this.last }; // the last reply that stood, if any
+  } // end of idle
 
   private set(next: Snapshot): void { // replace the snapshot and notify
     this.snap = next; // the new state

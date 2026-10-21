@@ -1,6 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen (plan §5.2) in scan mode: question band, up to 2 x 4 reply cards, two control pills and a hint.
+// The conversation screen (plan §5.2) in scan mode: question band, up to 2 x 4 reply cards, two control pills and a hint;
+// an idle screen between the server's questions.
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { StyleSheet, Text, View } from 'react-native'; // primitives
@@ -34,7 +35,7 @@ function say(reply: Reply): void { // the conversation's reply hook
 export function ConversationScreen() { // the screen
   const { conversation, input } = useMemo(() => { // one conversation and its switch for the screen's lifetime
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
-    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, () => input.held()); // K2 log in dev
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, () => input.held(), SERVER !== null); // K2 log in dev; a build with a server starts idle
     return { conversation, input }; // each calls the other only later, from key events and timers
   }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change
@@ -53,7 +54,9 @@ export function ConversationScreen() { // the screen
   useEffect(() => { // the server's questions while it can be reached; the fixtures keep the app working without it
     if (!SERVER) return; // built without a token: fixtures only
     const stream = new StreamClient(SERVER.url, SERVER.token, (event) => { // connects now, reconnects with back-off
-      if (event.type === 'question.created') conversation.receive(event.question); // a new question, or the open one again after a reconnect
+      if (event.type === 'connected') conversation.setOnline(true); // the idle screen between questions, no practice
+      else if (event.type === 'disconnected') conversation.setOnline(false); // practice until the server can be reached again
+      else if (event.type === 'question.created') conversation.receive(event.question); // a new question, or the open one again after a reconnect
       else conversation.update(event.questionId, event.replies, event.scores); // its final replies: the model's, or its options
     }); // end of the stream
     stream.start(); // connect
@@ -90,16 +93,24 @@ export function ConversationScreen() { // the screen
       <Text style={styles.hint}>{CANCEL}</Text>{/* a press now cancels it */}
     </View> // end of the screen
   ); // end of Saying
+  if (snap.mode === 'idle') return ( // Idle: connected, between the server's questions; nothing lit or moving
+    <View style={[styles.screen, styles.idle]}>{/* background, content centred */}
+      <Text style={styles.name}>SvaVāk</Text>{/* the app's name */}
+      <Text style={styles.waiting}>Waiting for a question</Text>{/* the state; no hint, though a press opens Help */}
+      {snap.reply !== null && <Text style={styles.said}>You said: {snap.reply}</Text>}{/* the last reply that stood, if any */}
+    </View> // end of the screen
+  ); // end of Idle
 
   const scanning = snap.mode === 'asking'; // while waiting the engine still holds the previous scan, so it is not read
   const t = now(); // one time for this render
   const lit = scanning ? conversation.engine.highlighted(t) : -1; // the highlighted option; none while waiting
   const scanned = scanning ? conversation.engine.scanAt(t).items : null; // the options the running scan shows
   const look = (i: number) => [i === lit && styles.lit, scanned !== null && !scanned.includes(i) && styles.dim]; // lit, or out of a rescan
+  const speaker = snap.question.id === undefined ? 'Practice' : `${snap.question.speaker} asks`; // a fixture only runs while the server cannot be reached
   return ( // Asking: the scan; Waiting: the same screen with nothing lit or dimmed
     <View style={styles.screen}>{/* background; content inside the 5% safe area */}
       <View style={styles.column}>{/* the content column, as wide as the grid */}
-        <Text style={styles.speaker}>{snap.question.speaker} asks</Text>{/* speaker label */}
+        <Text style={styles.speaker}>{scanning ? speaker : `${speaker} · Finding replies…`}</Text>{/* speaker label; on one line, so nothing moves when the scan starts */}
         <Text style={styles.question}>{snap.question.text}</Text>{/* the question */}
         <View style={styles.grid}>{/* up to 2 x 4 reply cards, best guess first in reading order */}
           {snap.question.replies.map((reply, i) => ( // one card per reply
@@ -124,7 +135,11 @@ export function ConversationScreen() { // the screen
 const styles = StyleSheet.create({ // sizes are design pixels (1920 x 1080), scaled to the screen
   screen: { flex: 1, alignItems: 'center', backgroundColor: colors.bg, paddingHorizontal: px(90), paddingVertical: px(54) }, // safe
   column: { flex: 1, width: px(4 * 404 + 3 * 24) }, // four cards and three gaps
-  speaker: { color: colors.text2, fontSize: px(28) }, // "Alex asks"
+  speaker: { color: colors.text2, fontSize: px(28) }, // "Alex asks", or "Practice"
+  idle: { justifyContent: 'center' }, // the idle screen's lines, centred both ways
+  name: { color: colors.text2, fontSize: px(40) }, // "SvaVāk"
+  waiting: { color: colors.text, fontSize: px(72), fontWeight: 'bold', marginTop: px(16) }, // "Waiting for a question"
+  said: { color: colors.text2, fontSize: px(44), marginTop: px(32), textAlign: 'center' }, // "You said: ..."
   question: { color: colors.text, fontSize: px(52), fontWeight: 'bold', marginTop: px(8) }, // the question (about 50 px)
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: px(24), marginTop: px(40) }, // two rows of four
   card: { // a reply card, about 404 x 230

@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2.
+// The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2; Idle.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
 import { BUDGET_MS, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
@@ -509,3 +509,178 @@ describe('Conversation with the server', () => { // questions from the stream, r
     expect(conversation.engine.scanAt(time).items).toHaveLength(10); // no rescan started
   }); // end of the case
 }); // end of the server cases
+
+/** Replaces the conversation with one built with a server, as the screen makes it: it starts connected. */
+function connected(): void { // a build with a server
+  conversation.dispose(); // the one from the set-up, built without
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held(), true); // online
+} // end of connected
+
+/** Answers LIVE with "Coffee, please" and lets the reply stand through its window. */
+function answerLive(): void { // a server question, answered
+  conversation.receive(LIVE); // shown, waiting
+  conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts
+  select(1); // "Coffee, please"
+  time += SAY_MS; // the window's end
+  jest.advanceTimersByTime(SAY_MS); // passed: the reply stands
+} // end of answerLive
+
+describe('Conversation online and offline', () => { // the idle screen while connected; practice only while the server cannot be reached
+  it('starts on the idle screen when built with a server, with no reply yet', () => { // no practice question flashes up
+    connected(); // a build with a server
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // idle
+  }); // end of the case
+
+  it("shows the idle screen with the reply once a server question's reply stands", () => { // between caregiver questions
+    connected(); // a build with a server
+    answerLive(); // "Coffee, please" stands
+    expect(said).toEqual([expect.objectContaining({ questionId: 'q1', text: 'Coffee, please' })]); // handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: LIVE, reply: 'Coffee, please' }); // idle, with the last reply
+  }); // end of the case
+
+  it('never shows a practice reply as the last reply', () => { // practice replies cannot reach the server
+    select(1); // "Tea, please" on the first fixture
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed: the next fixture
+    conversation.setOnline(true); // the server can be reached
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[1], reply: null }); // idle, no reply
+  }); // end of the case
+
+  it('opens Help on a press or a hold while idle, and a press dismisses it back to the idle screen', () => { // Help from idle
+    connected(); // a build with a server
+    answerLive(); // idle, with a reply
+    const idle = conversation.snapshot(); // the idle screen
+    conversation.press((time += 1000)); // a short press
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // Help
+    conversation.press((time += 1000)); // dismissed
+    expect(conversation.snapshot()).toEqual(idle); // idle again, with the reply
+    conversation.help((time += 1000)); // a hold
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // Help
+    conversation.press((time += 3000)); // dismissed
+    expect(conversation.snapshot()).toEqual(idle); // idle again
+  }); // end of the case
+
+  it('shows a server question asked during Help, opened while idle, first when Help is dismissed', () => { // queued over idle
+    connected(); // a build with a server
+    conversation.press((time = 1000)); // Help from the idle screen
+    conversation.receive(LIVE); // queued
+    expect(conversation.snapshot().mode).toBe('help'); // Help stays
+    conversation.press((time += 1000)); // dismissed 1 s into its budget
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // the question, waiting
+  }); // end of the case
+
+  it("shows a server question received while idle at once, and starts its scan on the model's replies", () => { // idle -> waiting -> asking
+    connected(); // a build with a server
+    expect(conversation.snapshot().mode).toBe('idle'); // idle
+    time = 700; // a while later
+    conversation.receive({ ...LIVE, ...DEFAULTS }); // question.created with the defaults
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: { ...LIVE, ...DEFAULTS }, reply: null }); // shown, nothing lit
+    time = 1900; // inside the budget
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: LIVE, reply: null }); // the model's replies
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // the highlight starts now
+  }); // end of the case
+
+  it('asks the next fixture when the connection drops while idle; the first one if none was shown yet', () => { // practice resumes
+    conversation.setOnline(true); // the first fixture gives way to the idle screen
+    time = 1000; // later
+    conversation.setOnline(false); // the connection drops
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // the next fixture
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // scanned from now
+    connected(); // a build with a server, idle from the start
+    conversation.setOnline(false); // its first attempt fails
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // practice from the first
+  }); // end of the case
+
+  it('asks the next fixture when Help, opened while idle, is dismissed after the connection dropped', () => { // no idle screen offline
+    connected(); // a build with a server
+    conversation.press((time = 1000)); // Help from the idle screen
+    conversation.setOnline(false); // the connection drops
+    expect(conversation.snapshot().mode).toBe('help'); // Help stays
+    conversation.press((time += 1000)); // dismissed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // practice
+  }); // end of the case
+
+  it('goes idle at once when the connection comes while a practice question is asked', () => { // practice ends
+    time = 700; // mid-scan of the first fixture
+    conversation.setOnline(true); // connected
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // idle
+  }); // end of the case
+
+  it("lets a practice reply in its window stand when the connection comes, then goes idle", () => { // practice ends after the window
+    select(0); // "Coffee, please": Saying
+    const saying = conversation.snapshot(); // the window
+    conversation.setOnline(true); // connected
+    expect(conversation.snapshot()).toBe(saying); // nothing changes now
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(said).toEqual([expect.objectContaining({ questionId: null, text: 'Coffee, please' })]); // still handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // idle, no reply
+  }); // end of the case
+
+  it('goes idle on a cancel of a practice reply after the connection came, and hands over nothing', () => { // no practice once online
+    select(0); // "Coffee, please": Saying
+    conversation.setOnline(true); // connected
+    conversation.press((time += 500)); // cancelled in the window
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // idle, not the practice question
+    jest.advanceTimersByTime(SAY_MS); // past the cancelled window's end
+    expect(said).toEqual([]); // nothing handed over
+  }); // end of the case
+
+  it('shows a server question queued during practice when the connection comes back, not the idle screen', () => { // queued over practice
+    select(0); // "Coffee, please" on the first fixture: Saying
+    conversation.setOnline(true); // connected: nothing changes in the window
+    conversation.receive(LIVE); // queued until the window ends
+    conversation.setOnline(false); // the connection drops
+    conversation.press((time += 500)); // cancelled in the window
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the practice question again, offline
+    conversation.setOnline(true); // the connection comes back
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // the queued question, within its budget
+  }); // end of the case
+
+  it('keeps Help open when the connection comes, and goes idle when it is dismissed', () => { // Help over practice
+    conversation.help((time = 700)); // a hold: Help over the first fixture
+    const help = conversation.snapshot(); // Help
+    conversation.setOnline(true); // connected
+    expect(conversation.snapshot()).toBe(help); // nothing changes now
+    conversation.press((time += 1000)); // dismissed
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // idle
+  }); // end of the case
+
+  it('never interrupts a server question on screen; after it, practice when offline, and the reply on the idle screen later', () => { // server question kept
+    connected(); // a build with a server
+    conversation.receive(LIVE); // shown, waiting
+    const waiting = conversation.snapshot(); // nothing lit
+    conversation.setOnline(false); // the connection drops
+    conversation.setOnline(true); // and comes back
+    expect(conversation.snapshot()).toBe(waiting); // still waiting
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts
+    const asking = conversation.snapshot(); // scanning
+    conversation.setOnline(false); // the connection drops while scanning
+    conversation.setOnline(true); // and comes back
+    expect(conversation.snapshot()).toBe(asking); // never interrupted
+    conversation.setOnline(false); // the connection drops again
+    expect(conversation.snapshot()).toBe(asking); // still scanning: it can still be answered
+    select(1); // "Coffee, please"
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(said).toEqual([expect.objectContaining({ questionId: 'q1', text: 'Coffee, please' })]); // handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // practice
+    conversation.setOnline(true); // the connection comes back
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: 'Coffee, please' }); // idle, with the reply
+  }); // end of the case
+
+  it('changes nothing when told the connection state it already has', () => { // no re-render, no new snapshot
+    const listener = jest.fn(); // the screen's re-render callback
+    conversation.subscribe(listener); // subscribed
+    const asking = conversation.snapshot(); // the first fixture
+    conversation.setOnline(false); // offline already
+    expect(conversation.snapshot()).toBe(asking); // the same snapshot
+    connected(); // a build with a server
+    conversation.subscribe(listener); // subscribed
+    const idle = conversation.snapshot(); // the idle screen
+    conversation.setOnline(true); // online already
+    expect(conversation.snapshot()).toBe(idle); // the same snapshot
+    expect(listener).not.toHaveBeenCalled(); // and no re-render
+  }); // end of the case
+}); // end of the online and offline cases

@@ -8,9 +8,12 @@ The simulated Alexa+ of plan §4.5: a [Strands](https://strandsagents.com) agent
 
 - **Tools from MCP.** At start-up the agent connects to `http://127.0.0.1:8787/mcp` with Strands' `MCPClient` over
   Streamable HTTP, sending `SVAVAK_AGENT_TOKEN`, and lists the server's tools: `ask_question`, `get_answer`,
-  `get_recent_messages` and `add_profile_fact`. The session stays open until the agent stops.
+  `get_recent_messages` and `add_profile_fact`, then closes that session. Each turn opens and closes its own MCP
+  session (an initialize and a tools/list per turn), so server restarts and the 30-minute idle timeout need no agent
+  restart. A turn that finds the server down, or refusing the token, ends with the `error` event; the next turn tries
+  again.
 - **One Strands agent per turn.** Every turn runs the real Strands tool loop with a fresh `Agent` and no memory of
-  earlier turns; the model and the tool list are shared.
+  earlier turns, over the tools of its own MCP session; the model is shared.
 - **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. Live mode is tested only with a stub model
   so far.
 - Bound to `127.0.0.1:8790`. Logs are JSON lines without caregiver text or answers.
@@ -110,7 +113,7 @@ for a body over 4 KiB). The response is `text/event-stream`, with one event per 
 | `tool_call` | `name`, `input` | The model calls a tool, before it runs |
 | `tool_result` | `name`, `ok` | The tool finished; `ok` is false for a tool error. Never its content |
 | `speech` | `text` | The agent's reply, to be spoken |
-| `error` | `message` | The model or a tool failed; the turn ends |
+| `error` | `message` | The turn's MCP session could not be opened, or the model or a tool failed; the turn ends |
 | `done` | `{}` | Always last |
 
 ```bash
@@ -134,8 +137,7 @@ Bedrock's usage metadata (Strands' `accumulated_usage`). They are 0 in mock mode
 failed. Never caregiver text, answers or the token. Strands' own log lines are switched off, because they can quote
 model-written tool input or tool names; the agent reports failures itself.
 
-**Known limits.** No reconnect: after a server restart, or once the server has ended the MCP session after 30 minutes
-without requests, restart the agent, because tool calls fail with the server's 404 until then. Tool calls have no timeout of their own. A second SSE stream for help alerts (plan §4.5) comes with the
+**Known limits.** Tool calls have no timeout of their own. A second SSE stream for help alerts (plan §4.5) comes with the
 alerts.
 
 ## Layout
@@ -144,6 +146,6 @@ alerts.
 | --- | --- |
 | `svavak_agent/config.py` | Settings |
 | `svavak_agent/mock_model.py` | The mock model provider |
-| `svavak_agent/service.py` | The MCP session, the policy and the turns |
+| `svavak_agent/service.py` | The MCP sessions, the policy and the turns |
 | `svavak_agent/app.py` | The HTTP interface and `main()` |
 | `tests/` | pytest, against `tests/stub_server.py`: FastMCP with the server's four tool names, input types, limits and required fields, and its bearer-token check |

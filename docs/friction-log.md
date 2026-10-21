@@ -572,3 +572,67 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Severity:** low; nothing failed. *(proposed)*
 - **Workaround:** none needed.
 - **Suggestion:** say which cache file was unreadable and whether another Metro is using it. *(proposed)*
+
+## 2026-10-21: Claude Code's Bash tool fails on some quoting that bash accepts
+
+- **Tool:** Claude Code (desktop app) Bash tool, running Git Bash on Windows 11
+- **Task attempted:** check line endings and edit test files from shell commands during B5 Part B.
+- **Steps:**
+  - ran `for f in ...; do echo "$f crlf=$(grep -c $'\r$' $f)"; done`;
+  - ran a quoted heredoc (`python - <<'EOF'`) of about 90 lines whose Python held triple-quoted strings with
+    apostrophes.
+- **Expected:** bash runs both: ANSI-C quoting inside a command substitution, and a quoted heredoc's body taken
+  literally.
+- **Actual:** the first failed with `/usr/bin/bash: eval: line 1: unexpected EOF while looking for matching ')'`, the
+  second with `/usr/bin/bash: -c: line 93: unexpected EOF while looking for matching '''`. Nothing ran, so no file
+  changed. A shorter heredoc of the same form worked in the same session.
+- **Severity:** low; each costs a retry. *(proposed)*
+- **Workaround:** counted carriage returns with `tr -cd '\r' < "$f" | wc -c`, and made the edits with the Edit tool.
+- **Suggestion:** pass commands to bash unchanged, or document the wrapping the tool applies (see also the backslash
+  entry of 2026-10-19). *(proposed)*
+
+## 2026-10-21: Stopping a background shell leaves its server running
+
+- **Tool:** Claude Code (desktop app) background Bash tasks and TaskStop, Windows 11
+- **Task attempted:** restart the mock server and agent on new code during B5 Part B.
+- **Steps:** started `corepack yarn workspace server start` and `uv run python -m svavak_agent` as background tasks,
+  then stopped both tasks with TaskStop.
+- **Expected:** the processes they started end too. *(proposed)*
+- **Actual:** TaskStop reported success, but the server's `node` process kept listening on 127.0.0.1:8787; the
+  shell had ended, its child had not.
+- **Severity:** medium; a stale server answers later checks with old code. *(proposed)*
+- **Workaround:** looked up the listener with `netstat -ano` and ended it with `Stop-Process`, then stopped servers
+  by port from then on.
+- **Suggestion:** end the whole process tree of a stopped background task on Windows, or say which children are still
+  running. *(proposed)*
+
+## 2026-10-21: After `am force-stop`, the Google TV launcher takes the front back
+
+- **Tool:** Android TV emulator image with the Google TV home (API 30), adb
+- **Task attempted:** restart the TV app on new JavaScript with `am force-stop dev.svavak.tv`, then
+  `am start -n dev.svavak.tv/.MainActivity` (B5 Part B).
+- **Steps:** ran the two commands one after the other, with the app in front.
+- **Expected:** the app restarts in front. *(proposed)*
+- **Actual:** the activity manager logged the app's start, but the launcher started its own MainActivity 80 ms later
+  and stayed in front; the app ran behind it.
+- **Severity:** low. *(proposed)*
+- **Workaround:** run `am start` again a few seconds later ("its current task has been brought to the front").
+- **Suggestion:** the launcher should not bring itself back when another app's activity is already starting.
+  *(proposed)*
+
+## 2026-10-21: Strands and the MCP SDK print to stderr when a turn is cancelled mid tool call
+
+- **Tool:** Strands Agents 1.61.1 (`MCPClient`) with `mcp` 1.30.0
+- **Task attempted:** close each turn's own MCP session when the caregiver panel disconnects during `get_answer`
+  (B5 Part B).
+- **Steps:** a real uvicorn agent and the stub server; the stub held `get_answer`; the client went away mid-turn; the
+  turn's `finally` stopped its `MCPClient`.
+- **Expected:** a quiet shutdown. *(proposed)*
+- **Actual:** the session was still ended (DELETE) and the next turn worked, but asyncio printed `Task was destroyed
+  but it is pending! task: <Task pending ... coro=<MCPClient._invoke_on_background_thread.<locals>.run_async.<locals>
+  .wait_for_cancel() ...>>`, and `mcp` logged `Error parsing SSE message` with an anyio `ClosedResourceError`
+  traceback. Neither held caregiver text, an answer or the token.
+- **Severity:** low; nothing fails. *(proposed)*
+- **Workaround:** none; left as is.
+- **Suggestion:** let `MCPClient.stop()` wait for its own clean-up task, and have the SDK treat a stream closed by its
+  own client as a normal end. *(proposed)*

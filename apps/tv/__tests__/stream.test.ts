@@ -87,7 +87,29 @@ describe('StreamClient', () => { // connection handling
     sockets[0]!.onopen!(); // connected
     sockets[0]!.onmessage!({ data: JSON.stringify({ type: 'question.created', question: QUESTION }) }); // a question
     sockets[0]!.onmessage!({ data: '{"type":"ping","at":"2026-10-19T10:00:00.000Z"}' }); // a ping
-    expect(events).toEqual([{ type: 'question.created', question: SCREEN }]); // only the question
+    expect(events).toEqual([{ type: 'connected' }, { type: 'question.created', question: SCREEN }]); // the connection, then only the question
+  }); // end of the case
+
+  it('reports connected when a socket opens, and disconnected when it closes or an attempt fails', () => { // connection state
+    client.start(); // first attempt
+    sockets[0]!.onopen!(); // connected
+    expect(events).toEqual([{ type: 'connected' }]); // reported
+    sockets[0]!.onclose!(); // dropped
+    expect(events).toEqual([{ type: 'connected' }, { type: 'disconnected' }]); // reported
+    jest.advanceTimersByTime(500); // the first retry
+    sockets[1]!.onclose!(); // refused: a failed attempt
+    expect(events).toEqual([{ type: 'connected' }, { type: 'disconnected' }, { type: 'disconnected' }]); // reported again
+    jest.advanceTimersByTime(1000); // the second retry
+    sockets[2]!.onopen!(); // connected again
+    expect(events.map((e) => e.type)).toEqual(['connected', 'disconnected', 'disconnected', 'connected']); // reported
+  }); // end of the case
+
+  it('reports nothing after stop(), even from a socket that opens or closes late', () => { // unmount
+    client.start(); // connect
+    client.stop(); // the screen goes away before the socket opens
+    sockets[0]!.onopen!(); // it opens all the same
+    sockets[0]!.onclose!(); // and closes
+    expect(events).toEqual([]); // nothing reported
   }); // end of the case
 
   it('retries with growing delays while the server is unreachable, and starts over after a good connection', () => { // back-off

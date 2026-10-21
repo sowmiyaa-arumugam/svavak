@@ -33,18 +33,20 @@ def refused(message: str) -> CallToolResult:  # a tool error with exactly this t
 
 
 class StubServer:  # `with StubServer(token) as stub:` serves on stub.url
-    def __init__(self, token: str) -> None:  # builds the server; nothing listens yet
+    def __init__(self, token: str, port: int = 0) -> None:  # builds the server; nothing listens yet; port 0 lets the OS choose, a given one restarts a stopped stub
         self.calls: list[tuple[str, dict[str, Any]]] = []  # every tool call, with its parsed arguments (None left out)
+        self.requests: list[tuple[str, str | None]] = []  # every HTTP request: its method and Mcp-Session-Id (None for initialize)
         self.answer: str | None = "Tea"  # get_answer's answer_text; None keeps it pending
         self.hold = False  # True makes get_answer wait until it is False again, as the server's long-poll waits for a press
         self.messages: list[dict[str, Any]] = []  # get_recent_messages' list, oldest first
         self.ids = itertools.count(1)  # q-1, q-2, ...
         self.questions: set[str] = set()  # issued question ids
         self.expected = f"Bearer {token}".encode()  # the only Authorization accepted
-        settings = uvicorn.Config(self.asgi, host="127.0.0.1", port=0, interface="asgi3", lifespan="on", log_level="warning", timeout_graceful_shutdown=1)  # a free port; a bound method needs the interface named
+        settings = uvicorn.Config(self.asgi, host="127.0.0.1", port=port, interface="asgi3", lifespan="on", log_level="warning", timeout_graceful_shutdown=1)  # a bound method needs the interface named
         self.server = uvicorn.Server(settings)  # stopped through should_exit
         self.thread = threading.Thread(target=self.server.run, name="stub-mcp", daemon=True)  # off the test's thread
         self.app = self.tools().streamable_http_app()  # a fresh FastMCP: its session manager runs once per instance
+        self.port = port  # set once listening
         self.url = ""  # set once listening
 
     def record(self, name: str, **args: Any) -> None:  # notes a call
@@ -103,7 +105,9 @@ class StubServer:  # `with StubServer(token) as stub:` serves on stub.url
 
     async def asgi(self, scope: Any, receive: Any, send: Any) -> None:  # the token check in front of FastMCP's app
         if scope["type"] == "http":  # lifespan passes through, or FastMCP's session manager never starts
-            supplied = (Headers(scope=scope).get("authorization") or "").encode()  # the bearer header
+            headers = Headers(scope=scope)  # the request's headers
+            self.requests.append((scope["method"], headers.get("mcp-session-id")))  # noted, for the session tests
+            supplied = (headers.get("authorization") or "").encode()  # the bearer header
             if not hmac.compare_digest(supplied, self.expected):  # missing or wrong token
                 problem = {"type": "about:blank", "title": "Unauthorized", "status": 401, "detail": "missing or wrong agent token"}  # as the server
                 await JSONResponse(problem, status_code=401, headers={"WWW-Authenticate": "Bearer"}, media_type="application/problem+json")(scope, receive, send)  # 401
@@ -117,8 +121,8 @@ class StubServer:  # `with StubServer(token) as stub:` serves on stub.url
             if not self.thread.is_alive() or time.monotonic() > deadline:  # crashed or stuck
                 raise RuntimeError("the stub MCP server did not start")  # fail the test
             time.sleep(0.01)  # poll
-        port = self.server.servers[0].sockets[0].getsockname()[1]  # the port the OS chose
-        self.url = f"http://127.0.0.1:{port}/mcp"  # where clients connect
+        self.port = self.server.servers[0].sockets[0].getsockname()[1]  # the port given, or the one the OS chose
+        self.url = f"http://127.0.0.1:{self.port}/mcp"  # where clients connect
         return self  # for `as`
 
     def __exit__(self, *exc_info: object) -> None:  # stops it

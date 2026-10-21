@@ -70,6 +70,7 @@ question, but the question stays expired.
 - A question ending "... or not?" is yes/no.
 - Otherwise " or " makes a choice question.
 - A question starting with a wh-word (what, which, who, whom, whose, where, when, why or how) is open.
+- A text with no "?" anywhere, such as "Tell me about your day.", is open too.
 - Everything else is yes/no, "Tea?" included.
 
 A yes/no question gets eight defaults: Yes, No and Not now first, then Not sure, Ask me later, Tell me more, Thank you

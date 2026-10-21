@@ -5,10 +5,12 @@
 import { REPLY_COUNT } from './conversation'; // the grid takes at most eight replies
 import type { Question } from './questions'; // the screen's question shape
 
-/** Stream events, in the screen's terms. Pings and anything unknown are dropped. */
+/** Stream events, in the screen's terms. Pings and anything unknown are dropped; the last two come from the client itself. */
 export type StreamEvent = // what the screen acts on
   | { type: 'question.created'; question: Question } // a new question with the default replies
-  | { type: 'question.candidates'; questionId: string; replies: string[]; scores: number[] }; // the model's replies, or a question's options at once
+  | { type: 'question.candidates'; questionId: string; replies: string[]; scores: number[] } // the model's replies, or a question's options at once
+  | { type: 'connected' } // a socket opened
+  | { type: 'disconnected' }; // a socket closed or failed, including a failed reconnect attempt
 
 /** The part of a WebSocket the client uses. */
 export interface SocketLike { // React Native's WebSocket, or a fake in tests
@@ -93,7 +95,11 @@ export class StreamClient { // one per screen
   private open(): void { // one connection attempt
     const socket = this.connect(this.url, this.headers); // dial
     this.socket = socket; // the current connection
-    socket.onopen = () => { this.attempt = 0; }; // connected: the next failure starts the back-off from 0.5 s again
+    socket.onopen = () => { // connected
+      if (this.stopped || this.socket !== socket) return; // stopped on purpose, or an old socket
+      this.attempt = 0; // the next failure starts the back-off from 0.5 s again
+      this.onEvent({ type: 'connected' }); // the server can be reached
+    }; // end of onopen
     socket.onmessage = (message) => { // an event
       const event = typeof message.data === 'string' ? parseEvent(message.data) : null; // parse
       if (event) this.onEvent(event); // hand it over
@@ -102,6 +108,7 @@ export class StreamClient { // one per screen
       if (this.stopped || this.socket !== socket) return; // stopped on purpose, or an old socket
       this.socket = null; // no connection now
       this.timer = setTimeout(() => this.open(), backoffMs(this.attempt++, this.random())); // try again later
+      this.onEvent({ type: 'disconnected' }); // the server cannot be reached now
     }; // end of onclose
   } // end of open
 } // end of StreamClient

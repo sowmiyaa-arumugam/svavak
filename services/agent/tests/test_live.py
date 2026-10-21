@@ -51,8 +51,8 @@ def test_live_mode_sends_the_policy_temperature_and_model_id(aws, stub):  # plan
     try:  # the turn
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             events = parse(http.post("/agent/turn", json={"text": "What did Sam say?"}).text)  # one turn
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
     assert agent.model.client.meta.region_name == "eu-central-1"  # AWS_REGION from the config, over the profile's region
     first = requests[0]  # the first model call
     assert first["modelId"] == "eu.amazon.nova-2-lite-v1:0"  # named explicitly, never a default
@@ -71,8 +71,8 @@ def live_turn(stub, replies: list[list[dict]], words: str) -> list[tuple[str, di
     try:  # the turn
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             return parse(http.post("/agent/turn", json={"text": words}).text)  # its events
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
 
 
 ASK = '{"question": "What would you like to watch?", "asked_by": "Alex"}'  # ask_question's input
@@ -120,8 +120,8 @@ def test_every_turn_starts_without_the_earlier_ones(aws, stub):  # a fresh Agent
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             http.post("/agent/turn", json={"text": "first"})  # turn one
             http.post("/agent/turn", json={"text": "second"})  # turn two
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
     assert [r["messages"] for r in requests] == [[{"role": "user", "content": [{"text": "first"}]}], [{"role": "user", "content": [{"text": "second"}]}]]  # nothing carried over
 
 
@@ -146,8 +146,8 @@ def test_a_failing_model_ends_the_turn_with_an_error_event(aws, stub, capsys, ca
     try:  # the turn
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             events = parse(http.post("/agent/turn", json={"text": "Ask Sam about the pistachio ice cream"}).text)  # one turn
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
     assert events == [("error", {"message": "The agent could not finish this turn."}), ("done", {})]  # the stream still ends cleanly
     out, err = capsys.readouterr()  # everything printed
     logged = json.loads(out.splitlines()[-1])  # the turn's log line
@@ -163,8 +163,8 @@ def test_a_made_up_tool_name_is_logged_as_unknown(aws, stub, capsys, caplog):  #
     try:  # the turn
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             events = parse(http.post("/agent/turn", json={"text": "Order Sam some ice cream"}).text)  # one turn
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
     assert events[1] == ("tool_result", {"name": "order_pistachio_ice_cream", "ok": False})  # Strands refused it; the panel sees the name
     out, err = capsys.readouterr()  # everything printed
     assert json.loads(out.splitlines()[-1])["tools"] == ["unknown"]  # the log does not
@@ -179,8 +179,8 @@ def test_model_written_tool_input_never_reaches_the_logs(aws, stub, capsys, capl
     try:  # the turn
         with TestClient(create_app(agent), base_url=BASE_URL) as http:  # in-process
             events = parse(http.post("/agent/turn", json={"text": "Ask Sam about dessert"}).text)  # one turn
-    finally:  # always end the session
-        agent.stop()  # DELETE /mcp
+    finally:  # always stop the service
+        agent.stop()  # safe to call: no MCP session stays open
     assert events[1] == ("tool_result", {"name": "ask_question", "ok": False})  # the empty input was refused
     out, err = capsys.readouterr()  # everything printed
     assert "istachio" not in out + err + caplog.text  # never logged

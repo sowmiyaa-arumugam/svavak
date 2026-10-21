@@ -79,4 +79,4 @@ def main() -> None:  # python -m svavak_agent
     try:  # serve until Ctrl+C
         uvicorn.run(create_app(service), host=HOST, port=PORT)  # loopback only
     finally:  # always
-        service.stop()  # ends the MCP session
+        service.stop()  # ends the start-up session if it is still open

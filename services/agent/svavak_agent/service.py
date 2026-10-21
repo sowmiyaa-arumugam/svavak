@@ -1,13 +1,15 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The agent's core (plan §4.5, §4.6): the MCP connection, the model for the mode, and one Strands agent per caregiver
-# turn, turned into the events the caregiver panel shows. Logs carry no caregiver text and no answers.
+# The agent's core (plan §4.5, §4.6): the MCP sessions, the model for the mode, and one Strands agent and MCP session per
+# caregiver turn, turned into the events the caregiver panel shows. Logs carry no caregiver text and no answers.
 
+import asyncio  # waits for the session's blocking calls without blocking the event loop
 import json  # log lines
 import logging  # Strands' log level
 import re  # thinking spans and the attribution form in the model's speech
 import time  # turn durations
 from collections.abc import AsyncIterator  # turn()'s type
+from concurrent.futures import ThreadPoolExecutor  # one thread per turn for its session's blocking calls, in order
 from datetime import UTC, datetime  # log timestamps
 from typing import Any  # loose dict values
 
@@ -57,39 +59,40 @@ def model_for(config: Config) -> Model:  # the model the mode asks for
     return BedrockModel(boto_session=session, model_id=config.model_id, temperature=TEMPERATURE)  # Nova 2 Lite, named explicitly
 
 
-class AgentService:  # the MCP session and the turns
+class AgentService:  # the start-up check and the turns, each over its own MCP session
     def __init__(self, config: Config, mcp_url: str = MCP_URL) -> None:  # builds the model; nothing connects yet
         self.config = config  # settings
         self.mcp_url = mcp_url  # the server's /mcp
         self.model = model_for(config)  # shared by every turn; it keeps no conversation state
-        self.client = MCPClient(url=mcp_url, headers={"Authorization": f"Bearer {config.agent_token}"})  # Streamable HTTP, agent token
-        self.tools: list[Any] = []  # the server's tools, listed at start-up
+        self.headers = {"Authorization": f"Bearer {config.agent_token}"}  # the agent token, on every MCP request
+        self.client = MCPClient(url=mcp_url, headers=self.headers)  # the start-up check's session: Streamable HTTP, agent token
 
-    def start(self) -> list[str]:  # connects and lists the tools; raises StartupError with a clear message
+    def start(self) -> list[str]:  # connects, lists the tools and closes again; raises StartupError with a clear message
         try:  # initialize, then tools/list
-            self.client.start()  # opens the session in Strands' background thread
-            self.tools = self.client.list_tools_sync()  # one page: the server lists all four at once
+            tools = connect(self.client)  # fails fast when the server is down or refuses the token
         except MCPClientInitializationError as error:  # unreachable, or refused; the cause is inside
             raise StartupError(explain(error, self.mcp_url)) from None  # the cause, in words
-        return [tool.tool_name for tool in self.tools]  # their names, for the start-up log
+        finally:  # listed or not
+            close(self.client)  # no idle session is left behind: every turn opens its own
+        return [tool.tool_name for tool in tools]  # their names, for the start-up log
 
-    def stop(self) -> None:  # ends the MCP session
-        try:  # DELETE /mcp and the background thread
-            self.client.stop(None, None, None)  # no exception to report
-        except RuntimeError:  # the connection had already closed
-            pass  # nothing left to end
+    def stop(self) -> None:  # ends the start-up session if it is still open; safe to call again
+        close(self.client)  # DELETE /mcp and the background thread, or nothing
 
-    async def turn(self, text: str) -> AsyncIterator[tuple[str, dict[str, Any]]]:  # one caregiver turn as (event, data) pairs
+    async def turn(self, text: str) -> AsyncIterator[tuple[str, dict[str, Any]]]:  # one caregiver turn as (event, data) pairs, over its own MCP session
         started = time.monotonic()  # for the log
         names: dict[str, str] = {}  # tool names by toolUseId
-        listed = {tool.tool_name for tool in self.tools}  # the only names the log may carry
         called: list[str] = []  # the tools called, for the log
         heard: tuple[str, bool, dict[str, Any]] | None = None  # the latest get_answer or get_recent_messages result: the only source of Sam's words
         outcome = "cancelled"  # until the loop ends: the client may go away first
         usage = {"inputTokens": 0, "outputTokens": 0}  # the turn's tokens; zero without a result (cancelled or failed)
-        agent = Agent(model=self.model, tools=self.tools, system_prompt=POLICY, callback_handler=None)  # fresh per turn; prints nothing
-        try:  # the log line, however the turn ends
-            try:  # the Strands loop
+        client = MCPClient(url=self.mcp_url, headers=self.headers)  # a fresh session: a server restart or idle timeout only ends old ones
+        calls = ThreadPoolExecutor(max_workers=1)  # the session's blocking start and stop, one after the other, off the event loop
+        try:  # the session's end and the log line, however the turn ends
+            try:  # the session and the Strands loop
+                tools = await asyncio.wrap_future(calls.submit(connect, client))  # initialize and tools/list; raises when the server is down or refuses
+                listed = {tool.tool_name for tool in tools}  # the only names the log may carry
+                agent = Agent(model=self.model, tools=tools, system_prompt=POLICY, callback_handler=None)  # fresh per turn; prints nothing
                 async for event in agent.stream_async(text):  # model calls and tool runs
                     for block in event["message"]["content"] if "message" in event else []:  # a new message: the model's or the tools'
                         if "toolUse" in block:  # the model calls a tool; it runs after this
@@ -109,12 +112,27 @@ class AgentService:  # the MCP session and the turns
                         if speech:  # something to say
                             yield ("speech", {"text": speech})  # for the caregiver
                 outcome = "ok"  # the loop ended
-            except Exception as error:  # noqa: BLE001 - any failure of the model or a tool ends the turn with an error event
+            except Exception as error:  # noqa: BLE001 - any failure of the session, the model or a tool ends the turn with an error event
                 outcome = type(error).__name__  # the type only: messages may quote the caregiver
                 yield ("error", {"message": "The agent could not finish this turn."})  # the panel shows it
             yield ("done", {})  # always last
         finally:  # finished, failed or cancelled
-            log("turn.done", mode=self.config.mode, tools=called, outcome=outcome, input_tokens=usage["inputTokens"], output_tokens=usage["outputTokens"], duration_ms=round((time.monotonic() - started) * 1000))  # no text
+            closing = asyncio.wrap_future(calls.submit(close, client))  # queued after connect, so a session still opening is closed too
+            calls.shutdown(wait=False)  # its thread ends after the close
+            log("turn.done", mode=self.config.mode, tools=called, outcome=outcome, input_tokens=usage["inputTokens"], output_tokens=usage["outputTokens"], duration_ms=round((time.monotonic() - started) * 1000))  # no text; before the wait below, which a cancelled turn may not finish
+            await asyncio.shield(closing)  # the session ends before the stream does; a cancelled turn stops waiting, but the close still runs
+
+
+def connect(client: MCPClient) -> list[Any]:  # opens a session and lists its tools; it blocks, so turns run it in their thread
+    client.start()  # initialize, in Strands' background thread
+    return client.list_tools_sync()  # one page: the server lists all four at once
+
+
+def close(client: MCPClient) -> None:  # ends a session; safe when it is closed already or never opened
+    try:  # DELETE /mcp and the background thread
+        client.stop(None, None, None)  # no exception to report
+    except RuntimeError:  # the connection had already closed
+        pass  # nothing left to end
 
 
 def speak(said: str, heard: tuple[str, bool, dict[str, Any]] | None) -> str:  # what the agent may say: never an answer the TV didn't commit
