@@ -44,17 +44,19 @@ test('draws the darkened photo of leaves in Montserrat, all from localhost, with
   expect([...hosts].filter((h) => !LOCAL.includes(h))).toEqual([]); // nothing from another host
 }); // end of the test
 
-test('shows the SvaVāk logo as the title, where the text title was and about as tall', async ({ page }) => { // the logo replaces the text
+test('shows the SvaVāk wordmark, uncut, as the title, where the text title was, its capitals as tall as before', async ({ page }) => { // the wordmark alone: the logo's tagline was too small to read
   await page.emulateMedia({ reducedMotion: 'reduce' }); // measured at rest, not while the head rises in
   await page.goto('/'); // the studio
   const logo = page.locator('.studio-head h1 img'); // the title
-  await expect(logo).toHaveAttribute('alt', 'SvaVāk — Your Voice. Your Choice.'); // the logo's own title, for screen readers
-  const drawn = await logo.evaluate(async (img: HTMLImageElement) => { await img.decode(); const box = img.getBoundingClientRect(); return { src: img.currentSrc, width: img.naturalWidth, left: box.left, top: box.top, height: box.height }; }); // what was drawn, and where
-  expect(drawn.src).toMatch(/\/assets\/brand\/SvaVak_logo_transparent\.svg#svgView/); // the transparent logo as saved, cropped to what it draws
-  expect(drawn.width).toBeGreaterThan(0); // and loaded
+  await expect(logo).toHaveAttribute('alt', 'SvaVāk'); // the name, for screen readers
+  const drawn = await logo.evaluate(async (img: HTMLImageElement) => { await img.decode(); const box = img.getBoundingClientRect(); return { src: img.currentSrc, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight, left: box.left, top: box.top, width: box.width, height: box.height }; }); // what was drawn, and where
+  expect(drawn.src).toMatch(/\/assets\/brand\/SvaVak_logo_wordmark\.svg$/); // the wordmark as saved: its own viewBox crops it, no fragment does
+  expect(drawn.naturalHeight).toBeGreaterThan(0); // and loaded
   expect([drawn.left, drawn.top]).toEqual([32, 20]); // top left, where the text title began
-  expect(drawn.height).toBeGreaterThanOrEqual(50); // the wordmark's capitals about as tall as the 42 px text title's, the tagline under it
-  expect(drawn.height).toBeLessThanOrEqual(58); // and no taller, so the panels below keep their room (loop.spec.ts checks the engine labels)
+  expect(drawn.height / drawn.naturalHeight).toBeCloseTo(54 / 806, 3); // at the scale of the whole logo before (54 px for 806 units), so the capitals keep their height
+  expect(drawn.width / drawn.height).toBeCloseTo(drawn.naturalWidth / drawn.naturalHeight, 2); // its whole drawing, not stretched
+  const inside = await page.evaluate(async (src) => { const svg = new DOMParser().parseFromString(await (await fetch(src)).text(), 'image/svg+xml').documentElement as unknown as SVGSVGElement; document.body.append(svg); const v = svg.viewBox.baseVal; const fits = [...svg.querySelectorAll('path')].every((p) => { const b = p.getBBox(); return b.x >= v.x && b.y >= v.y && b.x + b.width <= v.x + v.width && b.y + b.height <= v.y + v.height; }); svg.remove(); return fits; }, drawn.src); // the file's outlines, measured against its own viewBox
+  expect(inside).toBe(true); // and not cut: every outline lies inside the viewBox
   await expect(page.locator('.studio-head')).toHaveText(''); // no text title left beside it
 }); // end of the test
 

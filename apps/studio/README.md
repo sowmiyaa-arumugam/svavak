@@ -42,9 +42,10 @@ Dark and calm, in the spirit of [Hamish Williams' portfolio](https://hamishw.com
   License (see [NOTICE](../../NOTICE)). It is resized to 1920 px wide and compressed to 272 KB
   ([src/assets](src/assets)). A 70% overlay and a vignette that only darkens keep every text colour drawn on it at
   WCAG AA contrast.
-- **Logo:** the page's title is the SvaVāk logo, [assets/brand/SvaVak_logo_transparent.svg](../../assets/brand), a gold
-  wordmark with its italic tagline in Source Serif 4 outlines (SIL Open Font License, see [NOTICE](../../NOTICE)). It
-  is cropped to what it draws (an `#svgView` fragment), with the wordmark about as tall as the old text title.
+- **Logo:** the page's title is the SvaVāk logo's gold wordmark without its tagline,
+  [assets/brand/SvaVak_logo_wordmark.svg](../../assets/brand), in Source Serif 4 outlines (SIL Open Font License, see
+  [NOTICE](../../NOTICE)); at header size the tagline would be too small to read. Its viewBox crops it to what it
+  draws, and it is 32 px tall, so its capitals are as tall as the old text title's.
 - **Type:** Montserrat (SIL Open Font License), self-hosted from `@fontsource/montserrat` in weights 400, 600 and 700.
   No font or image CDN is called at runtime. The virtual TV keeps the TV's own look and its system type.
 - **Motion:** the page rises into place on load, and each part of a caregiver turn as it arrives. Under
@@ -104,7 +105,7 @@ It drives the page through stable `data-testid` attributes, with `data-mode`, `d
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
 - The page draws the darkened photo in Montserrat, with the credits line, the banner, the mirror label and the mode
-  badge, and shows the logo as its title, top left and about as tall as the text title was.
+  badge, and shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
 - Every request goes to the studio, the server or the agent.
 - Every line of the main text has WCAG AA contrast (4.5:1, or 3:1 for large text) against the pixels drawn behind
   it. They are measured in a 1080p screenshot taken with the text made transparent.

@@ -8,9 +8,7 @@ import { CaregiverPanel } from './CaregiverPanel'; // the simulated Alexa+
 import { EngineView } from './EngineView'; // the posterior bars
 import { TraceStrip, useTrace } from './TraceStrip'; // the system trace
 import { VirtualTv, type EngineState } from './VirtualTv'; // the web mirror of the TV
-import logo from '../../../assets/brand/SvaVak_logo_transparent.svg'; // the SvaVāk logo, in Source Serif 4 outlines (SIL OFL 1.1, see NOTICE)
-
-const LOGO_VIEW = '#svgView(viewBox(206,225,1883,806))'; // the part of the logo's 2400 x 1350 canvas it draws on, with a small margin
+import logo from '../../../assets/brand/SvaVak_logo_wordmark.svg'; // the SvaVāk logo's wordmark without its tagline, cropped tight by its viewBox, in Source Serif 4 outlines (SIL OFL 1.1, see NOTICE)
 
 export function App() { // the page
   const [drive, setDrive] = useState(false); // drive mode: off by default, so the emulator alone answers
@@ -19,8 +17,8 @@ export function App() { // the page
 
   return ( // the page
     <div className="studio">{/* the grid */}
-      <header className="studio-head">{/* the logo: name and tagline */}
-        <h1><img className="logo" src={logo + LOGO_VIEW} alt="SvaVāk — Your Voice. Your Choice." /></h1>{/* the product, with the logo's own title as its text */}
+      <header className="studio-head">{/* the wordmark: the name */}
+        <h1><img className="logo" src={logo} alt="SvaVāk" /></h1>{/* the product, with its name as its text */}
       </header>{/* end of the head */}
       <CaregiverPanel onHop={trace.local} />{/* left */}
       <section className="tv-column" aria-label="Virtual TV">{/* right */}

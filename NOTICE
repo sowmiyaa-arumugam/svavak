@@ -5,11 +5,12 @@ The TV app (apps/tv) and the root ESLint configuration contain portions derived 
 AmazonAppDev/react-native-multi-tv-app-sample (https://github.com/AmazonAppDev/react-native-multi-tv-app-sample),
 Copyright Amazon.com, Inc. or its affiliates, licensed under MIT No Attribution (MIT-0).
 
-The SvaVāk logo (assets/brand/SvaVak_logo_transparent.svg and assets/brand/SvaVak_logo_black.svg), the studio's title
-and the source of the TV app's launcher banner (apps/tv/assets/tv-banner.png), is set in the typeface Source Serif 4,
-Copyright 2014 The Source Serif 4 Project Authors (https://github.com/adobe-fonts/source-serif), licensed under the
-SIL Open Font License, Version 1.1 (https://openfontlicense.org). The logo files hold its glyphs as outlines; no font
-file is committed. The licence text is kept next to the logo: assets/brand/SourceSerif4_OFL.txt.
+The SvaVāk logo (assets/brand/SvaVak_logo_transparent.svg and assets/brand/SvaVak_logo_black.svg), the source of the
+TV app's launcher banner (apps/tv/assets/tv-banner.png), and its wordmark alone (assets/brand/SvaVak_logo_wordmark.svg),
+which is the studio's title, are set in the typeface Source Serif 4, Copyright 2014 The Source Serif 4 Project Authors
+(https://github.com/adobe-fonts/source-serif), licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org). The logo files hold its glyphs as outlines; no font file is committed. The licence text
+is kept next to the logo: assets/brand/SourceSerif4_OFL.txt.
 
 The studio (apps/studio) uses third-party material that is not under the Apache License 2.0:
 

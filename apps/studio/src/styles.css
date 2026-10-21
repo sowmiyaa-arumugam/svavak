@@ -25,7 +25,7 @@ h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(
 
 .studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 16px 32px; height: 100vh; padding: 20px 32px 12px; } /* head, panels, trace, credits */
 .studio-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 28px; } /* the logo across the top */
-.logo { display: block; height: 54px; aspect-ratio: 1883 / 806; } /* the wordmark's capitals as tall as the 42 px text title's were, the tagline under it; the ratio of LOGO_VIEW */
+.logo { display: block; height: 32px; } /* the wordmark's 478 units at the whole logo's old scale (54 px for 806), so its capitals stay as tall as the 42 px text title's were; the width follows the file's own */
 .panel { background: var(--glass); border: 1px solid var(--line); border-radius: 22px; padding: 16px 22px; backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); } /* a translucent dark panel over the leaves */
 
 .caregiver { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 20px; border-radius: 30px; padding: 26px 30px; min-height: 0; } /* a device-like frame, with room to breathe */
