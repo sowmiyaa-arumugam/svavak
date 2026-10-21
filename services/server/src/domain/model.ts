@@ -33,7 +33,7 @@ export interface Question { // plan Table 14, without household (one household f
   status: 'pending' | 'answered' | 'expired'; // answered once an utterance names it; expired when a newer question is asked first
   created_at: string; // ISO 8601 UTC
   answered_utterance_id: string | null; // the utterance that answered it
-  candidates: Candidate[]; // the replies on the TV (at most eight), best guess first
+  candidates: Candidate[]; // the replies on the TV (at most eight), best guess first but the fallbacks last (toCandidates)
 } // end of Question
 
 /** Something Sam said. */

@@ -5,8 +5,9 @@
 
 import asyncio  # drives a turn directly
 import json  # log lines
+import re  # counts sentences
 
-from svavak_agent.mock_model import FAILED, HELP  # the mock's fixed sentences
+from svavak_agent.mock_model import FAILED, HELP, NOT_YET, next_step  # the mock's fixed sentences, and the follow-up to each tool result
 
 TEA = {"question": "Would you like tea or coffee?", "asked_by": "Alex", "options": ["Tea", "Coffee"]}  # ask_question's input
 
@@ -58,15 +59,20 @@ def test_what_did_sam_say_summarises_the_recent_messages(stub, turn):  # the his
     ]  # end of the stream
 
 
-def test_what_did_sam_say_speaks_the_newest_three_distinct_replies(stub, turn):  # a longer history with a repeated reply
+def test_what_did_sam_say_speaks_the_newest_two_distinct_replies(stub, turn):  # a longer history with a repeated reply
     stub.messages = [  # oldest first
         {"text": "Tea", "time": "2026-10-19T10:00:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"},  # the fourth distinct reply: left out
-        {"text": "I'm cold", "time": "2026-10-19T10:01:00Z", "kind": "spontaneous", "question_text": None},  # no question
+        {"text": "I'm cold", "time": "2026-10-19T10:01:00Z", "kind": "spontaneous", "question_text": None},  # the third distinct reply: left out too
         {"text": "Yes", "time": "2026-10-19T10:02:00Z", "kind": "reply", "question_text": "Shall we go out?"},  # a reply
         {"text": " not now ", "time": "2026-10-19T10:03:00Z", "kind": "reply", "question_text": "Would you like a walk?"},  # the same reply as the newest, in other case and spacing
         {"text": "Not now", "time": "2026-10-19T10:04:00Z", "kind": "reply", "question_text": "Shall we watch the news?"},  # the newest
     ]  # end of the history
-    assert turn("What did Sam say?")[-2] == ("speech", {"text": 'To "Shall we watch the news?", Sam said: Not now. To "Shall we go out?", Sam said: Yes. Sam said: I\'m cold.'})  # the newest occurrence of each reply, at most three
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": 'To "Shall we watch the news?", Sam said: Not now. To "Shall we go out?", Sam said: Yes.'})  # the newest occurrence of each reply, at most two
+
+
+def test_a_message_without_a_question_is_recapped_on_its_own(stub, turn):  # a spontaneous message
+    stub.messages = [{"text": "I'm cold", "time": "2026-10-19T10:01:00Z", "kind": "spontaneous", "question_text": None}]  # no question
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": "Sam said: I'm cold."})  # one sentence
 
 
 def test_what_did_sam_say_with_no_messages(stub, turn):  # nothing yet
@@ -78,10 +84,19 @@ def test_remember_adds_a_profile_fact(stub, turn):  # context for Sam's reply su
     assert turn("Remember that Sam loves gardening") == [  # the whole stream
         ("tool_call", {"name": "add_profile_fact", "input": {"fact": "Sam loves gardening", "category": "likes"}}),  # filed under likes
         ("tool_result", {"name": "add_profile_fact", "ok": True}),  # stored
-        ("speech", {"text": "Noted."}),  # acknowledged
+        ("speech", {"text": "Noted: Sam loves gardening."}),  # acknowledged with the fact, nothing more
         ("done", {}),  # end of the turn
     ]  # end of the stream
     assert stub.calls == [("add_profile_fact", {"fact": "Sam loves gardening", "category": "likes"})]  # what the server received
+
+
+def test_every_mock_reply_is_at_most_two_short_sentences():  # spoken like a voice assistant
+    def sentences(text: str) -> int:  # closing punctuation before a space or the end; a "?" inside quotes is not one
+        return len(re.findall(r"[.!?](?=\s|$)", text))  # one per sentence
+    many = {"messages": [{"text": f"Reply {i}", "time": f"2026-10-19T10:0{i}:00Z", "kind": "reply", "question_text": f"Question {i}?"} for i in range(5)]}  # five distinct replies
+    said = [HELP, FAILED, NOT_YET, next_step("get_answer", True, {"status": "answered", "answer_text": "Cricket game, maybe"}), next_step("get_recent_messages", True, many), next_step("get_recent_messages", True, {"messages": []}), next_step("add_profile_fact", True, {"fact_id": "f-1"}, fact="Sam loves gardening")]  # every sentence the mock can speak
+    assert [s for s in said if not 1 <= sentences(s) <= 2] == []  # one or two each
+    assert [s for s in said if len(s) > 160] == []  # and short
 
 
 def test_remember_files_dislikes_and_other_facts(stub, turn):  # the category follows the verb

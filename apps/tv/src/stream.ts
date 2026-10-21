@@ -42,7 +42,8 @@ export function parseEvent(data: string): StreamEvent | null { // the server's J
     const q = message.question; // its fields
     const c = candidatesOf(q?.candidates); // its default replies
     if (typeof q?.id !== 'string' || typeof q.text !== 'string' || typeof q.asked_by !== 'string' || !c) return null; // malformed
-    return { type: 'question.created', question: { id: q.id, speaker: q.asked_by, text: q.text, ...c } }; // for the screen
+    const options = (q.candidates as { source?: unknown }[]).some((x) => x.source === 'option'); // asked with options: its list is final
+    return { type: 'question.created', question: { id: q.id, speaker: q.asked_by, text: q.text, ...c, slots: options ? c.replies.length : REPLY_COUNT } }; // for the screen; the model's replies fill up to eight
   } // end of question.created
   if (message?.type === 'question.candidates') { // the final replies: the model's, or a question's options
     const c = candidatesOf(message.candidates); // the replies

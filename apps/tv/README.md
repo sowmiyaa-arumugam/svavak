@@ -5,9 +5,9 @@
 The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It shows a question band, a 2 × 4 grid of
 reply cards and two control pills (Something else, Help). All ten are options of one
 [switchclock](../../packages/switchclock) `ScanEngine`. A server question may have fewer cards (at least one), for
-example one asked with options; the pills then follow its last card. One thick teal highlight steps through the cards,
-best guess first in reading order, then Something else, then Help: 1 s each, 2 s for the first, and then the scan
-repeats.
+example one asked with options; the pills then follow its last card. One thick teal highlight steps through the cards
+in reading order (best guess first, except that the server lists its fallback replies after the rest), then Something
+else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 
 Questions come from the [server](../../services/server). While the app is connected to it, a calm idle screen waits
 between the caregiver's questions: the name, "Waiting for a question" and the last reply ("You said: …"), with nothing
@@ -18,10 +18,12 @@ attempt fails.
 - **A server question** takes over at once while the scan runs, another server question waits for its replies, or the
   screen is idle. If it arrives during "Saying it" or Help, it waits until that window ends or Help is dismissed.
 - It shows the question and the server's default replies at once, but the highlight starts only when the model's
-  replies arrive (then on them, best guess first, using the server's priors) or when the server's 3.5 s budget for
+  replies arrive (then on them, in the server's order, using its priors) or when the server's 3.5 s budget for
   them has passed (then on the defaults). Until then the question band reads "Alex asks · Finding replies…", so the
   unlit defaults look intentional. Replies that come later are ignored, so the list never changes while the
-  highlight moves. A question asked with options gets its final replies straight after it, so its highlight starts at
+  highlight moves. The grid keeps its size too: a question asked without options shows its defaults and dimmed empty
+  cards up to eight, which the model's replies fill in place. Empty cards are never lit or scanned; any that the
+  final list doesn't reach stay empty, as do all of them if the model's replies don't come. A question asked with options gets its final replies straight after it, so its highlight starts at
   once; replayed after a reconnect, it waits out the budget like any other question.
 - After a reconnect the server sends the open question again. If the screen already has it (shown, or held until
   "Saying it" or Help ends), new replies in it are the model's, taken within the budget as above, and the same replies
@@ -50,8 +52,8 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
   question that arrived meanwhile).
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
-delay of about 150 ms (the engine's window model). Every card and both pills carry an accessibility label and the
-button role; nothing is announced aloud. The Android TV launcher banner is
+delay of about 150 ms (the engine's window model). Every reply card and both pills carry an accessibility label and
+the button role (an empty card has neither); nothing is announced aloud. The Android TV launcher banner is
 [assets/tv-banner.png](assets/tv-banner.png) (320 × 180), applied at prebuild; Fire TV takes its banner from the
 Appstore submission instead.
 

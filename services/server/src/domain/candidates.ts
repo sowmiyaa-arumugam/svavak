@@ -29,13 +29,14 @@ export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess 
 ]; // end of DEFAULT_REPLIES
 
 /** The defaults of a choice or open question, best guess first: no Yes or No, and still a "later" reply. */
-const CHOICE_OR_OPEN: readonly Draft[] = [ // design values, scored so this order holds
+const CHOICE_OR_OPEN: readonly Draft[] = [ // design values, scored so this order holds; shown with You decide first, ahead of the fallbacks (toCandidates)
   { text: 'Not sure', intent: 'clarify', score: 0.12 }, // undecided
   { text: 'You decide', intent: 'choice', score: 0.1 }, // hands the choice back
   { text: 'Tell me more', intent: 'clarify', score: 0.08 }, // ask for detail
   { text: 'Not now', intent: 'later', score: 0.06 }, // later
 ]; // end of CHOICE_OR_OPEN
 const UNSURE_OR_LATER = DEFAULT_REPLIES.filter((d) => d.text === 'Not now' || d.text === 'Not sure'); // added to ask_question's options
+const FALLBACKS: readonly Intent[] = ['later', 'clarify']; // "Not now", "Not sure", "I don't know yet": never ahead of a substantive reply (toCandidates)
 export const OPTION_SCORE = 0.3; // each of ask_question's options is as likely as "Yes, please", the best default
 
 const LEADING_NAME = /^\s*\p{L}[\p{L}'’-]*\s*,\s*/u; // "Sam, " before the question itself
@@ -72,7 +73,8 @@ const draftSchema = z.object({ text: z.string(), intent: z.enum(INTENTS), score:
 
 /**
  * Plan §4.6 post-processing of the model's raw output: schema validation (an invalid candidate is dropped, not the
- * whole list), whitespace trimming, a 60-character cap and case-insensitive de-duplication that keeps the best score.
+ * whole list), whitespace trimming, no closing full stop, a 60-character cap and case-insensitive de-duplication that
+ * keeps the best score.
  * Returns the surviving drafts, best score first; an empty list when nothing is usable.
  */
 export function cleanDrafts(raw: unknown): Draft[] { // raw tool input to clean drafts
@@ -82,7 +84,7 @@ export function cleanDrafts(raw: unknown): Draft[] { // raw tool input to clean 
   for (const item of output.data.candidates) { // each proposed candidate
     const parsed = draftSchema.safeParse(item); // its shape
     if (!parsed.success) continue; // dropped: wrong shape, unknown intent or score out of range
-    const text = parsed.data.text.replace(/\s+/g, ' ').trim(); // one space between words, none at the ends
+    const text = parsed.data.text.replace(/\s+/g, ' ').trim().replace(/[\s.…]+$/, ''); // one space between words, none at the ends, and no closing full stops or ellipsis ("Not sure." to "Not sure"); "?" and "!" stay
     if (text !== '' && text.length <= CANDIDATE_MAX_CHARS) valid.push({ ...parsed.data, text }); // within the cap
   } // end of the candidates
   valid.sort((a, b) => b.score - a.score); // best first (stable), so de-duplication keeps the best of each
@@ -103,8 +105,9 @@ export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = 
 
 /**
  * Plan §4.3 step 4: the drafts (up to 8) filled up with the given defaults they do not already contain; without a later
- * reply the weakest gives way to one (plan §4.6); then all of them (at most eight) ordered best guess first, with priors
- * from the scores. The drafts are the model's, or ask_question's options.
+ * reply the weakest gives way to one (plan §4.6); then all of them (at most eight) ordered best guess first, except that
+ * every fallback (a later or clarify reply) comes after every substantive one, with priors from the scores. The drafts
+ * are the model's, or ask_question's options.
  */
 export function toCandidates(model: readonly Draft[], defaults: readonly Draft[] = DEFAULT_REPLIES, source: 'llm' | 'option' = 'llm'): Candidate[] { // drafts to candidates
   const picked: Omit<Candidate, 'prior'>[] = model.slice(0, REPLY_COUNT).map((d) => ({ ...d, source })); // the best eight drafts
@@ -118,7 +121,7 @@ export function toCandidates(model: readonly Draft[], defaults: readonly Draft[]
     const weakest = picked.reduce((w, c, i) => (c.score <= picked[w]!.score ? i : w), 0); // the lowest score; of equals, the one listed last
     if (later) picked[weakest] = { ...later, source: 'default' }; // gives way
   } // end of the later rule
-  picked.sort((a, b) => b.score - a.score); // best guess first, as the TV scans them
+  picked.sort((a, b) => Number(FALLBACKS.includes(a.intent)) - Number(FALLBACKS.includes(b.intent)) || b.score - a.score); // the TV scans them in this order: substantive replies first, then the fallbacks, each best guess first
   const p = priors(picked.map((c, i) => ({ id: String(i), score: c.score })), PRIOR_CONFIG); // max(s, floor)^(1/tau), normalised
   return picked.map((c, i) => ({ ...c, prior: p[i]! })); // one prior per candidate
 } // end of toCandidates

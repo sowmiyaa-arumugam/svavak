@@ -3,7 +3,7 @@
 // Reply pipeline post-processing (plan §4.6): validation, trimming, length cap, de-duplication, merge and priors.
 
 import { describe, expect, it } from 'vitest'; // test API
-import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, dropBanned, optionCandidates, questionKind, toCandidates } from '../src/domain/candidates.ts'; // tested
+import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, defaultsFor, dropBanned, optionCandidates, questionKind, toCandidates } from '../src/domain/candidates.ts'; // tested
 import { REPLY_COUNT } from '../src/domain/model.ts'; // eight per question
 
 describe('cleanDrafts', () => { // raw model output to drafts
@@ -28,6 +28,23 @@ describe('cleanDrafts', () => { // raw model output to drafts
     const long = 'x'.repeat(61); // one over the cap
     const raw = { candidates: [{ text: '  Yes,\n  please ', intent: 'yes', score: 0.4 }, { text: long, intent: 'no', score: 0.3 }, { text: '   ', intent: 'no', score: 0.2 }, { text: 'y'.repeat(60), intent: 'no', score: 0.1 }] }; // cases
     expect(cleanDrafts(raw).map((d) => d.text)).toEqual(['Yes, please', 'y'.repeat(60)]); // trimmed; 60 kept; 61 and blank dropped
+  }); // end of the case
+
+  it('drops a closing full stop, keeping "?" and "!", before de-duplicating', () => { // consistent punctuation on the cards
+    const raw = { candidates: [ // as the live model wrote them, and worse
+      { text: "I don't know yet.", intent: 'clarify', score: 0.5 }, // one full stop
+      { text: 'Cricket game, maybe.', intent: 'choice', score: 0.4 }, // a comma inside stays
+      { text: 'Really?', intent: 'social', score: 0.3 }, // a question mark stays
+      { text: 'Great!', intent: 'social', score: 0.2 }, // so does an exclamation mark
+      { text: 'Maybe ...', intent: 'clarify', score: 0.1 }, // several, after a space
+      { text: 'Hmm . . .', intent: 'clarify', score: 0.09 }, // spaced out
+      { text: 'Let me think…', intent: 'clarify', score: 0.08 }, // an ellipsis character
+      { text: '.', intent: 'no', score: 0.05 }, // nothing left
+      { text: '. .', intent: 'no', score: 0.05 }, // nothing left either
+      { text: 'not sure', intent: 'clarify', score: 0.04 }, // the better of a pair
+      { text: 'Not sure.', intent: 'clarify', score: 0.03 }, // the same reply once its full stop is gone
+    ] }; // end of the list
+    expect(cleanDrafts(raw).map((d) => d.text)).toEqual(["I don't know yet", 'Cricket game, maybe', 'Really?', 'Great!', 'Maybe', 'Hmm', 'Let me think', 'not sure']); // no card ends in a full stop
   }); // end of the case
 
   it('sorts by score and de-duplicates case-insensitively, keeping the best score', () => { // ranking
@@ -65,10 +82,10 @@ describe('dropBanned', () => { // plan §4.6: no profanity
 }); // end of dropBanned
 
 describe('toCandidates', () => { // merge with defaults and priors
-  it('returns the eight defaults, Yes, No and Not now first, when the model gave nothing', () => { // FR-02
+  it('returns the eight defaults, Yes and No first, when the model gave nothing', () => { // FR-02
     const c = defaultCandidates('Shall I open the window?'); // no model output, for a yes/no question
     expect(c).toHaveLength(REPLY_COUNT); // a full grid
-    expect(c.slice(0, 3).map((x) => x.text)).toEqual(['Yes, please', 'No, thanks', 'Not now']); // shown at once
+    expect(c.slice(0, 4).map((x) => x.text)).toEqual(['Yes, please', 'No, thanks', 'Thank you', 'Not now']); // shown at once; Thank you is no fallback
     expect(c.every((x) => x.source === 'default')).toBe(true); // all defaults
   }); // end of the case
 
@@ -90,7 +107,7 @@ describe('toCandidates', () => { // merge with defaults and priors
   it('orders by score and computes priors that sum to 1 and follow the scores', () => { // priors from scores
     const c = toCandidates([{ text: 'Coffee, please', intent: 'choice', score: 0.9 }]); // one strong model candidate
     expect(c[0]!.text).toBe('Coffee, please'); // best guess first
-    for (let i = 1; i < c.length; i++) expect(c[i - 1]!.score).toBeGreaterThanOrEqual(c[i]!.score); // descending scores
+    expect(c.map((x) => x.text)).toEqual(['Coffee, please', 'Yes, please', 'No, thanks', 'Thank you', 'Not now', 'Not sure', 'Ask me later', 'Tell me more']); // descending scores, the fallbacks after the rest
     expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // a distribution
     const total = 0.9 + DEFAULT_REPLIES.slice(0, 7).reduce((s, d) => s + d.score, 0); // tau = 1 and every score above the floor
     expect(c[0]!.prior).toBeCloseTo(0.9 / total, 12); // proportional to the score
@@ -128,16 +145,38 @@ describe('toCandidates', () => { // merge with defaults and priors
     const c = toCandidates([{ text: 'Tea, please', intent: 'choice', score: 0.6 }], DEFAULT_REPLIES.slice(2, 4)); // two defaults to fill from
     expect(c.map((x) => x.text)).toEqual(['Tea, please', 'Not now', 'Not sure']); // three candidates, not eight
   }); // end of the case
+
+  it('ranks every later or clarify reply after the substantive ones, best guess first within each', () => { // a fallback never leads
+    const live = [ // the live K3 run's list for "What would you like to watch tonight?", with the intents a model gives them
+      { text: "I don't know yet", intent: 'clarify' as const, score: 0.35 }, // led the grid in the footage
+      { text: 'Cricket game, maybe', intent: 'choice' as const, score: 0.3 }, // the answer Sam chose
+      { text: 'Nothing thanks', intent: 'no' as const, score: 0.1 }, // substantive
+      { text: 'Ask me later', intent: 'later' as const, score: 0.09 }, // a fallback
+      { text: 'Sure, whatever you pick', intent: 'choice' as const, score: 0.08 }, // substantive
+      { text: 'Not sure right now', intent: 'clarify' as const, score: 0.08 }, // a fallback
+    ]; // end of the list
+    const c = toCandidates(live, defaultsFor('What would you like to watch tonight?')); // filled up with You decide and Tell me more
+    expect(c.map((x) => x.text)).toEqual(['Cricket game, maybe', 'Nothing thanks', 'You decide', 'Sure, whatever you pick', "I don't know yet", 'Ask me later', 'Not sure right now', 'Tell me more']); // fallbacks last
+    expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // priors still from the scores
+    expect(c[4]!.prior).toBeGreaterThan(c[0]!.prior); // "I don't know yet" keeps its own prior, it is only scanned later
+  }); // end of the case
+
+  it('keeps the score order when later and clarify replies are all there is', () => { // nothing substantive to put first
+    const c = toCandidates([{ text: 'Ask me later', intent: 'later', score: 0.2 }, { text: "I don't know yet", intent: 'clarify', score: 0.5 }], []); // no defaults to fill from
+    expect(c.map((x) => x.text)).toEqual(["I don't know yet", 'Ask me later']); // best guess first
+  }); // end of the case
 }); // end of toCandidates
 
 describe('defaults that fit the question', () => { // Yes, No and Not now only for yes/no questions
   const texts = (question: string) => defaultCandidates(question).map((c) => c.text); // the defaults pushed at once
   const intents = (question: string) => defaultCandidates(question).map((c) => c.intent); // and their intents
 
-  it('offers Yes, No and Not now first for a yes/no question: anything that is neither a choice nor open', () => { // yes/no
+  const EIGHT = ['Yes, please', 'No, thanks', 'Thank you', 'Not now', 'Not sure', 'Ask me later', 'Tell me more', 'Maybe']; // the defaults of a yes/no question, as shown: the fallbacks after Thank you
+
+  it('offers Yes and No first for a yes/no question: anything that is neither a choice nor open', () => { // yes/no
     for (const q of ['Shall I open the window?', 'Do you want the radio on?', 'Is it too warm in here?', 'Can I get you anything?', 'Would you like a blanket?', "Don't you want lunch?", 'Tea?', 'Whatever next?']) { // yes/no questions, with no auxiliary verb in the last two
       expect(questionKind(q)).toBe('yesno'); // classified
-      expect(texts(q)).toEqual(DEFAULT_REPLIES.map((d) => d.text)); // all eight defaults, Yes, No and Not now first
+      expect(texts(q)).toEqual(EIGHT); // all eight defaults, Yes and No first
     } // end of the questions
   }); // end of the case
 
@@ -149,12 +188,12 @@ describe('defaults that fit the question', () => { // Yes, No and Not now only f
     expect(['Sam, would you like a blanket?', 'Sam, tea or coffee?', 'Sam, what shall we watch?', 'Sam, tea or not?'].map(questionKind)).toEqual(['yesno', 'choice', 'open', 'yesno']); // as without the name
   }); // end of the case
 
-  const FOUR = ['Not sure', 'You decide', 'Tell me more', 'Not now']; // the defaults of a choice or open question, best first
+  const FOUR = ['You decide', 'Not sure', 'Tell me more', 'Not now']; // the defaults of a choice or open question, as shown: You decide before the fallbacks
 
   it('offers four defaults, without Yes or No, for a choice question: one with " or "', () => { // choice
     for (const q of ['Would you like tea or coffee?', 'Tea or coffee?', 'Shall we watch a film or the news?', 'What would you like, tea or coffee?', 'Now, or later?', 'Tea, or coffee?']) { // choice questions: one starting with a wh-word, two with a comma before " or "
       expect(questionKind(q)).toBe('choice'); // classified
-      expect(texts(q)).toEqual(FOUR); // Not sure, You decide, Tell me more, Not now
+      expect(texts(q)).toEqual(FOUR); // You decide, Not sure, Tell me more, Not now
       expect(intents(q)).not.toContain('yes'); // no Yes
       expect(intents(q)).not.toContain('no'); // no No
     } // end of the questions
@@ -187,5 +226,10 @@ describe('optionCandidates', () => { // ask_question with options
   it('keeps six options and both defaults, and drops a repeated option or default', () => { // limits and duplicates
     expect(optionCandidates(['A', 'B', 'C', 'D', 'E', 'F'])).toHaveLength(8); // a full grid
     expect(optionCandidates(['Tea', 'tea', 'Not now']).map((x) => x.text)).toEqual(['Tea', 'Not now', 'Not sure']); // case-insensitive
+  }); // end of the case
+
+  it("drops an option's closing full stop, as for the model's replies, and no default ends in one", () => { // consistent punctuation on the cards
+    expect(optionCandidates(['Tea.', 'Coffee!']).map((x) => x.text)).toEqual(['Tea', 'Coffee!', 'Not now', 'Not sure']); // "!" stays
+    for (const q of ['Tea?', 'Tea or coffee?', 'What shall we watch?']) expect(defaultCandidates(q).filter((c) => c.text.endsWith('.'))).toEqual([]); // every default of every kind
   }); // end of the case
 }); // end of optionCandidates

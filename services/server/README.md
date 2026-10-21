@@ -83,8 +83,8 @@ question, but the question stays expired.
 - A text with no "?" anywhere, such as "Tell me about your day.", is open too.
 - Everything else is yes/no, "Tea?" included.
 
-A yes/no question gets eight defaults: Yes, No and Not now first, then Not sure, Ask me later, Tell me more, Thank you
-and Maybe. A choice or open question gets four: Not sure, You decide, Tell me more and Not now.
+A yes/no question gets eight defaults, shown as Yes, No, Thank you, then the fallbacks Not now, Not sure, Ask me later,
+Tell me more and Maybe. A choice or open question gets four: You decide, then Not sure, Tell me more and Not now.
 
 **Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` straight
 away, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
@@ -92,18 +92,21 @@ the six latest turns (each the question it answered, if any, then the reply), th
 profile facts. The question, the turns and the facts are quoted as data, never as instructions: each text is a JSON
 string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The facts are at most 20,
 each at most 120 characters and in one of the categories likes, dislikes, people, routines or other; any other fact
-is left out. The model's output is validated against the schema per candidate, then trimmed, capped at 60 characters,
+is left out. The model's output is validated against the schema per candidate, then trimmed (a closing full stop
+too, so no card ends in one; "?" and "!" stay), capped at 60 characters,
 de-duplicated case-insensitively and filtered for banned terms (whole words in any case, and their -s, -es, -ed, -ing
 and -er forms, the last three also after a doubled last letter); the `server→llm` span counts the dropped candidates
 as `dropped`, never their text. Each live model call logs one `llm.usage` line: its input and output tokens, latency
 and stop reason, never text. The rest are filled up (to at most eight) with the defaults that fit the question and that
 no candidate already says (a candidate "I'm not sure" keeps out the default Not sure), and if none has the intent
-`later`, the weakest gives way to Not now (or, for a yes/no question, Ask me later if Not now is already there). Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
+`later`, the weakest gives way to Not now (or, for a yes/no question, Ask me later if Not now is already there). The
+list is ordered best guess first, but a fallback never leads: every reply with the intent `later` or `clarify` ("I
+don't know yet", Not sure, Not now) comes after every other reply, unless they are all there is. Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
 `question.candidates`. On a timeout, an error or unusable output, the defaults stay. Profile facts with `<` or `>`
 are left out, so no fact can close the `<facts>` block.
 
-**Asking with options.** The replies are exactly the options, in their order and without repeats, then Not now and
-Not sure: at most eight, with no model call. `question.candidates` follows `question.created` at once with the same
+**Asking with options.** The replies are the options (trimmed, without a closing full stop), in their order and
+without repeats, then Not now and Not sure: at most eight, with no model call. `question.candidates` follows `question.created` at once with the same
 list, so the TV starts its highlight without waiting out the budget.
 
 **Speech pipeline.** `POST /v1/utterances` synthesises speech on commit. A Polly failure commits the reply without

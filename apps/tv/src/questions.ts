@@ -9,6 +9,7 @@ export interface Question { // one fixture entry, or a question from the server
   text: string; // the question
   replies: readonly string[]; // eight replies; a server question may have fewer, down to one
   scores?: readonly number[]; // the server's priors, one per reply; fixtures use the mock scores by position
+  slots?: number; // a server question's grid size, kept when its replies change: eight unless it was asked with options; fixtures have none
 } // end of Question
 
 /** Shown in order; after the last question the first comes again. */

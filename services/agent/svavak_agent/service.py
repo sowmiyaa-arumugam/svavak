@@ -35,8 +35,10 @@ POLICY = " ".join((  # the system prompt: plan §4.6's agent policy
     'Keep questions short and ask them in the second person, such as "Would you like tea or coffee?".',  # how to ask
     'Pass options only when the caregiver named them, as in "tea or coffee". Never make options up: for an open question, such as what Sam would like to watch, leave options out, and the server suggests replies from what it knows about Sam.',  # a live run's model invented options, which hid the server's replies
     "To say what Sam said recently, call get_recent_messages; to remember something about Sam, call add_profile_fact.",  # the other tools
+    'When add_profile_fact succeeds, say only "Noted: " followed by the fact, such as "Noted: Sam loves gardening.", and nothing else.',  # a live run's model added two sentences of its own
+    "If a tool fails, say \"Sorry, that didn't work.\"",  # never "Noted" for a fact that was not stored; mock mode says the same
     "Never ask for passwords, health records or financial data.",  # plan §4.4's safety rule
-    "Answer in one or two short sentences, as they will be spoken.",  # a voice assistant
+    "Every reply is at most two short sentences, as a voice assistant speaks: no explanations or offers of more help.",  # spoken aloud
 ))  # end of the policy
 TEMPERATURE = 0.2  # plan §4.5: set explicitly, never a default
 THINKING = re.compile(r"<thinking>.*?</thinking>", re.DOTALL)  # Nova's reasoning in its text blocks, across lines: never spoken

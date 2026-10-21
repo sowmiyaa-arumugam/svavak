@@ -48,6 +48,12 @@ connects to the server through the emulator's host address. In the studio, leave
 answers; without an emulator, switch it on and answer with the space bar. Live mode (`SVAVAK_MODE=live` for the
 server and the agent) needs an AWS sign-in; see [services/server](services/server).
 
+**Before recording.** Restart the server (step 1) right before you record, while the TV is idle. Its store is in
+memory, so a restart clears the conversation: earlier questions and replies, and the profile facts added since it
+started (the seeded demo facts come back). The agent, the studio and the TV reconnect on their own, but the TV and the
+studio keep showing the last turn ("You said: …"): relaunch SvaVāk on the emulator and reload the studio page. Don't
+run the tests or the smoke scripts just before recording.
+
 ## Contributing set-up
 
 Requirements: Node.js 24 with Corepack (Yarn 4.5), Git (Git for Windows on Windows) and

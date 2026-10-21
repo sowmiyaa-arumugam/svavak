@@ -47,6 +47,14 @@ export function optionsFor(question: Question): Option[] { // engine options for
   return [...replies, ...controls]; // the grid's cards, then the pills
 } // end of optionsFor
 
+/**
+ * The grid's cards: the replies, in the server's order, then null for each empty slot up to the question's size, so the grid
+ * never changes size when the model's replies arrive. Empty slots are no options: never lit, never scanned.
+ */
+export function cardsOf(question: Question): (string | null)[] { // replies, then empty slots
+  return Array.from({ length: Math.max(question.replies.length, question.slots ?? 0) }, (_, i) => question.replies[i] ?? null); // a fixture has no slots: just its replies
+} // end of cardsOf
+
 /** Text of option i: a reply, or a control after the replies. */
 function labelOf(question: Question, i: number): string { // option index to label
   const n = question.replies.length; // the controls follow the replies, however many there are
@@ -177,7 +185,7 @@ export class Conversation { // one per screen
     this.budgets.delete(id); // the final list: its scan may start
     if (this.pending?.id === id) this.pending = { ...this.pending, replies, scores }; // not shown yet: scanned at once when it is
     if (this.snap.question.id !== id) return; // not on screen: replaced, or queued
-    const question = { ...this.snap.question, replies, scores }; // the new replies, best guess first
+    const question = { ...this.snap.question, replies, scores }; // the new replies, in the server's order; its slots stay
     if (this.snap.mode === 'waiting') this.set(this.ask(question)); // the highlight starts now, on the final list
     else this.set({ ...this.snap, question }); // Help, opened while waiting: scanned when Help is dismissed
   } // end of update

@@ -64,7 +64,14 @@ the agent policy of plan §4.6:
 - Report an answer word for word as "Sam says: …", and never invent or guess one.
 - Keep questions short, in the second person, and pass options only when the caregiver named them ("tea or coffee");
   never make options up, so an open question gets the server's replies, which know Sam's profile facts.
+- When `add_profile_fact` succeeds, say only "Noted: " and the fact ("Noted: Sam loves gardening."); when a tool
+  fails, say "Sorry, that didn't work.", as mock mode does.
 - Never ask for passwords, health records or financial data.
+- Every reply is at most two short sentences, as a voice assistant speaks.
+
+On the live run of 2026-10-21 the model answered "Remember that Sam loves gardening" with three sentences of its own
+("Got it! I've added that …"), hence the two rules on length. They are prompt rules only: unlike the rules on Sam's
+answers below, code does not enforce them, and they have not been tried live yet.
 
 **Speech guard.** The model proposes; code decides what is spoken, so the agent never speaks an answer the TV didn't
 commit. It applies in both modes (in mock mode it changes nothing).
@@ -95,13 +102,14 @@ into "would you like"; the rest is kept as typed. Case and closing punctuation a
 | "Ask Sam if he wants a walk" | `ask_question` "Would you like a walk?" without options (the server adds Yes and No), then `get_answer` | as above |
 | "Ask Sam what he wants to watch" | `ask_question` "What would you like to watch?" without options, then `get_answer` | as above |
 | "What did Sam say?" | `get_recent_messages` (limit 5) | `To "Would you like tea or coffee?", Sam said: Tea. To "Shall we go out?", Sam said: Not now.` (newest first), or "Sam hasn't said anything recently." |
-| "Remember that Sam loves gardening" | `add_profile_fact` "Sam loves gardening", category `likes` (`dislikes` for hates, dislikes or a negated like, `other` otherwise) | "Noted." |
+| "Remember that Sam loves gardening" | `add_profile_fact` "Sam loves gardening", category `likes` (`dislikes` for hates, dislikes or a negated like, `other` otherwise) | "Noted: Sam loves gardening." |
 | Anything else | none | "In mock mode I can ask Sam a question, tell you what Sam said, or remember something about Sam." |
 
 Options are split at " or " and at commas, and he, she and they are all understood. A tool error gets "Sorry, that
 didn't work."
 
-The recap speaks the newest one to three messages, newest first, one sentence each:
+Every reply is at most two short sentences. The recap speaks the newest one or two messages, newest first, one
+sentence each:
 `To "<question>", Sam said: <reply>.`, or `Sam said: <reply>.` for a message without a question. A reply said more
 than once (case and spacing ignored) is spoken once, with its newest question.
 

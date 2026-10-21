@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { now } from '../../tv/src/clock'; // the TV's shared clock
-import { CONFIG, CONTROLS, Conversation, type Reply } from '../../tv/src/conversation'; // the TV's state machine and scan rules
+import { cardsOf, CONFIG, CONTROLS, Conversation, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules and grid
 import { QUESTIONS } from '../../tv/src/questions'; // the TV's practice questions
 import { StreamClient, type SocketLike } from '../../tv/src/stream'; // the TV's stream client: parsing and reconnects
 import { SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
@@ -147,7 +147,7 @@ function Screen({ conversation, snap }: { conversation: Conversation; snap: Retu
       <p className="tv-speaker">{label}</p>{/* who asks, or Practice */}
       <p className="tv-question" data-testid="tv-question">{q.text}</p>{/* the question */}
       <div className="tv-grid">{/* up to 2 x 4 cards */}
-        {q.replies.map((reply, i) => <div key={i} className={`tv-card${look(i)}`} data-testid="tv-card" data-label={reply} data-lit={i === lit ? 'true' : 'false'}>{reply}</div>)}{/* one card per reply */}
+        {cardsOf(q).map((reply, i) => reply === null ? <div key={i} className="tv-card dim" data-testid="tv-slot" /> : <div key={i} className={`tv-card${look(i)}`} data-testid="tv-card" data-label={reply} data-lit={i === lit ? 'true' : 'false'}>{reply}</div>)}{/* one card per reply, then the empty slots the model's replies will fill */}
       </div>{/* end of the grid */}
       <div className="tv-controls">{/* scanned after the cards */}
         {CONTROLS.map((name, c) => <div key={name} className={`tv-pill${look(q.replies.length + c)}${name === 'Help' ? ' tv-help' : ''}`} data-testid="tv-pill" data-label={name} data-lit={q.replies.length + c === lit ? 'true' : 'false'}>{name}</div>)}{/* Something else, Help */}

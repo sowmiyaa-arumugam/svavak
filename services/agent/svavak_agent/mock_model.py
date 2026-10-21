@@ -38,7 +38,7 @@ def first_step(text: str) -> tuple[str, dict[str, Any]] | str:  # the caregiver'
     return HELP  # not understood
 
 
-def next_step(tool: str, ok: bool, output: dict[str, Any]) -> tuple[str, dict[str, Any]] | str:  # after a tool's result
+def next_step(tool: str, ok: bool, output: dict[str, Any], fact: str = "") -> tuple[str, dict[str, Any]] | str:  # after a tool's result; fact is add_profile_fact's input, which plan() passes
     if not ok:  # refused (invalid input, unknown question, too many facts)
         return FAILED  # never guess
     if tool == "ask_question":  # asked: now wait for the answer
@@ -49,9 +49,9 @@ def next_step(tool: str, ok: bool, output: dict[str, Any]) -> tuple[str, dict[st
         distinct: dict[str, dict[str, Any]] = {}  # one message per reply, newest first
         for m in reversed(output["messages"]):  # the list is oldest first
             distinct.setdefault(m["text"].strip().casefold(), m)  # the newest occurrence wins; case and spacing ignored
-        said = [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[:3]]  # one sentence each, at most three
+        said = [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[:2]]  # one sentence each, at most two
         return " ".join(said) if said else "Sam hasn't said anything recently."  # a short spoken recap
-    return "Noted."  # add_profile_fact
+    return f"Noted: {sentence(fact)}"  # add_profile_fact: the fact, and nothing more
 
 
 def sentence(text: str) -> str:  # Sam's words, closed with a full stop when they have no closing punctuation
@@ -59,19 +59,22 @@ def sentence(text: str) -> str:  # Sam's words, closed with a full stop when the
 
 
 def plan(messages: Messages) -> tuple[str, dict[str, Any]] | str:  # the next step for this conversation
-    names: dict[str, str] = {}  # tool names by toolUseId
+    uses: dict[str, dict[str, Any]] = {}  # the model's tool calls by toolUseId: name and input
     last: tuple[str, bool, dict[str, Any]] | None = None  # the latest tool result since the caregiver spoke
+    fact = ""  # the input fact of that result's call, if it was add_profile_fact
     text = ""  # the caregiver's latest words
     for message in messages:  # oldest first
         for block in message["content"]:  # text, toolUse or toolResult blocks
             if "toolUse" in block:  # a call the model made
-                names[block["toolUse"]["toolUseId"]] = block["toolUse"]["name"]  # remember its name
+                uses[block["toolUse"]["toolUseId"]] = block["toolUse"]  # remember its name and input
             elif "toolResult" in block:  # its result; Strands keeps the MCP structuredContent on it
                 result = block["toolResult"]  # status, content and structuredContent
-                last = (names[result["toolUseId"]], result["status"] == "success", result.get("structuredContent") or {})  # newest wins
+                use = uses[result["toolUseId"]]  # the call it answers
+                last = (use["name"], result["status"] == "success", result.get("structuredContent") or {})  # newest wins
+                fact = use["input"].get("fact", "")  # for "Noted: <the fact>."
             elif "text" in block and message["role"] == "user":  # the caregiver spoke
                 text, last = block["text"], None  # a new turn starts over
-    return first_step(text) if last is None else next_step(*last)  # first move, or the follow-up
+    return first_step(text) if last is None else next_step(*last, fact=fact)  # first move, or the follow-up
 
 
 class MockModel(Model):  # a Strands model provider that never calls a model

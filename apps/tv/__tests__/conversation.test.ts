@@ -3,7 +3,7 @@
 // The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2; Idle.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
-import { BUDGET_MS, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
+import { BUDGET_MS, cardsOf, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
 import { HOLD_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
@@ -51,6 +51,10 @@ describe('Conversation', () => { // the state machine
   it('uses a fixture of questions with eight replies each', () => { // the 2 x 4 grid
     expect(QUESTIONS.length).toBeGreaterThanOrEqual(5); // about five questions
     for (const q of QUESTIONS) expect(q.replies).toHaveLength(REPLY_COUNT); // eight replies each
+  }); // end of the case
+
+  it('ends no practice reply in a full stop, as the server ends none', () => { // consistent punctuation on the cards
+    expect(QUESTIONS.flatMap((q) => q.replies).filter((r) => r.endsWith('.'))).toEqual([]); // "?" and "!" would be fine
   }); // end of the case
 
   it('starts Asking the first question: a full scan of 10 options, best guess first, at the mock priors', () => { // start
@@ -319,6 +323,46 @@ describe('Conversation with the server', () => { // questions from the stream, r
     time += SAY_MS; // the window's end
     jest.advanceTimersByTime(SAY_MS); // passed
     expect(said).toEqual([expect.objectContaining({ questionId: 'q1', text: 'Tea' })]); // posted
+  }); // end of the case
+
+  it("keeps the grid's size while a server question waits: its defaults, then empty slots up to eight, filled in place by the model's replies", () => { // no jump in the grid
+    const open = { id: 'q1', speaker: 'Alex', text: 'What shall we watch tonight?', replies: ['You decide', 'Not sure', 'Tell me more', 'Not now'], scores: [0.278, 0.333, 0.222, 0.167], slots: REPLY_COUNT }; // question.created: four defaults, as the server sends them
+    conversation.receive(open); // shown, waiting
+    expect(conversation.snapshot().mode).toBe('waiting'); // nothing lit yet
+    expect(cardsOf(conversation.snapshot().question)).toEqual(['You decide', 'Not sure', 'Tell me more', 'Not now', null, null, null, null]); // eight cards, four of them empty
+    time = 1000; // the model's replies, inside the budget
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates: eight replies
+    expect(conversation.snapshot().mode).toBe('asking'); // the scan starts
+    expect(cardsOf(conversation.snapshot().question)).toEqual(LIVE.replies); // the same eight cards, filled
+    expect(conversation.engine.scanAt(time).items).toHaveLength(REPLY_COUNT + 2); // the empty slots were never options
+  }); // end of the case
+
+  it("keeps eight slots when the model's final list is shorter, shown or queued", () => { // the model gave too few usable replies
+    const open = { id: 'q1', speaker: 'Alex', text: 'What shall we watch tonight?', replies: ['You decide', 'Not sure', 'Tell me more', 'Not now'], scores: [0.278, 0.333, 0.222, 0.167], slots: REPLY_COUNT }; // question.created: four defaults, as the server sends them
+    const six = { replies: LIVE.replies.slice(0, 6), scores: LIVE.scores!.slice(0, 6) }; // question.candidates: six replies
+    conversation.receive(open); // shown, waiting
+    conversation.update('q1', six.replies, six.scores); // the final list
+    expect(cardsOf(conversation.snapshot().question)).toEqual([...six.replies, null, null]); // still eight cards
+    expect(conversation.engine.scanAt(time).items).toHaveLength(6 + 2); // six replies, then the two controls
+    select(0); // a reply: "Saying it" for 2 s
+    conversation.receive({ ...open, id: 'q2' }); // queued until the window ends
+    conversation.update('q2', six.replies, six.scores); // its final list, while queued
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed: q2 is shown and scanned at once
+    expect(cardsOf(conversation.snapshot().question)).toEqual([...six.replies, null, null]); // eight cards here too
+  }); // end of the case
+
+  it("keeps the empty slots, unlit and unscanned, when the budget ends on the defaults; a question with options keeps its own size", () => { // no jump either way
+    conversation.receive({ id: 'q1', speaker: 'Alex', text: 'What shall we watch tonight?', replies: ['You decide', 'Not sure'], scores: [0.45, 0.55], slots: REPLY_COUNT }); // two replies, eight slots
+    time = BUDGET_MS; // the budget's end, with no model replies
+    jest.advanceTimersByTime(BUDGET_MS); // passed
+    expect(cardsOf(conversation.snapshot().question)).toEqual(['You decide', 'Not sure', null, null, null, null, null, null]); // the grid stays as it was
+    expect(conversation.engine.scanAt(time).items).toEqual([0, 1, 2, 3]); // two replies, then Something else and Help
+    const options = { id: 'q2', speaker: 'Alex', text: 'Would you like tea or coffee?', replies: ['Tea', 'Coffee', 'Not now', 'Not sure'], scores: [0.37, 0.37, 0.14, 0.12], slots: 4 }; // question.created of a question asked with options
+    conversation.receive(options); // shown
+    expect(cardsOf(conversation.snapshot().question)).toEqual(options.replies); // four cards, no empty slot
+    conversation.update('q2', options.replies, options.scores); // question.candidates, at once
+    expect(cardsOf(conversation.snapshot().question)).toEqual(options.replies); // still four
   }); // end of the case
 
   it('ignores a press while a server question waits, since nothing is lit', () => { // no highlight yet

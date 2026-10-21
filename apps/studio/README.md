@@ -17,7 +17,7 @@ screen.
     client ([apps/tv/src](../tv/src)), drawn on the TV's 1920 × 1080 layout and scaled into a 16:9 frame.
   - It connects to the [server](../../services/server) as the household's TV. It shows the idle screen between
     questions, practice questions when the server can't be reached, "Finding replies…" while a question waits for the
-    model's replies, and Help.
+    model's replies (with dimmed empty cards up to eight, as on the TV), and Help.
   - The **space bar** is the switch: press when your answer lights up, or hold for 2 s for Help. While you type in the
     caregiver's text box, a space is just a space.
   - A reply that stands through its 2 s cancel window is posted to `POST /v1/utterances`, as the TV posts it. The

@@ -51,7 +51,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     const { uc, events, store, spans } = setup(); // mock model
     const { question, suggested } = uc.askQuestion('Would you like tea or coffee?', 'Alex'); // ask
     expect(events).toEqual([{ type: 'question.created', question }]); // before the model has answered
-    expect(question.candidates.map((c) => c.text)).toEqual(['Not sure', 'You decide', 'Tell me more', 'Not now']); // the four defaults of a choice question
+    expect(question.candidates.map((c) => c.text)).toEqual(['You decide', 'Not sure', 'Tell me more', 'Not now']); // the four defaults of a choice question, fallbacks last
     await suggested; // the model's turn
     const pushed = events[1]; // the second event
     expect(pushed?.type).toBe('question.candidates'); // candidates follow

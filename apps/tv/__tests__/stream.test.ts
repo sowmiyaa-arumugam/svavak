@@ -7,11 +7,20 @@ import { backoffMs, parseEvent, StreamClient, type SocketLike, type StreamEvent 
 const candidate = (text: string, prior: number) => ({ text, intent: 'yes', score: prior, prior, source: 'default' }); // a wire candidate
 const EIGHT = Array.from({ length: 8 }, (_, i) => candidate(`Reply ${i}`, (8 - i) / 36)); // eight, best first
 const QUESTION = { id: 'q1', text: 'Tea?', asked_by: 'Alex', status: 'pending', created_at: '2026-10-19T10:00:00.000Z', answered_utterance_id: null, candidates: EIGHT }; // a wire question
-const SCREEN = { id: 'q1', speaker: 'Alex', text: 'Tea?', replies: EIGHT.map((c) => c.text), scores: EIGHT.map((c) => c.prior) }; // as the screen needs it
+const SCREEN = { id: 'q1', speaker: 'Alex', text: 'Tea?', replies: EIGHT.map((c) => c.text), scores: EIGHT.map((c) => c.prior), slots: 8 }; // as the screen needs it
 
 describe('parseEvent', () => { // server JSON to screen events
   it('turns question.created into a question with its replies and priors', () => { // new question
     expect(parseEvent(JSON.stringify({ type: 'question.created', question: QUESTION }))).toEqual({ type: 'question.created', question: SCREEN }); // mapped
+  }); // end of the case
+
+  it("gives a question asked without options eight slots, for the model's replies to fill, and one asked with options its own size", () => { // no jump in the grid
+    const four = [candidate('You decide', 0.278), candidate('Not sure', 0.333), candidate('Tell me more', 0.222), candidate('Not now', 0.167)]; // the defaults of an open question, as the server sends them: the fallbacks after You decide
+    const open = parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, text: 'What shall we watch?', candidates: four } })); // asked without options
+    expect(open?.type === 'question.created' && open.question.slots).toBe(8); // four defaults, four empty slots
+    const options = [{ ...candidate('Tea', 0.37), source: 'option' }, { ...candidate('Coffee', 0.37), source: 'option' }, candidate('Not now', 0.14), candidate('Not sure', 0.12)]; // ask_question's options and two defaults
+    const asked = parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, candidates: options } })); // asked with options
+    expect(asked?.type === 'question.created' && asked.question.slots).toBe(4); // final already: no empty slot
   }); // end of the case
 
   it('turns question.candidates into replies and priors for a question id', () => { // model replies

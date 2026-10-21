@@ -12,7 +12,10 @@ from conftest import TOKEN  # the agent token
 from stub_server import StubServer  # the stub of the server's /mcp
 
 ERROR = ("error", {"message": "The agent could not finish this turn."})  # the turn's error event
-NOTED = [("speech", {"text": "Noted."}), ("done", {})]  # the end of a turn that stored a profile fact
+
+
+def noted(fact: str) -> list[tuple[str, dict[str, str]]]:  # the end of a turn that stored this profile fact
+    return [("speech", {"text": f"Noted: {fact}."}), ("done", {})]  # acknowledged with the fact, nothing more
 
 
 def sessions(stub: StubServer) -> set[str]:  # every MCP session the stub has seen
@@ -29,17 +32,17 @@ def test_start_up_closes_its_session(service, stub):  # no idle session is left 
 
 
 def test_each_turn_opens_and_closes_its_own_session(stub, turn):  # an initialize and a tools/list per turn
-    assert turn("Remember that Sam loves gardening")[-2:] == NOTED  # turn one
-    assert turn("Remember that Sam hates mushrooms")[-2:] == NOTED  # turn two
+    assert turn("Remember that Sam loves gardening")[-2:] == noted("Sam loves gardening")  # turn one
+    assert turn("Remember that Sam hates mushrooms")[-2:] == noted("Sam hates mushrooms")  # turn two
     assert len(sessions(stub)) == 3  # start-up's, then one per turn
     assert closed(stub) == sessions(stub)  # each one ended with its turn
 
 
 def test_a_server_restart_between_turns_needs_no_agent_restart(stub, turn):  # the server forgets all sessions when it restarts
-    assert turn("Remember that Sam loves gardening")[-2:] == NOTED  # before the restart
+    assert turn("Remember that Sam loves gardening")[-2:] == noted("Sam loves gardening")  # before the restart
     stub.__exit__()  # the server stops
     with StubServer(TOKEN, port=stub.port) as restarted:  # and starts again on its port
-        assert turn("Remember that Sam hates mushrooms")[-2:] == NOTED  # the same agent carries on
+        assert turn("Remember that Sam hates mushrooms")[-2:] == noted("Sam hates mushrooms")  # the same agent carries on
     assert restarted.calls == [("add_profile_fact", {"fact": "Sam hates mushrooms", "category": "dislikes"})]  # the call reached the new server
 
 
@@ -52,7 +55,7 @@ def test_a_turn_while_the_server_is_down_ends_with_an_error_and_the_next_one_wor
     assert (logged["msg"], logged["tools"], logged["outcome"]) == ("turn.done", [], "MCPClientInitializationError")  # the error's type, never its text
     assert "gardening" not in out + err + caplog.text  # no caregiver text
     with StubServer(TOKEN, port=stub.port) as back:  # the server is back on its port
-        assert turn("Remember that Sam loves gardening")[-2:] == NOTED  # the next turn simply tries again
+        assert turn("Remember that Sam loves gardening")[-2:] == noted("Sam loves gardening")  # the next turn simply tries again
     assert back.calls == [("add_profile_fact", {"fact": "Sam loves gardening", "category": "likes"})]  # and reached it
 
 

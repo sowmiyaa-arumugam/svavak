@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // h
 import { StyleSheet, Text, View } from 'react-native'; // primitives
 import KeyEvent from 'react-native-keyevent'; // Android key events, forwarded by plugins/withKeyEvent.js
 import { now } from './clock'; // the shared clock
-import { CONFIG, CONTROLS, Conversation, type Reply } from './conversation'; // the state machine
+import { cardsOf, CONFIG, CONTROLS, Conversation, type Reply } from './conversation'; // the state machine, and the grid's cards
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
 import { postUtterance, SERVER } from './server'; // the server, if this build has one
@@ -107,13 +107,15 @@ export function ConversationScreen() { // the screen
   const scanned = scanning ? conversation.engine.scanAt(t).items : null; // the options the running scan shows
   const look = (i: number) => [i === lit && styles.lit, scanned !== null && !scanned.includes(i) && styles.dim]; // lit, or out of a rescan
   const speaker = snap.question.id === undefined ? 'Practice' : `${snap.question.speaker} asks`; // a fixture only runs while the server cannot be reached
-  return ( // Asking: the scan; Waiting: the same screen with nothing lit or dimmed
+  return ( // Asking: the scan; Waiting: the same screen with nothing lit, and only the empty cards dimmed
     <View style={styles.screen}>{/* background; content inside the 5% safe area */}
       <View style={styles.column}>{/* the content column, as wide as the grid */}
         <Text style={styles.speaker}>{scanning ? speaker : `${speaker} · Finding replies…`}</Text>{/* speaker label; on one line, so nothing moves when the scan starts */}
         <Text style={styles.question}>{snap.question.text}</Text>{/* the question */}
         <View style={styles.grid}>{/* up to 2 x 4 reply cards, best guess first in reading order */}
-          {snap.question.replies.map((reply, i) => ( // one card per reply
+          {cardsOf(snap.question).map((reply, i) => reply === null ? ( // an empty slot, until the model's replies fill it
+            <View key={i} style={[styles.card, styles.dim]} /> // a card's size, dimmed, with no text: never lit or scanned
+          ) : ( // one card per reply
             <View key={i} style={[styles.card, ...look(i)]} accessible accessibilityRole="button" accessibilityLabel={reply}>{/* card */}
               <Text style={styles.cardText} numberOfLines={2}>{reply}</Text>{/* two-line bold text */}
             </View> // end of the card
@@ -153,7 +155,7 @@ const styles = StyleSheet.create({ // sizes are design pixels (1920 x 1080), sca
     backgroundColor: colors.surface, // card surface
   }, // end of card
   lit: { borderColor: colors.ring }, // the one highlight: a thick teal border
-  dim: { opacity: 0.35 }, // not in the running top-two rescan
+  dim: { opacity: 0.35 }, // not in the running top-two rescan, or an empty card
   cardText: { color: colors.text, fontSize: px(34), fontWeight: 'bold' }, // two-line bold reply
   controls: { flexDirection: 'row', gap: px(24), marginTop: px(48) }, // the control bar
   pill: { // a control pill, 120 px tall
