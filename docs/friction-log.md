@@ -759,3 +759,19 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Severity:** low; the message names the cause. *(proposed)*
 - **Workaround:** stop Metro, start it again with `CI=1 yarn workspace tv start`, then force-stop and start the app.
 - **Suggestion:** a flag for a non-interactive Metro that still watches files. *(proposed)*
+
+## 2026-10-21: In the emulator, a closed port on the host is not refused
+
+- **Tool:** Android Emulator 37.2.12 (Android TV, API 30), Windows 11
+- **Task attempted:** check the TV app's "Couldn't send the help request." screen with the server stopped (B8).
+- **Steps:** stopped the server on the host's port 8787, held the switch on the emulator through gRPC `sendKey`, and
+  took screenshots every 2 s; then ran `toybox nc -w 10 10.0.2.2 8787` (and port 1) in `adb shell`.
+- **Expected:** a connection to a host port with nothing listening is refused at once, as on a real network, so the
+  failure shows at once. *(proposed)*
+- **Actual:** `nc` ended with "Timeout" after about 1.4 s, not "Connection refused"; a connection to Metro's port
+  8081 opened in 46 ms. The app's request ended only when its own 4 s timeout fired (`AbortError`), twice with its one
+  retry, so "Asking for help…" stayed on screen about 8 s before the failure line.
+- **Severity:** low; the app's timeout bounds it, and it only slows the offline case. *(proposed)*
+- **Workaround:** none needed; wait out the timeouts when checking the offline screens.
+- **Suggestion:** answer a guest's connection to a closed host port with a reset, as the host itself does.
+  *(proposed)*

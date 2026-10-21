@@ -48,9 +48,14 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
   cards dim. If nobody presses, the full scan resumes.
 - **Something else** on a fixture question loads the next fixture question and its replies. On a server question
   it is the answer: it is said and posted like any reply.
-- **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, shows "Help is coming". A press
-  dismisses it and the scan starts again (a server question still within its budget waits for its replies first).
-  On the idle screen a short press opens Help too, and dismissing it returns to the idle screen (or to a server
+- **Help**, chosen in the scan or opened by holding the switch for 2 s at any time, sends one help request to the
+  server for the caregiver (`POST /v1/alerts`, with the device token, an idempotency key, a 4 s timeout and one
+  retry). The screen says what really happened: "Asking for help…" while it is sent, "Help request sent." once the
+  server confirms it, or "Couldn't send the help request." when it can't (a build without a server, or a server that
+  can't be reached, as in offline practice). Help that is already open sends nothing more, so a hold sends one request,
+  even under the emulator's key chatter. A press dismisses it and the scan starts again (a server question still
+  within its budget waits for its replies first); an answer that comes after that changes nothing. On the idle screen
+  a short press opens Help too, with its request, and dismissing it returns to the idle screen (or to a server
   question that arrived meanwhile).
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
@@ -121,8 +126,8 @@ The Metro terminal (and `adb logcat -s ReactNativeJS`) shows:
    card lights up and μ after it goes dark (1150 ms on a 1 s card, 2150 ms on the 2 s first card), give or take
    σ = 120 ms. Offsets well outside that range mean the real delay or jitter, including key-handler and rendering
    delay, is larger than the engine assumes.
-6. Check once each: holding the switch for 2 s opens "Help is coming" and a press dismisses it; a press during
-   "Saying it" cancels the reply and restarts the scan of the same question.
+6. Check once each: holding the switch for 2 s opens Help ("Help request sent." with the server running) and a press
+   dismisses it; a press during "Saying it" cancels the reply and restarts the scan of the same question.
 
 K2 passes with at least 19 of 20 intended selections, a lowest frame rate of at least 50 fps, and the jitter recorded.
 
@@ -149,3 +154,9 @@ through the same gRPC `sendKey` (a key-down every 33 ms, which reached the kerne
 apart: 55 pairs in 2.5 s, 88 in 4 s) opened "Help is coming" while the keys were still coming, and a short press then
 dismissed it. Holding Enter on the PC keyboard itself, which the emulator turns into the same pattern, was not tried
 by hand.
+
+**Help request, 2026-10-21 (B8).** The same replay (55 key-downs in 2.5 s) with the server running in mock mode sent
+one help request: one `help.requested` line in the server's log and one `[help] request sent` in the app's log. The
+screen showed "Help request sent.", and a short press returned to the idle screen. With the server stopped, the
+emulator does not refuse the closed port on the host, so both 4 s attempts time out: "Asking for help…" stayed about
+8 s, then "Couldn't send the help request." appeared, and a short press returned to the practice question.

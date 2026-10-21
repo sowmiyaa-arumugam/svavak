@@ -3,7 +3,7 @@
 // The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2; Idle.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
-import { BUDGET_MS, cardsOf, CONFIG, Conversation, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
+import { BUDGET_MS, cardsOf, CONFIG, Conversation, HELP_TEXT, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
 import { HOLD_MS, RELEASE_DEBOUNCE_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
@@ -16,16 +16,21 @@ const HELP = REPLY_COUNT + 1; // option index of Help, scanned last
 let time = 0; // the fake shared clock, in ms
 let selections: Selection[] = []; // what the K2 hook received
 let said: Reply[] = []; // what the reply hook received
+let helps: { resolve: () => void; reject: (error: Error) => void }[] = []; // the help requests the help hook was asked to send, each settled by the test
 let conversation: Conversation; // the instance under test
 let input: SwitchInput; // the switch, wired to it as on screen
+
+/** The help hook, as the screen's: one request per call, answered when the test settles it. */
+const sendHelp = () => new Promise<void>((resolve, reject) => { helps.push({ resolve, reject }); }); // pending until settled
 
 beforeEach(() => { // a fresh conversation at time 0
   jest.useFakeTimers(); // control the 2 s window
   time = 0; // the scan starts at 0
   selections = []; // nothing logged yet
   said = []; // nothing said yet
+  helps = []; // no help requested yet
   input = new SwitchInput(() => time, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // as on screen
-  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held()); // under test
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held()); // under test
 }); // end of set-up
 
 afterEach(() => { // tidy up
@@ -130,7 +135,7 @@ describe('Conversation', () => { // the state machine
   it('opens Help when Help is chosen, and a press dismisses it', () => { // Help by scan
     expect(select(HELP)).toBe(2); // at 1%, the first press leaves Help short of theta; its rescan settles it
     expect(selections[0]!.label).toBe('Help'); // it was committed
-    expect(conversation.snapshot().mode).toBe('help'); // "Help is coming"
+    expect(conversation.snapshot().mode).toBe('help'); // Help, with its help request
     time += 1000; // later
     conversation.press(time); // a press dismisses it
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the same question
@@ -140,7 +145,7 @@ describe('Conversation', () => { // the state machine
   it('opens Help on a hold while Asking; another hold changes nothing and a press dismisses it', () => { // Help by hold
     time = 700; // the hold's key-down
     conversation.help(time); // handed over once it has lasted 2 s
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // Help
     const listener = jest.fn(); // the screen's re-render callback
     conversation.subscribe(listener); // subscribed from here on
     conversation.help((time += 3000)); // another hold
@@ -155,7 +160,7 @@ describe('Conversation', () => { // the state machine
     input.keyDown(ENTER); // the hold starts
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the reply is cancelled
     wait(HOLD_MS); // held for 2 s, past the cancelled window's end
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null }); // Help on that question, the key still down
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // Help on that question, the key still down
     input.keyUp(ENTER); // released
     wait(RELEASE_DEBOUNCE_MS); // the hold's final release
     expect(conversation.snapshot().mode).toBe('help'); // does nothing
@@ -206,7 +211,7 @@ describe('Conversation', () => { // the state machine
   it("cancels when a switch key is still down at the window's end", () => { // held at the end, the input's other guard
     let held = false; // the screen's switch state, set by hand here
     conversation.dispose(); // the set-up's conversation is not used
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => held); // under test
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => held); // under test
     select(0); // "Coffee, please": Saying
     held = true; // a switch key is down without a key-down notice in the window
     jest.advanceTimersByTime(SAY_MS); // the window's end
@@ -500,7 +505,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
     conversation.help((time = 500)); // a hold
     time = 1000; // inside the budget
     conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // kept for later
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // kept for later
     time = 2 * BUDGET_MS; // long after the budget's end
     jest.advanceTimersByTime(2 * BUDGET_MS); // passed
     expect(conversation.snapshot().mode).toBe('help'); // Help stays
@@ -567,7 +572,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
     conversation.receive(LIVE); // shown before the reload
     conversation.update('q1', LIVE.replies, LIVE.scores!); // and scanned
     conversation.dispose(); // the app reloads
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held()); // fresh
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held()); // fresh
     time = 5000; // it connects
     conversation.receive(LIVE); // the server sends the open question
     expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // shown
@@ -591,7 +596,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
 /** Replaces the conversation with one built with a server, as the screen makes it: it starts connected. */
 function connected(): void { // a build with a server
   conversation.dispose(); // the one from the set-up, built without
-  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), () => input.held(), true); // online
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), true); // online
 } // end of connected
 
 /** Answers LIVE with "Coffee, please" and lets the reply stand through its window. */
@@ -629,11 +634,11 @@ describe('Conversation online and offline', () => { // the idle screen while con
     answerLive(); // idle, with a reply
     const idle = conversation.snapshot(); // the idle screen
     conversation.press((time += 1000)); // a short press
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // Help
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // Help
     conversation.press((time += 1000)); // dismissed
     expect(conversation.snapshot()).toEqual(idle); // idle again, with the reply
     conversation.help((time += 1000)); // a hold
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null }); // Help
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // Help
     conversation.press((time += 3000)); // dismissed
     expect(conversation.snapshot()).toEqual(idle); // idle again
   }); // end of the case
@@ -762,3 +767,102 @@ describe('Conversation online and offline', () => { // the idle screen while con
     expect(listener).not.toHaveBeenCalled(); // and no re-render
   }); // end of the case
 }); // end of the online and offline cases
+
+/** Holds the switch as the emulator turns a held PC key into input (K3, test-results/k3): press/release pairs about 46 ms apart. */
+function chatter(pairs = 57): void { // 57 pairs, 2.6 s in all, as captured
+  for (let pair = 0; pair < pairs; pair++) { // one pair each
+    input.keyDown(ENTER); // down
+    wait(45); // for about 45 ms
+    input.keyUp(ENTER); // up
+    wait(1); // for under a millisecond in the capture, here 1 ms
+  } // end of the pairs
+} // end of chatter
+
+describe('Help requests', () => { // B8: Help sends one help request, and the screen says what really happened
+  it('sends one help request on a 2 s hold, shows "Asking for help…", then "Help request sent." once the server confirms', async () => { // a hold, and success
+    input.keyDown(ENTER); // the hold starts at 0
+    wait(HOLD_MS - 1); // 1999 ms
+    expect(helps).toHaveLength(0); // nothing yet
+    wait(1); // 2 s held
+    expect(helps).toHaveLength(1); // one request, while the key is still down
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // while it is sent
+    expect(HELP_TEXT.sending).toBe('Asking for help…'); // what the screen shows then
+    wait(1000); // held on
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS); // the hold's final release does nothing
+    expect(helps).toHaveLength(1); // still one request
+    helps[0]!.resolve(); // the server confirms it
+    await Promise.resolve(); // its answer is handled
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sent' }); // the same Help screen
+    expect(HELP_TEXT.sent).toBe('Help request sent.'); // what the screen shows now
+  }); // end of the case
+
+  it('shows "Couldn\'t send the help request." when the request fails, as in offline practice', async () => { // failure
+    conversation.help((time = 700)); // a hold, handed over at 2 s
+    helps[0]!.reject(new Error('Network request failed')); // the server cannot be reached
+    await Promise.resolve(); // the failure is handled
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'failed' }); // still Help
+    expect(HELP_TEXT.failed).toBe("Couldn't send the help request."); // what the screen shows
+  }); // end of the case
+
+  it('takes the K3 key chatter as one hold: Help at 2 s and one request, and its releases close nothing', () => { // the emulator's held key
+    chatter(); // from 0 to about 2.6 s
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot().mode).toBe('help'); // Help stays open after the chatter
+    wait(RELEASE_DEBOUNCE_MS); // the final release, then nothing
+    expect(helps).toHaveLength(1); // still one
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // and still Help
+  }); // end of the case
+
+  it('opens Help at 2 s under the K3 chatter, while the keys are still coming', () => { // not at the end of the hold
+    chatter(43); // 1978 ms of chatter
+    expect(helps).toHaveLength(0); // not yet
+    expect(conversation.snapshot().mode).toBe('asking'); // still scanning
+    chatter(1); // to 2024 ms: the 2 s mark fell in this pair, with the key down
+    expect(helps).toHaveLength(1); // the request went at 2 s
+    expect(conversation.snapshot().mode).toBe('help'); // Help is open
+  }); // end of the case
+
+  it('sends nothing more on a second hold while Help is open', () => { // Help already open
+    conversation.help((time = 700)); // Help, its request sent
+    input.keyDown(ENTER); // a new hold
+    wait(HOLD_MS); // 2 s held: handed over again
+    expect(helps).toHaveLength(1); // still the one request
+    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // the same Help screen
+  }); // end of the case
+
+  it('sends one help request when Help is chosen in the scan', () => { // the Help card
+    select(HELP); // committed
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // Help, sending
+  }); // end of the case
+
+  it('sends one help request when a press on the idle screen opens Help', () => { // a server build between questions
+    connected(); // a build with a server: idle
+    conversation.press((time = 1000)); // a press opens Help
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // Help, sending
+  }); // end of the case
+
+  it('closes Help on a short press whatever its request did, and an answer that comes later changes nothing', async () => { // a press still closes Help
+    conversation.help((time = 700)); // Help, request 1
+    conversation.press((time += 1000)); // a short press closes it
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // the question again, nothing about help
+    helps[0]!.resolve(); // request 1 is confirmed after all
+    await Promise.resolve(); // handled
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // still asking
+  }); // end of the case
+
+  it('sends a new request each time Help opens, and shows only the latest one\'s answer', async () => { // one per opening
+    conversation.help((time = 700)); // Help, request 1
+    conversation.press((time += 1000)); // closed
+    conversation.help((time += 1000)); // Help again, request 2
+    expect(helps).toHaveLength(2); // one per opening
+    helps[0]!.reject(new Error('timeout')); // request 1 fails late
+    await Promise.resolve(); // handled
+    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // this Help screen is about request 2
+    helps[1]!.resolve(); // request 2 is confirmed
+    await Promise.resolve(); // handled
+    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sent' }); // its answer
+  }); // end of the case
+}); // end of the Help requests

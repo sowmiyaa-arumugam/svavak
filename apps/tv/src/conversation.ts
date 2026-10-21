@@ -1,6 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), Help, and Idle.
+// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), Help (with
+// its help request), and Idle.
 
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
@@ -18,11 +19,22 @@ export const MOCK_SCORES = [0.35, 0.2, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04] as co
 /** Engine parameters: the scan defaults, with the 2% the mock scores leave split over the two controls. */
 export const CONFIG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, controlShare: 0.01 }; // so the priors equal the scores
 
+/** What happened to the help request sent when Help opened. */
+export type HelpStatus = 'sending' | 'sent' | 'failed'; // on its way; the server confirmed it; it could not be sent
+
+/** The Help screen's words for each state of its help request (both the TV and the studio's virtual TV show them). */
+export const HELP_TEXT: Record<HelpStatus, string> = { // what really happened, never a promise
+  sending: 'Asking for help…', // while it is sent
+  sent: 'Help request sent.', // the server confirmed it
+  failed: "Couldn't send the help request.", // no server, or it could not be reached (offline practice)
+}; // end of HELP_TEXT
+
 /** What the screen shows. Replaced as a whole on every change. */
 export interface Snapshot { // the screen state
   mode: 'asking' | 'waiting' | 'saying' | 'help' | 'idle'; // scanning; a server question before its scan starts; the reply and its cancel window; Help; connected, between server questions
   question: Question; // the current question; when idle, the one last on screen (not shown)
   reply: string | null; // the committed reply, while it is being said; when idle, the last reply to a server question that stood, if any
+  help?: HelpStatus; // in Help only: what happened to its help request
 } // end of Snapshot
 
 /** A reply that stood through its cancel window, with its selection statistics, for POST /v1/utterances. */
@@ -75,6 +87,7 @@ export class Conversation { // one per screen
   private readonly questions: readonly Question[]; // the fixture
   private readonly onSelection: (selection: Selection) => void; // K2 log hook
   private readonly onSay: (reply: Reply) => void; // receives each reply once its cancel window has passed
+  private readonly onHelp: () => Promise<unknown>; // sends one help request each time Help opens; settles when the server confirms it or it fails
   private readonly held: () => boolean; // whether a switch key is down now
   private readonly listeners = new Set<() => void>(); // the screen's change callbacks
   private index = 0; // the fixture question shown last
@@ -82,6 +95,7 @@ export class Conversation { // one per screen
   private last: string | null = null; // the last reply to a server question that stood, for the idle screen
   private idleHelp = false; // Help was opened from the idle screen, so dismissing it goes back there
   private pending: Question | null = null; // a server question that arrived during "Saying it" or Help
+  private helps = 0; // how often Help has opened, so a late answer to an earlier help request changes nothing
   private readonly budgets = new Map<string, number>(); // server questions whose scan has not started: when their budget ends
   private askedAt = 0; // when the current selection's scan started
   private lastPress = -Infinity; // key-down time of the last press that was not debounced, in any state
@@ -89,13 +103,14 @@ export class Conversation { // one per screen
   private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, or of a budget
   private snap: Snapshot; // what the screen shows now
 
-  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, held: () => boolean, online = false) { // start
+  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, onHelp: () => Promise<unknown>, held: () => boolean, online = false) { // start
     this.engine = new ScanEngine(config, now); // engine on the shared clock
     this.now = now; // the clock
     this.debounceMs = config.debounceMs; // 150 ms by default
     this.questions = questions; // fixture
     this.onSelection = onSelection; // log hook
     this.onSay = onSay; // reply hook
+    this.onHelp = onHelp; // help hook
     this.held = held; // the switch's state
     this.online = online; // a build with a server counts as connected until its first attempt fails
     this.snap = this.ask(questions[0]!); // Asking the first question; the engine holds a scan from the start
@@ -142,12 +157,14 @@ export class Conversation { // one per screen
     this.set(this.show(this.snap.question)); // cancels "Saying it": scan the same question again
   } // end of down
 
-  /** A hold of 2 s or more whose key went down at time _t (not needed here), in any state: the Help screen. */
+  /** A hold of 2 s or more whose key went down at time _t (not needed here), in any state: the Help screen, and one help request. */
   help(_t: number): void { // from the switch input, as soon as the hold reaches 2 s
-    if (this.snap.mode === 'help') return; // already shown
+    if (this.snap.mode === 'help') return; // already shown, its request already sent
     clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
     this.idleHelp = this.snap.mode === 'idle'; // where dismissing it goes back to
-    this.set({ ...this.snap, mode: 'help', reply: null }); // "Help is coming"
+    const opening = ++this.helps; // this opening of Help
+    this.set({ ...this.snap, mode: 'help', reply: null, help: 'sending' }); // "Asking for help…"
+    this.onHelp().then(() => this.helped(opening, 'sent'), () => this.helped(opening, 'failed')); // the one request, and what happened to it
   } // end of help
 
   /**
@@ -212,6 +229,10 @@ export class Conversation { // one per screen
       this.set(this.next()); // the next question, or the idle screen
     }, SAY_MS); // 2 s
   } // end of commit
+
+  private helped(opening: number, help: HelpStatus): void { // the help request of Help opening `opening` was confirmed or failed
+    if (opening === this.helps && this.snap.mode === 'help') this.set({ ...this.snap, help }); // still that Help screen: show what happened
+  } // end of helped
 
   private next(): Snapshot { // after the current question: a waiting server question first, else the idle screen when online, else the next fixture
     const waiting = this.pending; // arrived during "Saying it" or Help

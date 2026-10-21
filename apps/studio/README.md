@@ -23,7 +23,9 @@ stage that is scaled to fit the window (see Look).
     client ([apps/tv/src](../tv/src)), drawn on the TV's 1920 × 1080 layout and scaled into a 16:9 frame.
   - It connects to the [server](../../services/server) as the household's TV. It shows the idle screen between
     questions, practice questions when the server can't be reached, "Finding replies…" while a question waits for the
-    model's replies (with dimmed empty cards up to eight, as on the TV), and Help.
+    model's replies (with dimmed empty cards up to eight, as on the TV), and Help. Help sends one help request to
+    `POST /v1/alerts`, as the TV does (without its 4 s timeout and retry), and shows the TV's lines: "Asking for
+    help…", then "Help request sent." or "Couldn't send the help request.".
   - The **space bar** is the switch: press when your answer lights up, or hold for 2 s for Help. While you type in the
     caregiver's text box, a space is just a space.
   - A reply that stands through its 2 s cancel window is posted to `POST /v1/utterances`, as the TV posts it. The
@@ -111,6 +113,11 @@ tokens and no AWS profile. Ports 8787, 8790 and 5173 must be free. The end-to-en
 
 It drives the page through stable `data-testid` attributes, with `data-mode`, `data-label`, `data-lit`, `data-state`,
 `data-hop` and `data-seen` for state. It saves 1080p screenshots to `test-results/b5/` (git-ignored).
+
+The Help tests ([e2e/help.spec.ts](e2e/help.spec.ts)) hold the space bar for 2 s in Drive mode: Help opens at 2 s
+with the key still down, one request goes to `POST /v1/alerts` and the virtual TV shows "Help request sent."; a short
+press closes Help. With that request held back for 1 s and then refused, the virtual TV shows "Asking for help…" and
+then "Couldn't send the help request.".
 
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 

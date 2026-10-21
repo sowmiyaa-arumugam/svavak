@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { now } from '../../tv/src/clock'; // the TV's shared clock
-import { cardsOf, CONFIG, CONTROLS, Conversation, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules and grid
+import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules, grid and Help screen's words
 import { QUESTIONS } from '../../tv/src/questions'; // the TV's practice questions
 import { StreamClient, type SocketLike } from '../../tv/src/stream'; // the TV's stream client: parsing and reconnects
 import { RELEASE_DEBOUNCE_MS, SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
@@ -26,6 +26,13 @@ function post(reply: Reply): void { // the conversation's reply hook
   void fetch(`${SERVER_URL}/v1/utterances`, { method: 'POST', headers, body }).catch(() => {}); // offline: the reply was shown, nothing more
 } // end of post
 
+/** Sends the help request of one opening of Help, as the TV does but without its timeout and retry; rejects when the server can't be reached or refuses it. */
+async function help(): Promise<void> { // the conversation's help hook
+  const headers = { Authorization: `Bearer ${DEVICE_TOKEN}`, 'Idempotency-Key': crypto.randomUUID() }; // the device token in a header; no body
+  const res = await fetch(`${SERVER_URL}/v1/alerts`, { method: 'POST', headers }); // offline: rejects, and the screen says so
+  if (!res.ok) throw new Error(`POST /v1/alerts answered ${res.status}`); // refused: the screen says so too
+} // end of help
+
 /** The browser's WebSocket with the token in the subprotocol list (browsers cannot set its headers); the server picks "bearer". */
 function connect(url: string): SocketLike { // the stream client's socket factory
   return new WebSocket(url, ['bearer', DEVICE_TOKEN]) as unknown as SocketLike; // the same four members the TV's socket has
@@ -39,7 +46,7 @@ function typing(event: KeyboardEvent): boolean { // the caregiver panel's text b
 export function VirtualTv({ onEngine }: { onEngine: (state: EngineState | null) => void }) { // mounted only while drive mode is on, so it never competes with the emulator: connects, and hangs up when switched off
   const { conversation, input } = useMemo(() => { // one conversation and its switch while drive mode is on
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
-    const conversation = new Conversation(CONFIG, now, QUESTIONS, () => {}, post, () => input.held(), true); // online from the start, as a TV with a server
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, () => {}, post, help, () => input.held(), true); // online from the start, as a TV with a server
     return { conversation, input }; // each calls the other only later, from key events and timers
   }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change
@@ -113,7 +120,7 @@ export function VirtualTv({ onEngine }: { onEngine: (state: EngineState | null) 
 } // end of VirtualTv
 
 function Screen({ conversation, snap }: { conversation: Conversation; snap: ReturnType<Conversation['snapshot']> }) { // the TV's screens
-  if (snap.mode === 'help') return <div className="tv-screen"><p className="tv-big tv-help">Help is coming</p></div>; // a press dismisses it
+  if (snap.mode === 'help') return <div className="tv-screen"><p className="tv-big tv-help" data-testid="tv-help">{HELP_TEXT[snap.help!]}</p></div>; // what happened to its help request (always set in Help); a press dismisses it
   if (snap.mode === 'saying') return ( // the reply fills the screen for 2 s
     <div className="tv-screen">{/* background */}
       <p className="tv-big" data-testid="tv-saying">{snap.reply}</p>{/* the committed reply */}

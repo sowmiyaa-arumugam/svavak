@@ -7,10 +7,10 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // h
 import { StyleSheet, Text, View } from 'react-native'; // primitives
 import KeyEvent from 'react-native-keyevent'; // Android key events, forwarded by plugins/withKeyEvent.js
 import { now } from './clock'; // the shared clock
-import { cardsOf, CONFIG, CONTROLS, Conversation, type Reply } from './conversation'; // the state machine, and the grid's cards
+import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, type Reply } from './conversation'; // the state machine, the grid's cards and the Help screen's words
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
-import { postUtterance, SERVER } from './server'; // the server, if this build has one
+import { postHelp, postUtterance, SERVER } from './server'; // the server, if this build has one
 import { playSpeech } from './speech'; // speech playback
 import { StreamClient } from './stream'; // the server's question stream
 import { SwitchInput } from './switchInput'; // the single switch
@@ -31,11 +31,20 @@ function say(reply: Reply): void { // the conversation's reply hook
   ); // end of the post
 } // end of say
 
+/** Sends the help request of one opening of Help; rejects when this build has no server or the server can't be reached. */
+function requestHelp(): Promise<void> { // the conversation's help hook
+  if (!SERVER) return Promise.reject(new Error('no server in this build')); // fixtures only: nobody to alert
+  return postHelp(SERVER).then( // POST /v1/alerts
+    () => { if (__DEV__) console.log('[help] request sent'); }, // the server confirmed it
+    (error) => { if (__DEV__) console.log(`[help] request not sent: ${String(error)}`); throw error; }, // the screen says so
+  ); // end of the post
+} // end of requestHelp
+
 /** The only screen so far. Every card and pill is an option of one scan engine: up to 8 replies and 2 controls. */
 export function ConversationScreen() { // the screen
   const { conversation, input } = useMemo(() => { // one conversation and its switch for the screen's lifetime
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
-    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, () => input.held(), SERVER !== null); // K2 log in dev; a build with a server starts idle
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, requestHelp, () => input.held(), SERVER !== null); // K2 log in dev; a build with a server starts idle
     return { conversation, input }; // each calls the other only later, from key events and timers
   }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change
@@ -83,9 +92,9 @@ export function ConversationScreen() { // the screen
     return () => cancelAnimationFrame(request); // stop on unmount
   }, [conversation]); // once
 
-  if (snap.mode === 'help') return ( // Help: a placeholder until P1
+  if (snap.mode === 'help') return ( // Help: what happened to its help request
     <View style={styles.screen}>{/* background */}
-      <Text style={[styles.big, styles.helpText]}>Help is coming</Text>{/* a press dismisses it */}
+      <Text style={[styles.big, styles.helpText]}>{HELP_TEXT[snap.help!]}</Text>{/* always set in Help; a press dismisses it */}
     </View> // end of the screen
   ); // end of Help
   if (snap.mode === 'saying') return ( // Saying: the reply fills the screen for 2 s
