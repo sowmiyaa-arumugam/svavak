@@ -55,8 +55,9 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
 delay of about 150 ms (the engine's window model). Every reply card and both pills carry an accessibility label and
 the button role (an empty card has neither); nothing is announced aloud. The Android TV launcher banner is
-[assets/tv-banner.png](assets/tv-banner.png) (320 × 180), applied at prebuild; Fire TV takes its banner from the
-Appstore submission instead.
+[assets/tv-banner.png](assets/tv-banner.png) (320 × 180), drawn from the SvaVāk logo on black
+([assets/brand](../../assets/brand)) and applied at prebuild; Fire TV takes its banner from the Appstore submission
+instead.
 
 Started from the `expo-multi-tv` app of Amazon's React Native multi-TV sample (MIT-0; see [NOTICE](../../NOTICE)):
 Expo SDK 54, react-native-tvos 0.81 on React Native's legacy architecture, the TV config plugin, and key events

@@ -30,6 +30,7 @@ test('a caregiver asks, Sam presses Tea on the virtual TV, and the caregiver hea
   for (let press = 0; press < 4 && (await tv.getAttribute('data-mode')) !== 'saying'; press++) { // a rescan may ask for a second press
     await expect(tea).toHaveAttribute('data-lit', 'true', { timeout: 10_000 }); // Tea lights up
     if (press === 0) await page.screenshot({ path: `${SHOTS}studio-2-asking.png` }); // for the report: the scan and the engine's priors
+    if (press === 0) expect(await page.locator('.bar-label').evaluateAll((labels) => labels.filter((l) => l.scrollHeight > l.clientHeight + 1).map((l) => l.textContent))).toEqual([]); // at 1080p every engine label keeps both of its lines
     await page.waitForTimeout(700); // well inside Tea's window, past the reaction delay the engine expects
     await page.keyboard.down('Space'); // the switch goes down
     await page.waitForTimeout(80); // a short press
