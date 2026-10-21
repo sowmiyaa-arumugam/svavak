@@ -6,7 +6,8 @@ The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It sh
 reply cards and two control pills (Something else, Help). All ten are options of one
 [switchclock](../../packages/switchclock) `ScanEngine`. A server question may have fewer cards (at least one), for
 example one asked with options; the pills then follow its last card. One thick teal highlight steps through the cards
-in reading order (best guess first, except that the server lists its fallback replies after the rest), then Something
+in reading order (best guess first, except that the server puts the question's basic answers in the first four and
+lists its fallback replies after the rest), then Something
 else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 
 Questions come from the [server](../../services/server). While the app is connected to it, a calm idle screen waits

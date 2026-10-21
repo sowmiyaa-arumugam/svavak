@@ -84,7 +84,19 @@ question, but the question stays expired.
 - Everything else is yes/no, "Tea?" included.
 
 A yes/no question gets eight defaults, shown as Yes, No, Thank you, then the fallbacks Not now, Not sure, Ask me later,
-Tell me more and Maybe. A choice or open question gets four: You decide, then Not sure, Tell me more and Not now.
+Tell me more and Maybe. An open question gets four: You decide, then Not sure, Tell me more and Not now. A choice
+question gets the same four after a short reply for each option (Tea, please and Coffee, please for "Would you like
+tea or coffee?").
+
+**Basic answers.** The first four replies always cover the question's basic answers: a yes-intent and a no-intent
+reply for a yes/no question; for a choice question, a reply naming each option, that is the word before " or " and
+the first word after it that is not an article (a, an, the or some). A reply with the intent `no`, `later` or
+`clarify` names an option without choosing it ("No, not the news"), so it does not count, and neither does one that
+turns it down in its words ("Tea, not coffee", "instead of coffee", "rather than coffee"). A reply that says the
+default itself counts whatever its intent, so no card is shown twice. When no reply gives a basic answer, a short
+default does: Yes, please, No, thanks, or the option with "please" ("Coffee, please", "The news,
+please"), taking the weakest other reply's place if the list is full. A basic answer missing from the first four takes
+the place of the lowest-ranked of them, which moves down one place. Questions asked with options are left as they are.
 
 **Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` straight
 away, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
@@ -98,10 +110,12 @@ de-duplicated case-insensitively and filtered for banned terms (whole words in a
 and -er forms, the last three also after a doubled last letter); the `server→llm` span counts the dropped candidates
 as `dropped`, never their text. Each live model call logs one `llm.usage` line: its input and output tokens, latency
 and stop reason, never text. The rest are filled up (to at most eight) with the defaults that fit the question and that
-no candidate already says (a candidate "I'm not sure" keeps out the default Not sure), and if none has the intent
-`later`, the weakest gives way to Not now (or, for a yes/no question, Ask me later if Not now is already there). The
+no candidate already says (a candidate "I'm not sure" keeps out the default Not sure), and the basic answers are
+added where missing (above). If none has the intent `later`, the weakest that is not a basic answer gives way to Not
+now (or, for a yes/no question, Ask me later if Not now is already there). The
 list is ordered best guess first, but a fallback never leads: every reply with the intent `later` or `clarify` ("I
-don't know yet", Not sure, Not now) comes after every other reply, unless they are all there is. Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
+don't know yet", Not sure, Not now) comes after every other reply, unless they are all there is; and the basic answers
+are in the first four. Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
 `question.candidates`. On a timeout, an error or unusable output, the defaults stay. Profile facts with `<` or `>`
 are left out, so no fact can close the `<facts>` block.
 

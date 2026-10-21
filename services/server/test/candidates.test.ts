@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'; // test API
 import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, defaultsFor, dropBanned, optionCandidates, questionKind, toCandidates } from '../src/domain/candidates.ts'; // tested
-import { REPLY_COUNT } from '../src/domain/model.ts'; // eight per question
+import { REPLY_COUNT, type Intent } from '../src/domain/model.ts'; // eight per question, and the intents
 
 describe('cleanDrafts', () => { // raw model output to drafts
   it('rejects an output without a candidates list', () => { // envelope validation
@@ -167,6 +167,77 @@ describe('toCandidates', () => { // merge with defaults and priors
   }); // end of the case
 }); // end of toCandidates
 
+describe('the first four replies cover the basic answers', () => { // Yes and No, or each option, on the grid's first row
+  type Row = [text: string, intent: Intent, score: number]; // a compact model draft
+  const merged = (question: string, rows: Row[]) => toCandidates(rows.map(([text, intent, score]) => ({ text, intent, score })), defaultsFor(question), 'llm', question); // as suggestReplies merges the model's drafts
+  const firstFour = (question: string, rows: Row[]) => merged(question, rows).slice(0, 4).map((c) => c.text); // the first row of the grid
+  const FILL: Row[] = [['Ask me later', 'later', 0.2], ['Tell me more', 'clarify', 0.15], ['Let me think', 'clarify', 0.1], ['Not right now', 'later', 0.05]]; // four more fallbacks: the model fills the grid, so no default can, and the first four are the four K3 showed
+
+  // The K3 cases (test-results/k3/eval.md): each question's top four from the live run, in their order, as the model's drafts.
+  it('adds a yes when the model gave none (K3 Q1, coffee)', () => { // a yes/no question with no yes
+    const k3: Row[] = [['No, I prefer tea', 'no', 0.9], ["I'll have tea instead", 'choice', 0.8], ['Maybe later', 'later', 0.7], ['Not sure about coffee', 'clarify', 0.6], ...FILL]; // no yes anywhere
+    expect(firstFour('Would you like a cup of coffee?', k3)).toEqual(['No, I prefer tea', "I'll have tea instead", 'Yes, please', 'Maybe later']); // Yes, please before the fallbacks
+  }); // end of the case
+
+  it('adds a no when the model gave none (K3 Q7, walk)', () => { // a yes/no question with no no
+    const k3: Row[] = [["Yes, let's walk after lunch", 'yes', 0.9], ["Let's see after lunch", 'later', 0.8], ['Maybe later', 'later', 0.7], ['Not sure about the walk', 'clarify', 0.6], ...FILL]; // no no anywhere
+    expect(firstFour('Shall we go for a walk after lunch?', k3)).toEqual(["Yes, let's walk after lunch", 'No, thanks', "Let's see after lunch", 'Maybe later']); // No, thanks before the fallbacks
+  }); // end of the case
+
+  it('adds a short reply for an option the model did not name (K3 Q13, tea or coffee)', () => { // a choice question with no coffee
+    const k3: Row[] = [['I prefer tea, thanks', 'choice', 0.9], ['Yes, tea please', 'yes', 0.8], ['Maybe later', 'later', 0.7], ['Not sure yet', 'clarify', 0.6]]; // tea only
+    expect(firstFour('Would you like tea or coffee?', k3)).toEqual(['I prefer tea, thanks', 'Yes, tea please', 'Coffee, please', 'You decide']); // Coffee, please joins tea; the fallbacks follow the substantive replies
+  }); // end of the case
+
+  it('does not count a no that names an option (K3 Q14, film or news)', () => { // "No, not the news" turns the news down
+    const k3: Row[] = [['I want to watch a film', 'choice', 0.9], ["Yes, let's watch a film", 'yes', 0.8], ['Not sure, maybe later', 'later', 0.7], ['No, not the news', 'no', 0.6]]; // the news only turned down
+    expect(firstFour('Shall we watch a film or the news?', k3)).toEqual(['I want to watch a film', "Yes, let's watch a film", 'No, not the news', 'The news, please']); // the news can be chosen
+  }); // end of the case
+
+  it('leaves the first four as they are when they cover the basic answers already (K3 Q2, window)', () => { // nothing to do
+    const k3: Row[] = [['Yes, please open it', 'yes', 0.9], ['No, keep it closed', 'no', 0.8], ['Maybe later', 'later', 0.7], ['Not sure, ask again', 'clarify', 0.6], ...FILL]; // yes and no first
+    expect(merged('Shall I open the window?', k3).map((c) => c.text)).toEqual(k3.map(([text]) => text)); // the model's eight, as they were
+  }); // end of the case
+
+  it('moves a basic answer up from further down, and the reply it displaces down one place', () => { // the model gave it, ranked low
+    const rows: Row[] = [['Yes, please', 'yes', 0.9], ['A cup of tea', 'choice', 0.8], ['Some water', 'choice', 0.7], ['A biscuit', 'choice', 0.6], ['Some juice', 'choice', 0.5], ['No, thanks', 'no', 0.4], ['Ask me later', 'later', 0.3], ['Not sure', 'clarify', 0.2]]; // the no sixth
+    const c = merged('Would you like something?', rows); // merged
+    expect(c.map((x) => x.text)).toEqual(['Yes, please', 'A cup of tea', 'Some water', 'No, thanks', 'A biscuit', 'Some juice', 'Ask me later', 'Not sure']); // the lowest-ranked of the first four went down one place
+    expect(c.reduce((s, x) => s + x.prior, 0)).toBeCloseTo(1, 12); // priors still a distribution
+    expect(c[3]!.prior).toBeLessThan(c[4]!.prior); // and still from the scores: the no keeps its own
+  }); // end of the case
+
+  it('never lets the reply that makes room for a later one be a basic answer', () => { // the later rule spares them
+    const rows: Row[] = Array.from({ length: 8 }, (_, i) => [`Tea number ${i}`, 'choice', 0.9 - i / 20]); // eight about tea, none later, all above the defaults
+    const c = merged('Tea or coffee?', rows); // merged
+    expect(c.slice(0, 4).map((x) => x.text)).toEqual(['Tea number 0', 'Tea number 1', 'Tea number 2', 'Coffee, please']); // coffee among the first four
+    expect(c.map((x) => x.text)).toContain('Not now'); // and Sam can still say later
+    expect(c).toHaveLength(REPLY_COUNT); // eight in all
+  }); // end of the case
+
+  it('adds nothing for a choice question without a word before " or ", or without a space before it', () => { // no option to name
+    expect(firstFour('Or tea?', [])).toEqual(['You decide', 'Not sure', 'Tell me more', 'Not now']); // the four defaults alone
+    expect(firstFour('Tea,or coffee?', [])).toEqual(['You decide', 'Not sure', 'Tell me more', 'Not now']); // a choice ("or coffee?" after the leading word), but no " or " to split at
+  }); // end of the case
+
+  it('does not count a reply that turns an option down in its words', () => { // "not", "no", "instead of", "rather than"
+    for (const text of ['Tea, not coffee', 'Tea instead of coffee', 'Tea rather than the coffee', 'No coffee, tea']) { // choice replies that rule coffee out
+      expect(firstFour('Would you like tea or coffee?', [[text, 'choice', 0.9]])).toContain('Coffee, please'); // coffee can still be chosen
+    } // end of the replies
+    expect(firstFour('Would you like tea or coffee?', [['A cup of coffee', 'choice', 0.9]])).not.toContain('Coffee, please'); // "of" alone turns nothing down
+  }); // end of the case
+
+  it('counts a reply that says the default already, whatever its intent, so no card is shown twice', () => { // a mislabelled reply
+    const c = merged('Would you like a blanket?', [['Yes, please', 'social', 0.5], ['No', 'no', 0.4]]); // the model's Yes, please is not marked yes
+    expect(c.map((x) => x.text).filter((t) => t === 'Yes, please')).toHaveLength(1); // once
+    expect(c.slice(0, 4).map((x) => x.text)).toContain('Yes, please'); // and among the first four
+  }); // end of the case
+
+  it('adds nothing for an open question', () => { // no basic answers to cover
+    expect(firstFour('What would you like to watch tonight?', [['The cricket', 'choice', 0.9]])).toEqual(['The cricket', 'You decide', 'Not sure', 'Tell me more']); // as before
+  }); // end of the case
+}); // end of the first four
+
 describe('defaults that fit the question', () => { // Yes, No and Not now only for yes/no questions
   const texts = (question: string) => defaultCandidates(question).map((c) => c.text); // the defaults pushed at once
   const intents = (question: string) => defaultCandidates(question).map((c) => c.intent); // and their intents
@@ -190,10 +261,11 @@ describe('defaults that fit the question', () => { // Yes, No and Not now only f
 
   const FOUR = ['You decide', 'Not sure', 'Tell me more', 'Not now']; // the defaults of a choice or open question, as shown: You decide before the fallbacks
 
-  it('offers four defaults, without Yes or No, for a choice question: one with " or "', () => { // choice
-    for (const q of ['Would you like tea or coffee?', 'Tea or coffee?', 'Shall we watch a film or the news?', 'What would you like, tea or coffee?', 'Now, or later?', 'Tea, or coffee?']) { // choice questions: one starting with a wh-word, two with a comma before " or "
+  it('offers each option, then the four defaults, without Yes or No, for a choice question: one with " or "', () => { // choice
+    const tea = ['Tea, please', 'Coffee, please']; // the options of "tea or coffee"
+    for (const [q, options] of [['Would you like tea or coffee?', tea], ['Tea or coffee?', tea], ['Shall we watch a film or the news?', ['A film, please', 'The news, please']], ['What would you like, tea or coffee?', tea], ['Now, or later?', ['Now, please', 'Later, please']], ['Tea, or coffee?', tea]] as const) { // choice questions: one starting with a wh-word, two with a comma before " or "
       expect(questionKind(q)).toBe('choice'); // classified
-      expect(texts(q)).toEqual(FOUR); // You decide, Not sure, Tell me more, Not now
+      expect(texts(q)).toEqual([...options, ...FOUR]); // the options, then You decide, Not sure, Tell me more, Not now
       expect(intents(q)).not.toContain('yes'); // no Yes
       expect(intents(q)).not.toContain('no'); // no No
     } // end of the questions

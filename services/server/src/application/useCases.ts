@@ -121,7 +121,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       const current = deps.store.getQuestion(question.id); // it may have been answered meanwhile
       if (drafts.length === 0) outcome = 'suggest.invalid'; // nothing usable: defaults stay
       else if (current?.status === 'pending') { // still on the TV
-        const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text)) }; // merged with the defaults that fit, priors computed
+        const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text), 'llm', current.text) }; // merged with the defaults that fit, the basic answers in the first four, priors computed
         deps.store.saveQuestion(updated); // persist
         deps.notifier.publish({ type: 'question.candidates', question_id: updated.id, candidates: updated.candidates }); // to the TV
         deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - started, mode: deps.mode }); // since asked

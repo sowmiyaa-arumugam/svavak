@@ -125,7 +125,7 @@ describe('POST /v1/questions and GET /v1/stream', () => { // flow S1 on the stre
     expect(question).toMatchObject({ text: 'Would you like tea or coffee?', asked_by: 'Alex', status: 'pending', answered_utterance_id: null }); // stored as asked
     const created = await until(() => tv.events.find((e) => e.type === 'question.created')); // first event
     expect(created).toEqual({ type: 'question.created', question }); // the same question, with the defaults
-    expect(question.candidates.map((c) => c.text)).toEqual(['You decide', 'Not sure', 'Tell me more', 'Not now']); // the four defaults of a choice question: no Yes or No, fallbacks last
+    expect(question.candidates.map((c) => c.text)).toEqual(['Tea, please', 'Coffee, please', 'You decide', 'Not sure', 'Tell me more', 'Not now']); // a choice question's options, then its four defaults: no Yes or No, fallbacks last
     const update = await until(() => tv.events.find((e) => e.type === 'question.candidates')); // second event
     if (update.type !== 'question.candidates') throw new Error('unreachable'); // narrow the type
     expect(update.question_id).toBe(question.id); // for this question

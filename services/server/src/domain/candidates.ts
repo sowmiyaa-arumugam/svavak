@@ -38,6 +38,9 @@ const CHOICE_OR_OPEN: readonly Draft[] = [ // design values, scored so this orde
 const UNSURE_OR_LATER = DEFAULT_REPLIES.filter((d) => d.text === 'Not now' || d.text === 'Not sure'); // added to ask_question's options
 const FALLBACKS: readonly Intent[] = ['later', 'clarify']; // "Not now", "Not sure", "I don't know yet": never ahead of a substantive reply (toCandidates)
 export const OPTION_SCORE = 0.3; // each of ask_question's options is as likely as "Yes, please", the best default
+const FIRST_ROW = 4; // the grid's first row, scanned first: it always holds the question's basic answers (toCandidates)
+const NOT_CHOSEN: readonly Intent[] = ['no', ...FALLBACKS]; // a reply with one of these intents names an option without choosing it ("No, not the news")
+const ARTICLE = /^(?:a|an|the|some)$/i; // kept in front of an option ("the news"), as the mock model keeps it
 
 const LEADING_NAME = /^\s*\p{L}[\p{L}'’-]*\s*,\s*/u; // "Sam, " before the question itself
 const OR_NOT = /(?:^|\s)or\s+not[\s?.!]*$/i; // "... or not?" at the end; "Now, or not?" leaves "or not?" once the name is gone
@@ -61,6 +64,47 @@ export function questionKind(question: string): 'yesno' | 'choice' | 'open' { //
 export function defaultsFor(question: string): readonly Draft[] { // Yes, No and Not now only where they make sense
   return questionKind(question) === 'yesno' ? DEFAULT_REPLIES : CHOICE_OR_OPEN; // by kind
 } // end of defaultsFor
+
+/** One answer a question basically needs, and the short default that gives it when no reply does. */
+interface BasicAnswer { // a yes, a no, or one option of a choice
+  meets: (reply: Draft) => boolean; // whether a reply gives it
+  draft: Draft; // the default that gives it
+} // end of BasicAnswer
+
+/**
+ * The answers that must be among the first four replies: a yes and a no for a yes/no question; for a choice question,
+ * each option, that is the word before " or " and the first word after it that is not an article ("tea or coffee",
+ * "a film or the news"), named by a reply that does not turn it down or put it off, in its intent or in its words
+ * ("Tea, not coffee"). A reply that says the default itself gives it too, whatever its intent. An open question has none.
+ */
+function basicAnswers(question: string): BasicAnswer[] { // by the question's kind
+  const kind = questionKind(question); // yes/no, choice or open
+  const says = (draft: Draft, r: Draft) => r.text.toLowerCase().includes(draft.text.toLowerCase()); // "Yes, please" marked social still says it: no second card
+  if (kind === 'yesno') return [DEFAULT_REPLIES[0]!, DEFAULT_REPLIES[1]!].map((draft) => ({ meets: (r) => r.intent === draft.intent || says(draft, r), draft })); // Yes, please and No, thanks, by intent
+  if (kind === 'open') return []; // nothing to cover
+  const or = OR.exec(question); // " or "; none when a leading word and comma come right before "or" ("Tea,or coffee?")
+  if (!or) return []; // nothing to split at
+  const words = (s: string) => s.split(/\s+/).map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter((w) => w !== ''); // words without punctuation ("Tea," to "Tea")
+  const before = words(question.slice(0, or.index)); // up to " or "
+  const after = words(question.slice(or.index + or[0].length)); // from after it
+  const second = after.findIndex((w) => !ARTICLE.test(w)); // the second option's word, after any article
+  const options = [before.slice(-2), after.slice(0, second + 1)].map((ws) => (ws.length > 1 && !ARTICLE.test(ws[0]!) ? ws.slice(1) : ws)); // each option's word, with the article in front of it, if any
+  if (options.some((ws) => ws.length === 0 || ARTICLE.test(ws.at(-1)!))) return []; // an option missing: nothing to cover
+  return options.map((ws) => { // one basic answer per option
+    const word = ws.at(-1)!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the option's word, as plain text in a pattern
+    const name = new RegExp(`(?<![\\p{L}\\p{N}])${word}(?![\\p{L}\\p{N}])`, 'iu'); // the word, whole ("café" too), in any case
+    const down = new RegExp(`(?<![\\p{L}\\p{N}])(?:not|no|instead of|rather than)\\s+(?:(?:a|an|the|some)\\s+)?${word}(?![\\p{L}\\p{N}])`, 'iu'); // "not coffee", "instead of the news"
+    const text = ws.join(' '); // "the news"
+    const draft: Draft = { text: `${text.charAt(0).toUpperCase()}${text.slice(1)}, please`, intent: 'choice', score: OPTION_SCORE }; // "The news, please", as likely as an option
+    return { meets: (r) => (!NOT_CHOSEN.includes(r.intent) && name.test(r.text) && !down.test(r.text)) || says(draft, r), draft }; // named and chosen, or the default itself
+  }); // end of the options
+} // end of basicAnswers
+
+/** Index of the lowest-scored reply that is not the first to give a basic answer; of equals, the one listed last; -1 if none. */
+function weakest(picked: readonly Draft[], basics: readonly BasicAnswer[]): number { // the reply that gives way
+  const keep = basics.map((b) => picked.find(b.meets)); // one reply per basic answer stays
+  return picked.reduce((w, c, i) => (keep.includes(c) || (w >= 0 && c.score > picked[w]!.score) ? w : i), -1); // the lowest score of the rest
+} // end of weakest
 
 /** Plan §4.6 rule "no profanity": the one list of words a candidate may not contain. */
 export const BANNED_TERMS: readonly string[] = ['bastard', 'bitch', 'bollocks', 'crap', 'damn', 'fuck', 'fucking', 'piss', 'shit', 'wanker']; // whole words, any case
@@ -104,31 +148,44 @@ export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = 
 } // end of dropBanned
 
 /**
- * Plan §4.3 step 4: the drafts (up to 8) filled up with the given defaults they do not already contain; without a later
- * reply the weakest gives way to one (plan §4.6); then all of them (at most eight) ordered best guess first, except that
- * every fallback (a later or clarify reply) comes after every substantive one, with priors from the scores. The drafts
- * are the model's, or ask_question's options.
+ * Plan §4.3 step 4: the drafts (up to 8) filled up with the given defaults they do not already contain; a basic answer
+ * of the question (basicAnswers) that no reply gives is added as a short default, in place of the weakest other reply
+ * when the list is full; without a later reply the weakest that is not a basic answer gives way to one (plan §4.6);
+ * then all of them (at most eight) ordered best guess first, except that every fallback (a later or clarify reply)
+ * comes after every substantive one, and that the first four hold the best reply for each basic answer: one missing
+ * there takes the place of the lowest-ranked of the four, which moves down. Priors come from the scores. The drafts
+ * are the model's, or ask_question's options (passed without a question: the options are the answers).
  */
-export function toCandidates(model: readonly Draft[], defaults: readonly Draft[] = DEFAULT_REPLIES, source: 'llm' | 'option' = 'llm'): Candidate[] { // drafts to candidates
+export function toCandidates(model: readonly Draft[], defaults: readonly Draft[] = DEFAULT_REPLIES, source: 'llm' | 'option' = 'llm', question?: string): Candidate[] { // drafts to candidates
   const picked: Omit<Candidate, 'prior'>[] = model.slice(0, REPLY_COUNT).map((d) => ({ ...d, source })); // the best eight drafts
   const said = picked.map((c) => c.text.toLowerCase()); // texts already present
   for (const d of defaults) { // fill up from the defaults, in their order
     if (picked.length === REPLY_COUNT) break; // full
     if (!said.some((t) => t.includes(d.text.toLowerCase()))) picked.push({ ...d, source: 'default' }); // not already said, even inside a longer reply ("I'm not sure" has "Not sure")
   } // end of the fill
+  const basics = question === undefined ? [] : basicAnswers(question); // Yes and No, or each option
+  for (const b of basics) { // each one somewhere in the list
+    if (picked.some(b.meets)) continue; // a reply gives it
+    if (picked.length === REPLY_COUNT) picked.splice(weakest(picked, basics), 1); // full: the weakest other reply makes room
+    picked.push({ ...b.draft, source: 'default' }); // "Yes, please", "No, thanks" or "Coffee, please"
+  } // end of the basic answers
   if (!picked.some((c) => c.intent === 'later')) { // Sam can always say "later"
     const later = defaults.find((d) => d.intent === 'later' && !picked.some((c) => c.text.toLowerCase() === d.text.toLowerCase())); // "Not now", else "Ask me later"
-    const weakest = picked.reduce((w, c, i) => (c.score <= picked[w]!.score ? i : w), 0); // the lowest score; of equals, the one listed last
-    if (later) picked[weakest] = { ...later, source: 'default' }; // gives way
+    const i = weakest(picked, basics); // the lowest score; of equals, the one listed last; never a basic answer
+    if (later && i >= 0) picked[i] = { ...later, source: 'default' }; // gives way
   } // end of the later rule
-  picked.sort((a, b) => Number(FALLBACKS.includes(a.intent)) - Number(FALLBACKS.includes(b.intent)) || b.score - a.score); // the TV scans them in this order: substantive replies first, then the fallbacks, each best guess first
-  const p = priors(picked.map((c, i) => ({ id: String(i), score: c.score })), PRIOR_CONFIG); // max(s, floor)^(1/tau), normalised
-  return picked.map((c, i) => ({ ...c, prior: p[i]! })); // one prior per candidate
+  const order = (a: Draft, b: Draft) => Number(FALLBACKS.includes(a.intent)) - Number(FALLBACKS.includes(b.intent)) || b.score - a.score; // substantive replies first, then the fallbacks, each best guess first
+  picked.sort(order); // the TV scans them in this order
+  const first = [...new Set(basics.map((b) => picked.find(b.meets)!))]; // the best reply for each basic answer
+  for (const c of picked) if (first.length < FIRST_ROW && !first.includes(c)) first.push(c); // then the best of the rest
+  const shown = [...first.sort(order), ...picked.filter((c) => !first.includes(c))]; // the first four in the usual order, then the rest as they were
+  const p = priors(shown.map((c, i) => ({ id: String(i), score: c.score })), PRIOR_CONFIG); // max(s, floor)^(1/tau), normalised
+  return shown.map((c, i) => ({ ...c, prior: p[i]! })); // one prior per candidate
 } // end of toCandidates
 
 /** The default candidates that fit the question, pushed with every new question asked without options. */
 export function defaultCandidates(question: string): Candidate[] { // no model output yet
-  return toCandidates([], defaultsFor(question)); // all the fitting defaults
+  return toCandidates([], defaultsFor(question), 'llm', question); // all the fitting defaults, and a choice question's options
 } // end of defaultCandidates
 
 /** ask_question's options, in their order and without repeats, then Not now and Not sure: no model call. */
