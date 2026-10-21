@@ -328,6 +328,8 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Severity:** low; the error names the rewritten path. *(proposed)*
 - **Workaround:** `MSYS_NO_PATHCONV=1 adb push ...`; a device path inside a quoted `adb shell "..."` string is left
   alone.
+  Met again on 2026-10-21 (B7.1): with `MSYS_NO_PATHCONV=1`, a host path written the Git Bash way (`/c/Users/...`) is
+  not converted either, and adb failed with `cannot stat`. Writing the host path as `C:/Users/...` worked.
 - **Suggestion:** Git Bash could skip path conversion for arguments of known device tools such as adb, or warn when it
   rewrites one. *(proposed)*
 

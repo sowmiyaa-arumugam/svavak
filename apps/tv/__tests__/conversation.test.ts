@@ -65,6 +65,18 @@ describe('Conversation', () => { // the state machine
     expect(QUESTIONS.flatMap((q) => q.replies).filter((r) => r.endsWith('.'))).toEqual([]); // "?" and "!" would be fine
   }); // end of the case
 
+  it("puts each practice question's basic answers among its first four replies, as the server does", () => { // the first row is scanned first
+    const BASIC: [question: string, answers: string[]][] = [ // each practice question, in order, and the basic answers its first four must include
+      ['Would you like tea or coffee?', ['Tea, please', 'Coffee, please']], // a choice: each option
+      ['Shall we watch something tonight?', ['Yes, a film', 'No, not tonight']], // yes/no: a yes and a no
+      ['How are you feeling today?', []], // open: none
+      ['What would you like for lunch?', []], // open: none
+      ['Shall I open the window?', ['Yes, please', 'No, thanks']], // yes/no: a yes and a no
+    ]; // end of the basic answers
+    expect(QUESTIONS.map((q) => q.text)).toEqual(BASIC.map(([text]) => text)); // every practice question is listed
+    expect(BASIC.map(([text, answers], i) => [text, answers.filter((a) => !QUESTIONS[i]!.replies.slice(0, 4).includes(a))])).toEqual(BASIC.map(([text]) => [text, []])); // none missing from a first row
+  }); // end of the case
+
   it('starts Asking the first question: a full scan of 10 options, best guess first, at the mock priors', () => { // start
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // Asking
     expect(conversation.engine.scanAt(0)).toEqual({ items: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], epoch: 0, end: Infinity }); // all

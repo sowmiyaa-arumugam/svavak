@@ -13,7 +13,8 @@ else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 Questions come from the [server](../../services/server). While the app is connected to it, a calm idle screen waits
 between the caregiver's questions: the name, "Waiting for a question" and the last reply ("You said: …"), with nothing
 lit or moving; a press of the switch opens Help. Only while the server can't be reached does the app ask practice
-questions from mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first and labelled "Practice"
+questions from mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first with the question's basic
+answers in the first four, as the server lists them (a test names them for each question), and labelled "Practice"
 instead of "Alex asks". A build with a server starts on the idle screen and turns to practice if its first connection
 attempt fails.
 - **A server question** takes over at once while the scan runs, another server question waits for its replies, or the

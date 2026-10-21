@@ -26,8 +26,8 @@ export const QUESTIONS: readonly Question[] = [ // five questions, eight replies
     speaker: 'Alex', // the partner in the room
     text: 'Shall we watch something tonight?', // the question
     replies: [ // two rows of four
-      'Yes, a film', 'The news', 'A quiz show', 'Something funny', // first row
-      'Not tonight', 'You choose', 'Music instead', 'Ask me later', // second row
+      'Yes, a film', 'The news', 'A quiz show', 'No, not tonight', // first row: a yes and a no, as the server puts them
+      'Something funny', 'You choose', 'Music instead', 'Ask me later', // second row
     ], // end of replies
   }, // end of question 2
   { // question 3
