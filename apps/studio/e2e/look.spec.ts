@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test'; // Playwright Test
 
 const CREDITS = 'Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash'; // the footer line
 const LOCAL = ['localhost:5173', '127.0.0.1:8787', '127.0.0.1:8790']; // the studio, the server and the agent: no other host, so no font or image CDN
-const TEXT = ['h2', '.mirror', '.drive', '.banner', '.tv-off p', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.credits']; // the main text, on the photo, on the panels and on the TV frame
+const TEXT = ['h2', '.mirror', '.mode-line', '.drive', '.banner', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.credits']; // the main text, on the photo and on the panels
 
 /** One caregiver turn in mock mode, so the bubble, the chips and the speech are on screen too. */
 async function remember(page: Page): Promise<void> { // "Noted: ..."
@@ -24,7 +24,8 @@ test('draws the darkened photo of leaves in Montserrat, all from localhost, with
   await remember(page); // a turn: the agent's and the server's hosts too
   await expect(page.getByTestId('credits')).toHaveText(CREDITS); // the credits line
   await expect(page.getByTestId('sim-banner')).toHaveText('Simulated Alexa+ experience'); // kept
-  await expect(page.locator('.mirror')).toHaveText('Web mirror: the real app runs on Fire OS'); // kept
+  await page.getByTestId('drive-mode').check(); // the virtual TV and its label are shown only in drive mode
+  await expect(page.locator('.mirror')).toHaveText('Web version of the TV app: the real app runs on Fire OS'); // kept, renamed in B7.2
   await expect(page.getByTestId('mode-badge')).toHaveText('MOCK'); // kept
   const look = await page.evaluate(async () => { // what the page drew with
     await document.fonts.ready; // every font face in use has loaded or failed
@@ -57,12 +58,13 @@ test('shows the SvaVāk wordmark, uncut, as the title, where the text title was,
   expect(drawn.width / drawn.height).toBeCloseTo(drawn.naturalWidth / drawn.naturalHeight, 2); // its whole drawing, not stretched
   const inside = await page.evaluate(async (src) => { const svg = new DOMParser().parseFromString(await (await fetch(src)).text(), 'image/svg+xml').documentElement as unknown as SVGSVGElement; document.body.append(svg); const v = svg.viewBox.baseVal; const fits = [...svg.querySelectorAll('path')].every((p) => { const b = p.getBBox(); return b.x >= v.x && b.y >= v.y && b.x + b.width <= v.x + v.width && b.y + b.height <= v.y + v.height; }); svg.remove(); return fits; }, drawn.src); // the file's outlines, measured against its own viewBox
   expect(inside).toBe(true); // and not cut: every outline lies inside the viewBox
-  await expect(page.locator('.studio-head')).toHaveText(''); // no text title left beside it
+  await expect(page.locator('.studio-head h1')).toHaveText(''); // no text title left beside it (the header's right side holds the mode line and the drive switch)
 }); // end of the test
 
-test('gives every main text WCAG AA contrast over what is drawn behind it', async ({ page }) => { // measured, not assumed
+for (const drive of [false, true]) test(`gives every main text WCAG AA contrast over what is drawn behind it, with Drive mode ${drive ? 'on' : 'off'}`, async ({ page }) => { // measured, not assumed, in both layouts
   await page.emulateMedia({ reducedMotion: 'reduce' }); // nothing mid-animation while measuring
   await page.goto('/'); // the studio
+  if (drive) await page.getByTestId('drive-mode').check(); // the virtual TV's head and label, and the engine panel
   await remember(page); // the bubble, the chips and the speech
   await page.evaluate(() => document.fonts.ready); // the final type
   const lines = await page.evaluate((selectors) => selectors.flatMap((selector) => [...document.querySelectorAll(selector)].flatMap((el) => { // each text's line boxes
@@ -105,7 +107,7 @@ test('gives every main text WCAG AA contrast over what is drawn behind it', asyn
   console.log(results.map((r) => `${r.ratio.toFixed(2)} (needs ${r.needs})  ${r.selector}  "${r.text}"`).join('\n')); // the table, for the report
   expect(results.length).toBeGreaterThan(TEXT.length); // every selector found, most with several lines
   expect(results.filter((r) => r.ratio < r.needs)).toEqual([]); // none below AA
-}); // end of the test
+}); // end of the tests
 
 test('moves only without prefers-reduced-motion', async ({ page }) => { // subtle motion, and none on request
   const moving = () => page.evaluate(() => [...document.querySelectorAll('*')].filter((el) => { const s = getComputedStyle(el); return s.animationName !== 'none' || s.transitionDuration.split(',').some((d) => parseFloat(d) > 0); }).length); // elements with an animation or a transition

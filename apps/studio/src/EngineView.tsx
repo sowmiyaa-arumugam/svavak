@@ -12,7 +12,7 @@ export function EngineView({ state }: { state: EngineState | null }) { // under 
         <h2>Engine: posterior after each press</h2>{/* what the bars are */}
         {state && <span className="theta-label">θ = {state.threshold}</span>}{/* the commit threshold */}
       </div>{/* end of the head */}
-      {state === null ? ( // drive mode is off, or no question has been scanned yet
+      {state === null ? ( // no question has been scanned yet
         <p className="muted">The bars appear when the virtual TV scans a question: turn on Drive mode and press the space bar.</p> // what to do
       ) : ( // one bar per option
         <div className="bars" style={{ ['--theta' as string]: String(state.threshold) }}>{/* θ as a CSS variable for the line */}

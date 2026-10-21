@@ -2,17 +2,23 @@
 
 *Your Voice. Your Choice*
 
-One localhost page that makes the whole loop visible (plan §4.7, decision D6), for judges, testing and the video. It
-is labelled everywhere as a web mirror: the real app runs on Fire OS. It uses the TV's colour tokens
-([apps/tv/src/colors.ts](../tv/src/colors.ts)), so the two read as one product. It is laid out for a 1920 × 1080
-screen.
+One localhost page that makes the whole loop visible (plan §4.7, decision D6), for judges, testing and the video. Its
+virtual TV is labelled as the web version of the TV app: the real app runs on Fire OS. It uses the TV's colour tokens
+([apps/tv/src/colors.ts](../tv/src/colors.ts)), so the two read as one product. It is laid out on a 1920 × 1080
+stage that is scaled to fit the window (see Look).
 
-- **Caregiver panel** (left), with a permanent "Simulated Alexa+ experience" banner. Type to the simulated Alexa+
-  and press Send. The turn goes to the [agent](../../services/agent)'s `POST /agent/turn`, read as a stream. Each
-  tool call shows as a chip (outlined while it runs, filled when it has worked, red on a tool error). The agent's
-  answer is shown in large text and spoken with the browser's speech synthesis.
-- **Virtual TV** (right), labelled "Web mirror: the real app runs on Fire OS". It is off by default behind the
-  **Drive mode** switch, so it never competes with the app on the emulator for the household's questions.
+- **Header**: the wordmark on the left, and on the right a line saying what answers the questions and the
+  **Drive mode** switch, a teal toggle on a real checkbox (`role="switch"`). With Drive mode off the line reads "The
+  SvaVāk app on the Fire TV emulator answers the questions."; with it on, "Answer on the virtual TV with the space
+  bar."
+- **Caregiver panel** (alone and centred, at most 1100 px wide, with Drive mode off; on the left with it on), with a
+  permanent "Simulated Alexa+ experience" banner. Type to the simulated Alexa+ and press Send. The turn goes to the
+  [agent](../../services/agent)'s `POST /agent/turn`, read as a stream. Each tool call shows as a chip (outlined while
+  it runs, filled when it has worked, red on a tool error). The agent's answer is shown at 32 px and spoken with the
+  browser's speech synthesis. The conversation sits just above the text box, chat style.
+- **Virtual TV** (right), labelled "Web version of the TV app: the real app runs on Fire OS". It and the engine view
+  are shown only with Drive mode on, which is off by default, so the TV never competes with the app on the emulator
+  for the household's questions.
   - Drive mode runs the TV's own conversation state machine, switchclock scan engine, switch handling and stream
     client ([apps/tv/src](../tv/src)), drawn on the TV's 1920 × 1080 layout and scaled into a 16:9 frame.
   - It connects to the [server](../../services/server) as the household's TV. It shows the idle screen between
@@ -46,6 +52,10 @@ Dark and calm, in the spirit of [Hamish Williams' portfolio](https://hamishw.com
   [assets/brand/SvaVak_logo_wordmark.svg](../../assets/brand), in Source Serif 4 outlines (SIL Open Font License, see
   [NOTICE](../../NOTICE)); at header size the tagline would be too small to read. Its viewBox crops it to what it
   draws, and it is 32 px tall, so its capitals are as tall as the old text title's.
+- **Stage:** the page is laid out at 1920 × 1080 and zoomed to fit the window, its proportions kept: the scale is
+  the smaller of window width ÷ 1920 and window height ÷ 1080 ([src/main.tsx](src/main.tsx) sets it as `--scale`,
+  and again on every resize). It is centred, and the photo fills any space beside or above it. CSS `zoom` lays the
+  page out at its final size, so text is drawn at that size and stays sharp. The page never scrolls.
 - **Type:** Montserrat (SIL Open Font License), self-hosted from `@fontsource/montserrat` in weights 400, 600 and 700.
   No font or image CDN is called at runtime. The virtual TV keeps the TV's own look and its system type.
 - **Motion:** the page rises into place on load, and each part of a caregiver turn as it arrives. Under
@@ -104,12 +114,28 @@ It drives the page through stable `data-testid` attributes, with `data-mode`, `d
 
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
-- The page draws the darkened photo in Montserrat, with the credits line, the banner, the mirror label and the mode
-  badge, and shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
+- The page draws the darkened photo in Montserrat, with the credits line, the banner, the virtual TV's label and the
+  mode badge, and shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
 - Every request goes to the studio, the server or the agent.
 - Every line of the main text has WCAG AA contrast (4.5:1, or 3:1 for large text) against the pixels drawn behind
-  it. They are measured in a 1080p screenshot taken with the text made transparent.
+  it, with Drive mode off and on. They are measured in a 1080p screenshot taken with the text made transparent.
 - Nothing animates or transitions under `prefers-reduced-motion: reduce`.
+
+The layout tests ([e2e/layout.spec.ts](e2e/layout.spec.ts)) run at 1920 × 1080, 1920 × 960, 1366 × 768,
+1280 × 800 and 2560 × 1440, with Drive mode off and with it on (after one question answered with the space bar).
+At each size they check four things:
+
+- The stage's scale is the smaller of the two ratios (within 1 %, and exactly 1 at 1920 × 1080), and the stage is
+  centred.
+- There are no scrollbars, no two panels overlap, and every heading and line of text is visible: the element on top
+  at its middle (`elementFromPoint`) is the one that draws it.
+- With Drive mode off, only the caregiver panel shows, centred. With it on, the engine's bars show in full. The
+  header line and the virtual TV's label match the mode.
+- The latest reply is 32 px on the stage and sits just above the text box.
+
+They also check that resizing from 1920 × 1080 to 1366 × 768 and back rescales without a reload, and that the Drive
+mode switch is a teal toggle on a real checkbox that Tab and Space reach. They save screenshots of both modes at
+1920 × 1080 and 1366 × 768 to `test-results/b7_2/` (git-ignored).
 
 Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 6.1.2, TypeScript 5.9.3,
 `@playwright/test` 1.64.1 and `@fontsource/montserrat` 5.3.0.
@@ -122,8 +148,8 @@ Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 
 | `src/styles.css` | The look |
 | `src/assets/` | The background photo (Unsplash License, see NOTICE) |
 | `src/CaregiverPanel.tsx` | The simulated Alexa+: text, tool chips, speech |
-| `src/VirtualTv.tsx` | The web mirror of the TV, on the TV's own modules |
+| `src/VirtualTv.tsx` | The web version of the TV app, on the TV's own modules |
 | `src/EngineView.tsx` | The posterior bars and θ |
 | `src/TraceStrip.tsx` | The trace stream and the strip of hops |
 | `src/sse.ts` | Server-sent events read with `fetch` |
-| `e2e/` | The Playwright tests: the loop and the look |
+| `e2e/` | The Playwright tests: the loop, the look and the layout |

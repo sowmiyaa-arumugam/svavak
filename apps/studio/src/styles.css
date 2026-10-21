@@ -1,8 +1,8 @@
 /* Copyright 2026 Sowmiya Arumugam */
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Studio look (plan §5.5) for a 1920 x 1080 screen: dark and calm on a darkened photo of leaves, in Montserrat, with */
-/* large type, generous spacing, translucent dark panels and subtle motion. Colours are the TV's tokens, set as */
-/* variables by main.tsx; the virtual TV keeps the TV's own look and type. */
+/* Studio look (plan §5.5) on a 1920 x 1080 stage, scaled to fit the window: dark and calm on a darkened photo of */
+/* leaves, in Montserrat, with large type, generous spacing, translucent dark panels and subtle motion. Colours are */
+/* the TV's tokens, set as variables by main.tsx; the virtual TV keeps the TV's own look and type. */
 
 :root { /* the studio's own tokens, beside the TV's colours */
   --font: Montserrat, system-ui, "Segoe UI", Roboto, sans-serif; /* self-hosted from @fontsource/montserrat (main.tsx) */
@@ -17,27 +17,31 @@
 
 * { box-sizing: border-box; } /* sizes include padding and borders */
 html, body, #root { height: 100%; margin: 0; } /* the page fills the window */
+#root { display: grid; place-items: center; } /* the stage, centred in the window; the photo fills the space beside or above it */
 body { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.5)), linear-gradient(var(--veil), var(--veil)), #050a08 url("./assets/leaves-aaron-vasquez-unsplash.jpg") center / cover no-repeat; color: var(--text); font-family: var(--font); font-size: 18px; line-height: 1.4; -webkit-font-smoothing: antialiased; } /* the leaves under a veil, and a vignette that only darkens */
 h1, h2 { margin: 0; font-weight: 700; } /* tight headings */
 h2 { display: flex; align-items: center; gap: 14px; font-size: 15px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text2); } /* panel titles: small, spaced capitals */
 h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(--ring); } /* a short teal rule before each title */
 .muted { color: var(--text2); } /* secondary text */
 
-.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 16px 32px; height: 100vh; padding: 20px 32px 12px; } /* head, panels, trace, credits */
-.studio-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 28px; } /* the logo across the top */
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 16px 32px; width: 1920px; height: 1080px; padding: 20px 32px 12px; zoom: var(--scale, 1); } /* the stage: head, panels, trace, credits, laid out at 1080p and zoomed to the window (main.tsx), so text is drawn at its final size and stays sharp */
+.studio-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 28px; } /* the logo across the top, the mode line and the drive switch on the right */
+.mode-line { margin: 0 0 0 auto; } /* what answers the questions, pushed to the right */
 .logo { display: block; height: 32px; } /* the wordmark's 478 units at the whole logo's old scale (54 px for 806), so its capitals stay as tall as the 42 px text title's were; the width follows the file's own */
 .panel { background: var(--glass); border: 1px solid var(--line); border-radius: 22px; padding: 16px 22px; backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); } /* a translucent dark panel over the leaves */
 
 .caregiver { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 20px; border-radius: 30px; padding: 26px 30px; min-height: 0; } /* a device-like frame, with room to breathe */
+.studio[data-drive="off"] .caregiver { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 1100px; } /* drive mode off: alone in the main area, centred */
 .banner { align-self: flex-start; background: var(--accent); color: var(--bg); font-weight: 700; padding: 7px 16px; border-radius: 999px; letter-spacing: 0.02em; } /* permanent: Simulated Alexa+ experience */
 .transcript { flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; min-height: 0; } /* the turn */
+.transcript > :first-child { margin-top: auto; } /* chat style: the conversation sits just above the input, and still scrolls from its top */
 .bubble { align-self: flex-end; max-width: 85%; margin: 0; padding: 14px 20px; background: rgba(30, 51, 84, 0.7); border: 1px solid var(--line); border-radius: 20px 20px 6px 20px; font-size: 22px; } /* the caregiver's words, on the TV's focus blue */
 .chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; } /* the tool calls */
 .chip { padding: 6px 14px; border-radius: 999px; border: 2px solid var(--ring); font-family: var(--mono); font-size: 16px; transition: background-color 300ms var(--ease), color 300ms var(--ease); } /* one call */
 .chip.running { color: var(--ring); } /* waiting for its result */
 .chip.ok { background: var(--ring); color: var(--bg); } /* done */
 .chip.failed { border-color: var(--help); color: var(--help); } /* a tool error */
-.speech { margin: 0; font-size: 46px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; } /* the agent's answer, large */
+.speech { margin: 0; font-size: 32px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; } /* the agent's answer, large */
 .error { margin: 0; color: var(--help); } /* a failed turn */
 .ask { display: flex; gap: 12px; } /* the input row */
 .ask input { flex: 1; font: inherit; font-size: 22px; padding: 14px 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--well); color: var(--text); transition: border-color 200ms var(--ease); } /* the text box */
@@ -47,12 +51,15 @@ h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(
 .ask button:disabled { opacity: 0.4; cursor: default; } /* a turn is running, or the box is empty */
 
 .tv-column { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; gap: 12px; min-height: 0; } /* the screen and the engine */
-.tv-head { display: flex; align-items: center; gap: 18px; } /* title, mirror label, drive switch */
-.mirror { color: var(--accent); font-size: 16px; } /* labelled everywhere as a web mirror */
-.drive { margin-left: auto; display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; } /* the drive-mode switch */
-.drive input { width: 22px; height: 22px; accent-color: var(--ring); } /* the checkbox, in the TV's teal */
+.tv-head { display: flex; align-items: center; gap: 18px; } /* title and label */
+.mirror { color: var(--accent); font-size: 16px; } /* labelled as the web version of the TV app */
+.drive { display: flex; align-items: center; gap: 12px; font-weight: 600; cursor: pointer; } /* the drive-mode switch and its name */
+.drive input { appearance: none; position: relative; flex: none; width: 52px; height: 30px; margin: 0; border: 2px solid var(--text2); border-radius: 999px; background: var(--well); cursor: pointer; transition: background-color 200ms var(--ease), border-color 200ms var(--ease); } /* the real checkbox, drawn as a toggle's track */
+.drive input::before { content: ""; position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--text2); transition: transform 200ms var(--ease), background-color 200ms var(--ease); } /* its knob, at the left: off */
+.drive input:checked { background: var(--ring); border-color: var(--ring); } /* on: filled with the studio's teal */
+.drive input:checked::before { transform: translateX(22px); background: var(--bg); } /* the knob slides right */
+.drive input:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; } /* the keyboard's focus ring */
 .tv-frame { width: 960px; height: 540px; flex: none; overflow: hidden; border-radius: 14px; border: 2px solid var(--line); background: var(--bg); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); font-family: var(--tv-font); } /* 16:9 in the TV's own type, lifted off the leaves by a deep shadow */
-.tv-off { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text2); text-align: center; } /* drive mode off */
 .tv-canvas { width: 1920px; height: 1080px; transform: scale(0.4979); transform-origin: 0 0; } /* the TV's design grid, scaled into the frame inside its border */
 
 /* The TV's screen in design pixels, as apps/tv/src/ConversationScreen.tsx lays it out */

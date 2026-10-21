@@ -12,7 +12,7 @@ const SHOTS = fileURLToPath(new URL('../../../test-results/b5/', import.meta.url
 test('a caregiver asks, Sam presses Tea on the virtual TV, and the caregiver hears "Sam says: Tea."', async ({ page }) => { // the loop
   await page.goto('/'); // the studio
   await expect(page.getByTestId('sim-banner')).toHaveText('Simulated Alexa+ experience'); // the permanent banner
-  await expect(page.getByTestId('tv')).toHaveAttribute('data-mode', 'off'); // drive mode is off by default
+  await expect(page.getByTestId('tv')).toHaveCount(0); // drive mode is off by default: no virtual TV on screen
   await page.getByTestId('drive-mode').check(); // drive mode on: the virtual TV connects as the household's TV
   const tv = page.getByTestId('tv'); // the virtual TV
   await expect(tv).toHaveAttribute('data-online', 'true'); // its stream is open

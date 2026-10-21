@@ -36,16 +36,7 @@ function typing(event: KeyboardEvent): boolean { // the caregiver panel's text b
   return event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLInputElement && event.target.type === 'text'); // text fields only
 } // end of typing
 
-export function VirtualTv({ drive, onEngine }: { drive: boolean; onEngine: (state: EngineState | null) => void }) { // the centre panel's screen
-  if (!drive) return ( // off by default, so it never competes with the emulator for the household's questions
-    <div className="tv-frame tv-off" data-testid="tv" data-mode="off">{/* an empty screen */}
-      <p>Drive mode is off. The SvaVāk app on the Fire TV emulator answers the questions.</p>{/* what to do */}
-    </div> // end of the screen
-  ); // end of off
-  return <DriveScreen onEngine={onEngine} />; // mounted while drive mode is on: connects, and hangs up when switched off
-} // end of VirtualTv
-
-function DriveScreen({ onEngine }: { onEngine: (state: EngineState | null) => void }) { // the screen in drive mode
+export function VirtualTv({ onEngine }: { onEngine: (state: EngineState | null) => void }) { // mounted only while drive mode is on, so it never competes with the emulator: connects, and hangs up when switched off
   const { conversation, input } = useMemo(() => { // one conversation and its switch while drive mode is on
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
     const conversation = new Conversation(CONFIG, now, QUESTIONS, () => {}, post, () => input.held(), true); // online from the start, as a TV with a server
@@ -119,7 +110,7 @@ function DriveScreen({ onEngine }: { onEngine: (state: EngineState | null) => vo
       </div>{/* end of the canvas */}
     </div> // end of the frame
   ); // end of the render
-} // end of DriveScreen
+} // end of VirtualTv
 
 function Screen({ conversation, snap }: { conversation: Conversation; snap: ReturnType<Conversation['snapshot']> }) { // the TV's screens
   if (snap.mode === 'help') return <div className="tv-screen"><p className="tv-big tv-help">Help is coming</p></div>; // a press dismisses it
