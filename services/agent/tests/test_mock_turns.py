@@ -75,6 +75,11 @@ def test_a_message_without_a_question_is_recapped_on_its_own(stub, turn):  # a s
     assert turn("What did Sam say?")[-2] == ("speech", {"text": "Sam said: I'm cold."})  # one sentence
 
 
+def test_a_help_request_in_the_history_does_not_break_the_recap(stub, turn):  # the server lists help requests as messages without text
+    stub.messages = [{"text": "Tea", "time": "2026-10-19T10:00:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"}, {"text": None, "time": "2026-10-19T10:01:00Z", "kind": "help", "question_text": None}]  # a reply, then a help request
+    assert turn("What did Sam say?")[-2] == ("speech", {"text": 'To "Would you like tea or coffee?", Sam said: Tea.'})  # the reply is recapped
+
+
 def test_what_did_sam_say_with_no_messages(stub, turn):  # nothing yet
     stub.messages = []  # an empty history
     assert turn("what did Sam say")[-2] == ("speech", {"text": "Sam hasn't said anything recently."})  # says so

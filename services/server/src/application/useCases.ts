@@ -1,13 +1,13 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
 // Use-cases of plan §4.3 for flow S1: AskQuestion, SuggestReplies, CommitUtterance and SynthesizeSpeech, plus those
-// behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact.
+// behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact, and RequestHelp for flow S3.
 
 import { EventEmitter, once } from 'node:events'; // wakes a waiting get_answer
 import { cleanDrafts, defaultCandidates, defaultsFor, dropBanned, optionCandidates, toCandidates } from '../domain/candidates.ts'; // reply pipeline
 import type { DailyCap } from '../domain/dailyCap.ts'; // cost guard
 import { DEMO_HOUSEHOLD, FACTS_MAX, type ProfileFact } from '../domain/facts.ts'; // the one household for now, and its fact limit
-import type { Question, Utterance } from '../domain/model.ts'; // the model
+import type { HelpRequest, Question, Utterance } from '../domain/model.ts'; // the model
 import type { LlmPort, Log, NotifierPort, StorePort, SuggestRequest, TracePort, TtsPort } from '../ports/index.ts'; // ports
 
 /** Everything the use-cases need, wired by compose.ts (or by a test). */
@@ -48,10 +48,10 @@ export interface Answer { // the answer, or why there is none
 } // end of Answer
 
 /** One item of get_recent_messages (plan Table 16). */
-export interface Message { // something Sam said
-  text: string; // the words
+export interface Message { // something Sam said, or that Sam asked for help
+  text: string | null; // the words; null for a help request
   time: string; // when, ISO 8601 UTC
-  kind: Utterance['kind']; // reply or spontaneous
+  kind: Utterance['kind'] | 'help'; // reply or spontaneous, or help
   question_text: string | null; // the question it answered, if there is one
 } // end of Message
 
@@ -201,10 +201,23 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     return { status: 'answered', answer_text: utterance.text, answered_at: utterance.created_at, clicks: utterance.clicks }; // Sam's words
   } // end of answerOf
 
-  /** GetRecentMessages: the last `limit` utterances after `since`, oldest first. */
+  /** GetRecentMessages: the last `limit` utterances and help requests after `since`, oldest first. */
   function recentMessages(since: string | null, limit: number): Message[] { // get_recent_messages
-    return deps.store.recentUtterances(limit, since).map((u) => ({ text: u.text, time: u.created_at, kind: u.kind, question_text: u.question_text })); // what Sam said
+    const said = deps.store.recentUtterances(limit, since).map((u): Message => ({ text: u.text, time: u.created_at, kind: u.kind, question_text: u.question_text })); // what Sam said
+    const helps = deps.store.recentHelp(limit, since).map((h): Message => ({ text: null, time: h.created_at, kind: 'help', question_text: null })); // when Sam asked for help
+    return [...said, ...helps].sort((a, b) => Date.parse(a.time) - Date.parse(b.time)).slice(-limit); // both, oldest first; the sort is stable, so equal times keep this order
   } // end of recentMessages
+
+  /** RequestHelp: Sam asked for help on the TV. Idempotent by key; the open question stays open. */
+  function requestHelp(key: string): { help: HelpRequest; created: boolean } { // POST /v1/alerts
+    const done = deps.store.helpByKey(key); // sent before: a retry
+    if (done) return { help: done, created: false }; // the same request, not a second alert
+    const help: HelpRequest = { id: deps.newId(), created_at: iso() }; // the record: its time, no text
+    deps.store.addHelp(help, key); // persist
+    deps.trace.span({ hop: 'server→caregiver', operation: 'help.requested', duration_ms: 0, mode: deps.mode }); // on the trace stream, for the caregiver: no text
+    deps.log('help.requested', { help_id: help.id }); // metadata only
+    return { help, created: true }; // new
+  } // end of requestHelp
 
   /** AddProfileFact: a fact for the household's later questions; refused once it has FACTS_MAX. Returns its id. */
   function addProfileFact(fact: ProfileFact): string { // add_profile_fact
@@ -226,7 +239,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     return question && deps.clock() - Date.parse(question.created_at) <= REPLAY_MS ? question : undefined; // recent enough, or nothing
   } // end of openQuestion
 
-  return { askQuestion, commitUtterance, utteranceAudio, openQuestion, getAnswer, recentMessages, addProfileFact }; // the public use-cases
+  return { askQuestion, commitUtterance, utteranceAudio, openQuestion, getAnswer, recentMessages, addProfileFact, requestHelp }; // the public use-cases
 } // end of createUseCases
 
 /** The use-cases object, for typing the REST layer. */

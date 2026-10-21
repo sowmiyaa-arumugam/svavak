@@ -4,7 +4,8 @@
 
 One Node.js service for the TV and for caregiver agents (plan §3.2, §4.3, §4.4): REST, the WebSocket question stream
 and the trace stream for the TV, and an MCP endpoint for agents, over a ports-and-adapters core. It covers flow S1:
-questions, their reply candidates and utterances, asked and answered through MCP.
+questions, their reply candidates and utterances, asked and answered through MCP. It also takes the TV's help requests
+(flow S3, without acknowledgement).
 
 - **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
   the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
@@ -68,6 +69,7 @@ token gets 401, and the agent token gets 403, so an agent can never post an answ
 | `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s). On connect, a TV first gets `question.created` for the newest question, if it is unanswered and was asked in the last 2 minutes, with its current candidates; nothing otherwise |
 | `POST /v1/questions` | Dev endpoint for `tools/smoke-stream.mjs`; agents use `ask_question`. Body: `text` (at most 200 characters), `asked_by` (at most 40). Returns 201 with the question |
 | `POST /v1/utterances` | Commits a reply. Needs an `Idempotency-Key` header. Body: `question_id` (or null), `question_text` (optional; the TV's fixture question, at most 200 characters, or null; ignored when `question_id` names a question), `text`, `clicks`, `duration_ms`. Returns 201, or 200 with the same utterance for a repeated key |
+| `POST /v1/alerts` | A help request: Sam held the switch for 2 s or chose Help on the TV. Needs an `Idempotency-Key` header; no body. Returns 201 with `{id, created_at}`, or 200 with the same request for a repeated key, which raises no second alert. It is kept in memory and sent on `GET /v1/trace` as one span, `{hop: "server→caregiver", operation: "help.requested"}`, for the caregiver. Its log line `help.requested` carries its id only. It neither answers nor closes the open question |
 | `GET /v1/utterances/{id}/audio` | The reply's audio: Polly's MP3 (`audio/mpeg`), or the mock's WAV tone (`audio/wav`) in mock mode. 404 when there is none |
 | `GET /v1/trace` (SSE) | Spans `{id, at, hop, operation, duration_ms, mode}`, plus `dropped` (a count) on `server→llm`: the last 500 first, then live. Never message text |
 | `GET /healthz` | Liveness, no token |
@@ -159,7 +161,7 @@ audio; past the daily cap, the reply gets the mock's tone.
 | --- | --- | --- | --- |
 | `ask_question` | `question` (at most 200 characters), `options` (optional: 1 to 6, each at most 40), `urgency` (`normal` or `high`; default `normal`), `asked_by` (at most 40) | `question_id`, `delivered` (a TV was connected) | not read-only, not idempotent |
 | `get_answer` | `question_id`, `wait_seconds` (0 to 25 whole seconds; default 0) | `status` (`pending`, `answered` or `expired`), `answer_text`, `answered_at`, `clicks` | read-only |
-| `get_recent_messages` | `since` (optional ISO 8601 time; only later messages), `limit` (1 to 20; default 20) | `messages`: the latest, oldest first, each `text`, `time`, `kind` (`reply` or `spontaneous`), `question_text` (or null) | read-only |
+| `get_recent_messages` | `since` (optional ISO 8601 time; only later messages), `limit` (1 to 20; default 20) | `messages`: the latest, oldest first, each `text`, `time`, `kind` (`reply`, `spontaneous` or `help`), `question_text` (or null). A `help` message is a help request from the TV: its `time`, with `text` and `question_text` null | read-only |
 | `add_profile_fact` | `fact` (at most 120 characters, no `<` or `>`), `category` (`likes`, `dislikes`, `people`, `routines` or `other`) | `fact_id` | none |
 
 `get_answer` long-polls: it returns as soon as the answer is stored (after its speech), when the question expires, or
@@ -171,7 +173,8 @@ fact are tool errors (`isError: true`) with a short reason; the session stays us
 real server listening on a free loopback port, and raw HTTP for what a client would not send: initialise and session
 id, `tools/list` with schemas and hints, every tool, the long-poll (answered when the TV commits during the wait,
 pending after a 1 s wait, expired after a newer question), `get_recent_messages` with more messages than its limit (the
-newest, oldest first), DELETE then 404, a session ending after its idle time, a foreign Origin or Host (403), no token
+newest, oldest first), a help request from the TV listed as a `help` message while the open question stays open,
+DELETE then 404, a session ending after its idle time, a foreign Origin or Host (403), no token
 (401), the device token on `/mcp` and the agent token on the TV's routes (403), an unsupported protocol header (400),
 invalid inputs as tool errors, and an added fact changing the mock ranking. Run it with
 `yarn workspace server vitest run test/mcp.test.ts`, or as part of `yarn workspace server test`.

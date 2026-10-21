@@ -229,6 +229,53 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
   }); // end of the case
 }); // end of utterances
 
+describe('POST /v1/alerts', () => { // Sam asks for help from the TV (plan Table 13: raise a help alert)
+  const help = (http: string, headers: Record<string, string>) => fetch(`${http}/v1/alerts`, { method: 'POST', headers }); // no body: a help request has no text
+
+  it('refuses a help request without the device token (401), or with the agent token (403)', async () => { // the TV's token only
+    const { http, logs } = await start(); // server
+    for (const headers of [{ 'Idempotency-Key': 'h1' }, { 'Idempotency-Key': 'h1', Authorization: 'Bearer wrong' }] as Record<string, string>[]) await expectProblem(await help(http, headers), 401); // none, or wrong
+    await expectProblem(await help(http, { 'Idempotency-Key': 'h1', Authorization: `Bearer ${'a'.repeat(32)}` }), 403); // an agent cannot raise one
+    expect(logs.filter((l) => l.msg === 'help.requested')).toEqual([]); // nothing was taken
+  }); // end of the case
+
+  it('takes a help request once per idempotency key: 201, then 200 with the same request; a key is required', async () => { // idempotent like utterances
+    const { http, logs } = await start(); // server
+    const first = await help(http, { ...AUTH, 'Idempotency-Key': 'h1' }); // the request
+    expect(first.status).toBe(201); // created
+    const body = (await first.json()) as Record<string, unknown>; // the request as stored
+    expect(body).toEqual({ id: expect.any(String), created_at: expect.any(String) }); // its id and time, nothing else
+    const again = await help(http, { ...AUTH, 'Idempotency-Key': 'h1' }); // a retry
+    expect([again.status, await again.json()]).toEqual([200, body]); // the same one
+    await expectProblem(await help(http, AUTH), 400); // no Idempotency-Key
+    expect(logs.filter((l) => l.msg === 'help.requested')).toEqual([{ msg: 'help.requested', help_id: body.id }]); // one log line, metadata only
+  }); // end of the case
+
+  it('sends one help span on the trace stream per request, never more for a retry', async () => { // the caregiver's alert
+    const { http } = await start(); // server
+    const res = await fetch(`${http}/v1/trace`, { headers: AUTH }); // subscribe
+    expect([res.status, res.headers.get('content-type')]).toEqual([200, 'text/event-stream']); // the stream, not a refusal
+    await help(http, { ...AUTH, 'Idempotency-Key': 'h1' }); // the request
+    await help(http, { ...AUTH, 'Idempotency-Key': 'h1' }); // its retry
+    const reader = res.body!.getReader(); // read the stream
+    let text = ''; // what arrived so far
+    while ((text.match(/POST \/v1\/alerts/g) ?? []).length < 2) { // until both requests' spans arrived
+      const { value, done } = await reader.read(); // the next chunk
+      if (done) throw new Error('the trace stream ended early'); // fail, never spin
+      text += new TextDecoder().decode(value); // append it
+    } // end of the reading
+    await reader.cancel(); // unsubscribe
+    const spans = text.split('\n\n').filter((e) => e.startsWith('data: ')).map((e) => JSON.parse(e.slice(6)) as Span); // parse events
+    expect(spans.filter((s) => s.hop === 'server→caregiver')).toEqual([{ id: expect.any(String), at: expect.any(String), hop: 'server→caregiver', operation: 'help.requested', duration_ms: 0, mode: 'mock' }]); // one alert
+  }); // end of the case
+
+  it("takes the virtual TV's help request with CORS, as the household's TV", async () => { // the studio in drive mode
+    const { http } = await start(); // server
+    const res = await help(http, { ...AUTH, 'Idempotency-Key': 'h1', Origin: 'http://localhost:5173' }); // from the studio's page
+    expect([res.status, res.headers.get('access-control-allow-origin')]).toEqual([201, 'http://localhost:5173']); // taken, and readable
+  }); // end of the case
+}); // end of POST /v1/alerts
+
 describe('the studio in a browser (plan §4.7)', () => { // Origin checks, CORS and the WebSocket token in a subprotocol
   const STUDIO = 'http://localhost:5173'; // the studio's origin
   const FOREIGN = 'http://evil.example'; // any other site

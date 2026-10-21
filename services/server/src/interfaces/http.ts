@@ -1,7 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
 // Interfaces of plan §4.3 for flow S1: REST (Express 5), the WebSocket stream (ws) and the trace stream (SSE), plus
-// the MCP endpoint of plan §4.4 (mcp.ts) on the same port.
+// the MCP endpoint of plan §4.4 (mcp.ts) on the same port, and the TV's help request of flow S3 (POST /v1/alerts).
 
 import { createHash, timingSafeEqual } from 'node:crypto'; // token comparison
 import { createServer as createHttpServer, STATUS_CODES, type Server } from 'node:http'; // the HTTP server
@@ -107,6 +107,13 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     const { utterance, created, hasAudio } = await o.useCases.commitUtterance(key, body.data); // store, answer, speak
     res.status(created ? 201 : 200).json({ ...utterance, audio_url: hasAudio ? `/v1/utterances/${utterance.id}/audio` : null }); // a replay is 200
   }); // end of POST /v1/utterances
+
+  app.post('/v1/alerts', (req, res) => { // Sam asks for help (plan Table 13: raise a help alert); the request has no body
+    const key = req.get('idempotency-key'); // retries reuse it
+    if (!key || key.length > 128) return problem(res, 400, 'Idempotency-Key header required (1 to 128 characters)'); // refuse
+    const { help, created } = o.useCases.requestHelp(key); // store, trace, log
+    res.status(created ? 201 : 200).json(help); // a replay is 200
+  }); // end of POST /v1/alerts
 
   app.get('/v1/utterances/:id/audio', (req, res) => { // the speech
     const audio = o.useCases.utteranceAudio(req.params.id); // audio bytes, if any

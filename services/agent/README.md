@@ -111,7 +111,8 @@ didn't work."
 Every reply is at most two short sentences. The recap speaks the newest one or two messages, newest first, one
 sentence each:
 `To "<question>", Sam said: <reply>.`, or `Sam said: <reply>.` for a message without a question. A reply said more
-than once (case and spacing ignored) is spoken once, with its newest question.
+than once (case and spacing ignored) is spoken once, with its newest question. A help request from the TV, which the
+server lists as a message of kind `help` without text, is not recapped.
 
 ## Interface
 

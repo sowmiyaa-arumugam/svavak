@@ -48,7 +48,8 @@ def next_step(tool: str, ok: bool, output: dict[str, Any], fact: str = "") -> tu
     if tool == "get_recent_messages":  # what Sam said lately
         distinct: dict[str, dict[str, Any]] = {}  # one message per reply, newest first
         for m in reversed(output["messages"]):  # the list is oldest first
-            distinct.setdefault(m["text"].strip().casefold(), m)  # the newest occurrence wins; case and spacing ignored
+            if m["kind"] != "help":  # a help request has no text to recap
+                distinct.setdefault(m["text"].strip().casefold(), m)  # the newest occurrence wins; case and spacing ignored
         said = [f'To "{m["question_text"]}", Sam said: {sentence(m["text"])}' if m["question_text"] else f"Sam said: {sentence(m['text'])}" for m in list(distinct.values())[:2]]  # one sentence each, at most two
         return " ".join(said) if said else "Sam hasn't said anything recently."  # a short spoken recap
     return f"Noted: {sentence(fact)}"  # add_profile_fact: the fact, and nothing more

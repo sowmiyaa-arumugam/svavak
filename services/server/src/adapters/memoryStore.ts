@@ -3,15 +3,16 @@
 // MemoryStore (plan §4.3): the store port in process memory. SQLite is cut for now; nothing survives a restart.
 
 import type { ProfileFact } from '../domain/facts.ts'; // profile facts
-import type { Question, Utterance } from '../domain/model.ts'; // the model
+import type { HelpRequest, Question, Utterance } from '../domain/model.ts'; // the model
 import type { StorePort } from '../ports/index.ts'; // the port
 
-/** Questions, utterances, idempotency keys, audio and profile facts, in maps. */
+/** Questions, utterances, help requests, idempotency keys, audio and profile facts, in maps. */
 export class MemoryStore implements StorePort { // in-memory repository
   private readonly questions = new Map<string, Question>(); // by id, in insertion (time) order
   private readonly utterances = new Map<string, Utterance>(); // by id, in insertion (time) order
   private readonly keys = new Map<string, string>(); // idempotency key to utterance id
   private readonly audio = new Map<string, Uint8Array>(); // utterance id to audio bytes
+  private readonly helps = new Map<string, HelpRequest>(); // help requests by idempotency key, in insertion (time) order
   private readonly facts: Map<string, readonly ProfileFact[]>; // household to its facts
 
   constructor(facts: Record<string, readonly ProfileFact[]> = {}) { // the facts per household (no remove yet)
@@ -57,6 +58,19 @@ export class MemoryStore implements StorePort { // in-memory repository
     const after = since === null ? -Infinity : Date.parse(since); // compared as times, so any offset works
     return [...this.utterances.values()].filter((u) => Date.parse(u.created_at) > after).slice(-limit); // the last `limit` after it, oldest first
   } // end of recentUtterances
+
+  addHelp(help: HelpRequest, idempotencyKey: string): void { // a help request
+    this.helps.set(idempotencyKey, help); // so a retry finds it
+  } // end of addHelp
+
+  helpByKey(idempotencyKey: string): HelpRequest | undefined { // an earlier help request with this key
+    return this.helps.get(idempotencyKey); // or undefined
+  } // end of helpByKey
+
+  recentHelp(limit: number, since: string | null): HelpRequest[] { // help requests lately
+    const after = since === null ? -Infinity : Date.parse(since); // compared as times, as in recentUtterances
+    return [...this.helps.values()].filter((h) => Date.parse(h.created_at) > after).slice(-limit); // the last `limit` after it, oldest first
+  } // end of recentHelp
 
   profileFacts(household: string): ProfileFact[] { // the facts as stored
     return [...(this.facts.get(household) ?? [])]; // a copy; none for an unknown household

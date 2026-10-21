@@ -114,7 +114,7 @@ function toolServer(o: McpOptions): McpServer { // one per session
 
   server.registerTool('get_recent_messages', { // what was said lately
     title: 'Get recent messages', // display name
-    description: 'Lists what the person said recently, oldest first: text, time, kind (reply or spontaneous) and the question it answered, if any. Optionally only messages after since, and at most limit (1 to 20) of them.', // for the agent
+    description: 'Lists what the person said recently, oldest first: text, time, kind (reply or spontaneous) and the question it answered, if any. A message of kind help, with no text, is the time the person asked for help on the TV. Optionally only messages after since, and at most limit (1 to 20) of them.', // for the agent
     inputSchema: { // plan Table 16
       since: z.iso.datetime({ offset: true }).optional().describe('Only messages after this time (ISO 8601)'), // optional filter
       limit: z.number().int().min(1).max(20).default(20).describe('At most this many of the latest messages, 1 to 20'), // optional cap

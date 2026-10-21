@@ -248,6 +248,16 @@ describe('tools (plan Table 16)', () => { // tools/list and tools/call
     expect((messages as { text: string }[]).map((m) => m.text)).toEqual(['Message 3', 'Message 4', 'Message 5', 'Message 6', 'Message 7']); // the newest five, oldest first
   }); // end of the case
 
+  it("lists the TV's help request as a help entry with its time, and leaves the open question open", async () => { // POST /v1/alerts, seen by an agent
+    const { base, mcp } = await start(); // server
+    const { client } = await connect(mcp); // a session
+    const id = (await call(client, 'ask_question', { question: 'Tea or coffee?', options: ['Tea', 'Coffee'], asked_by: 'Alex' })).question_id as string; // an open question
+    const res = await fetch(`${base}/v1/alerts`, { method: 'POST', headers: { Authorization: `Bearer ${DEVICE}`, 'Idempotency-Key': randomUUID() } }); // Sam asks for help on the TV
+    const { created_at } = (await res.json()) as { created_at: string }; // when
+    expect(await call(client, 'get_recent_messages', { limit: 5 })).toEqual({ messages: [{ text: null, time: created_at, kind: 'help', question_text: null }] }); // the help entry
+    expect(await call(client, 'get_answer', { question_id: id })).toMatchObject({ status: 'pending' }); // the question is still open
+  }); // end of the case
+
   it('get_answer returns answered as soon as the TV commits during its wait', async () => { // long-poll
     const { base, mcp } = await start(); // server
     const { client } = await connect(mcp); // a session

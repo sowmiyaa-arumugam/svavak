@@ -3,7 +3,7 @@
 // Ports of plan §4.3 (Table 12), cut to the S1 flow. Interfaces only; adapters implement them.
 
 import type { ProfileFact } from '../domain/facts.ts'; // profile facts
-import type { Question, Span, StreamEvent, Utterance } from '../domain/model.ts'; // the domain model
+import type { HelpRequest, Question, Span, StreamEvent, Utterance } from '../domain/model.ts'; // the domain model
 
 /** What the reply model sees (plan §4.6 inputs). */
 export interface SuggestRequest { // input to LlmPort.suggest
@@ -35,6 +35,9 @@ export interface StorePort { // repository port
   getAudio(utteranceId: string): Uint8Array | undefined; // the audio of an utterance, if it has one
   recentTurns(limit: number): { question: string | null; reply: string }[]; // the last `limit` utterances with their questions, oldest first
   recentUtterances(limit: number, since: string | null): Utterance[]; // the last `limit` utterances created after `since` (any ISO 8601 time), oldest first
+  addHelp(help: HelpRequest, idempotencyKey: string): void; // a help request, under its key
+  helpByKey(idempotencyKey: string): HelpRequest | undefined; // an earlier help request with the same key
+  recentHelp(limit: number, since: string | null): HelpRequest[]; // the last `limit` help requests created after `since`, oldest first
   profileFacts(household: string): ProfileFact[]; // the household's facts as stored; [] for an unknown household
   addProfileFact(household: string, fact: ProfileFact & { id: string }): void; // appended to the household's facts
 } // end of StorePort

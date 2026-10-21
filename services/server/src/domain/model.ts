@@ -1,6 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Domain model of plan §4.3 (Table 14), cut to the S1 flow: questions, their reply candidates and utterances.
+// Domain model of plan §4.3 (Table 14), cut to the S1 flow: questions, their reply candidates and utterances; and the
+// help request of flow S3.
 
 /** Reply intents of plan §4.6. */
 export const INTENTS = ['yes', 'no', 'choice', 'later', 'clarify', 'social', 'need'] as const; // the model must pick one
@@ -47,6 +48,12 @@ export interface Utterance { // plan Table 14, without household and undo (P1)
   duration_ms: number; // from the question appearing to the commit
   created_at: string; // ISO 8601 UTC
 } // end of Utterance
+
+/** Sam asked for help on the TV: a 2 s hold of the switch, or the Help card (plan §3.3, flow S3). It has no text. */
+export interface HelpRequest { // without acknowledgement (P1)
+  id: string; // random identifier
+  created_at: string; // ISO 8601 UTC, when the server took it
+} // end of HelpRequest
 
 /** Events on GET /v1/stream (plan Table 13), cut to what S1 needs. */
 export type StreamEvent = // one JSON message on the WebSocket

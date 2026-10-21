@@ -186,6 +186,36 @@ describe('commitUtterance', () => { // POST /v1/utterances
   }); // end of the case
 }); // end of commitUtterance
 
+describe('requestHelp', () => { // POST /v1/alerts: Sam asks for help
+  it('stores the request with its time, traces it for the caregiver and logs its id only', () => { // the alert
+    const { uc, spans, logs } = setup(); // fresh
+    expect(uc.requestHelp('h1')).toEqual({ created: true, help: { id: 'id1', created_at: '2026-10-19T10:00:00.000Z' } }); // stored, with the time
+    expect(spans).toEqual([{ hop: 'server→caregiver', operation: 'help.requested', duration_ms: 0, mode: 'mock' }]); // on the trace stream
+    expect(logs).toEqual([{ msg: 'help.requested', help_id: 'id1' }]); // metadata only
+  }); // end of the case
+
+  it('is idempotent by key: the same request twice is one alert', () => { // a retry
+    const { uc, spans, logs } = setup(); // fresh
+    const first = uc.requestHelp('h1'); // the request
+    const again = uc.requestHelp('h1'); // its retry
+    expect(again).toEqual({ created: false, help: first.help }); // the same request
+    expect(spans).toHaveLength(1); // one alert
+    expect(logs).toHaveLength(1); // logged once
+    expect(uc.requestHelp('h2').created).toBe(true); // another key is another request
+  }); // end of the case
+
+  it('leaves the open question open and pushes nothing to the TV', async () => { // help is not an answer
+    const { uc, store, events } = setup(); // fresh
+    const { question } = uc.askQuestion('Tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'] }); // an open question
+    const pushed = events.length; // its events
+    uc.requestHelp('h1'); // Sam asks for help
+    expect(store.getQuestion(question.id)?.status).toBe('pending'); // still open
+    expect(await uc.getAnswer(question.id, 0)).toEqual({ status: 'pending', answer_text: null, answered_at: null, clicks: null }); // unanswered
+    expect(uc.openQuestion()?.id).toBe(question.id); // still replayed to a TV that connects
+    expect(events).toHaveLength(pushed); // nothing new on the TV's stream
+  }); // end of the case
+}); // end of requestHelp
+
 describe('synthesizeSpeech (through commitUtterance)', () => { // speech pipeline
   it('stores live audio for the utterance and traces it as live', async () => { // live voice
     const { uc, spans } = setup({ tts: { live: { synthesize: async () => new Uint8Array([9]) } } }); // live speech
@@ -396,6 +426,22 @@ describe('recentMessages', () => { // get_recent_messages
     expect(uc.recentMessages(null, 2).map((m) => m.text)).toEqual(['Hello', 'The cricket']); // the latest two
     expect(uc.recentMessages('2026-10-19T10:00:00.000Z', 20).map((m) => m.text)).toEqual(['Hello', 'The cricket']); // strictly after since
     expect(uc.recentMessages('2026-10-19T12:00:01+02:00', 20).map((m) => m.text)).toEqual(['The cricket']); // a time with an offset
+  }); // end of the case
+
+  it('lists each help request as a help entry with its time, in time order among the messages; since and limit count it too', async () => { // help in the history
+    const { uc, advance } = setup(); // fresh, with an adjustable clock
+    await uc.commitUtterance('k1', commit); // "Tea, please" at 10:00:00
+    advance(1000); // a second later
+    uc.requestHelp('h1'); // Sam asks for help at 10:00:01
+    advance(1000); // a second later
+    await uc.commitUtterance('k2', { ...commit, text: 'Hello' }); // "Hello" at 10:00:02
+    expect(uc.recentMessages(null, 20)).toEqual([ // everything, oldest first
+      { text: 'Tea, please', time: '2026-10-19T10:00:00.000Z', kind: 'spontaneous', question_text: null }, // said
+      { text: null, time: '2026-10-19T10:00:01.000Z', kind: 'help', question_text: null }, // the help request: its time, no text
+      { text: 'Hello', time: '2026-10-19T10:00:02.000Z', kind: 'spontaneous', question_text: null }, // said
+    ]); // end of the list
+    expect(uc.recentMessages(null, 2).map((m) => m.kind)).toEqual(['help', 'spontaneous']); // the latest two
+    expect(uc.recentMessages('2026-10-19T10:00:01.000Z', 20).map((m) => m.kind)).toEqual(['spontaneous']); // strictly after since
   }); // end of the case
 }); // end of recentMessages
 
