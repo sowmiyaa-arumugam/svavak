@@ -775,3 +775,30 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
 - **Workaround:** none needed; wait out the timeouts when checking the offline screens.
 - **Suggestion:** answer a guest's connection to a closed host port with a reset, as the host itself does.
   *(proposed)*
+
+## 2026-10-21: Nova 2 Lite repeats earlier answers to an unrelated question
+
+- **Tool:** Amazon Bedrock Runtime (Converse), Amazon Nova 2 Lite (`eu.amazon.nova-2-lite-v1:0`, eu-central-1), a
+  forced tool call at temperature 0
+- **Task attempted:** keep reply suggestions on the current question (B8.1).
+- **Steps:** on a fresh server, asked "What would you like to watch tonight?" (answered "Cricket game, please"),
+  added the fact "Sam loves old Bollywood films", asked it again (answered "Old Bollywood film?"), then asked "What
+  would you like for dinner?". The prompt gave the question first, then the earlier turns and the profile facts, and
+  said "Use facts only when they are relevant". Then four rules were added: every reply answers the current question,
+  context only where it fits, no topic carried into an unrelated question, no facts merged into one reply.
+- **Expected:** replies about dinner. *(proposed)*
+- **Actual:** the dinner question's first four were the earlier answers: "Cricket game, please", "Old Bollywood film?",
+  "Yes, cricket". With such rules added, the replay still put "Cricket highlights, please" and "An old Bollywood film"
+  first, and 2 of 10 probe calls were clean; with the turns also marked as background, 5 of 10; with them marked and
+  only the latest turn sent, 0 of 10 ("The same as last time, a Bollywood film"). Some replies bent the old answer to
+  the new question ("I want the Bollywood film for dinner"). Only moving the question after the turns and facts gave
+  10 of 10. At temperature 0 the same request still gave different replies from call to call, so one run settles
+  nothing.
+- **Severity:** medium: off-topic replies take the first row, which the person scans first. *(proposed)*
+- **Workaround:** rules that name the question's subject first and leave out context about another subject, the turns
+  marked as background, and the question last in the user message. Checked on 3 fresh-server replays (all clean) and
+  the 30-question evaluation, where facts still slipped in now and then: one run put "I prefer tea to coffee" and "Sam
+  likes cricket" in the first four for "Soup or a sandwich for lunch?". Over 60 more calls per prompt, a fact landed on
+  a question not about it in 2 first fours (4 with the old prompt).
+- **Suggestion:** say in the Nova prompting guidance where the question should go when earlier turns come as context,
+  and whether temperature 0 is meant to repeat. *(proposed)*

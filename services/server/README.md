@@ -110,7 +110,11 @@ the place of the lowest-ranked of them, which moves down one place. Questions as
 away, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
 the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
 profile facts. The question, the turns and the facts are quoted as data, never as instructions: each text is a JSON
-string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The facts are at most 20,
+string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The question comes last,
+after the time, the turns (marked as background, not replies to the current question) and the facts, and the rules keep
+every reply on the question's subject: no turn or fact about another subject, no earlier answer repeated for a different
+question, no separate facts merged into one reply. With the question first, Nova 2 Lite repeated earlier film answers
+to a dinner question (B8.1; see `docs/friction-log.md`). The facts are at most 20,
 each at most 120 characters and in one of the categories likes, dislikes, people, routines or other; any other fact
 is left out. The model's output is validated against the schema per candidate, then trimmed (a closing full stop
 too, so no card ends in one; "?" and "!" stay), capped at 60 characters,
