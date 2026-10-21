@@ -1,7 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
 // The studio page (plan §4.7, §5.5): the caregiver panel on the left, the virtual TV with the engine view under it on
-// the right, and the system trace along the bottom, laid out for a 1920 x 1080 screen.
+// the right, and the system trace and the credits along the bottom, laid out for a 1920 x 1080 screen.
 
 import { useState } from 'react'; // state
 import { CaregiverPanel } from './CaregiverPanel'; // the simulated Alexa+
@@ -34,6 +34,7 @@ export function App() { // the page
         <EngineView state={engine} />{/* under the screen */}
       </section>{/* end of the right column */}
       <TraceStrip hops={trace.hops} mode={trace.mode} />{/* bottom */}
+      <footer className="credits" data-testid="credits">Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash</footer>{/* credits (NOTICE) */}
     </div> // end of the grid
   ); // end of the render
 } // end of App

@@ -1,44 +1,59 @@
 /* Copyright 2026 Sowmiya Arumugam */
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Studio layout and type (plan §5.5) for a 1920 x 1080 screen; colours are the TV's tokens, set as variables by main.tsx. */
+/* Studio look (plan §5.5) for a 1920 x 1080 screen: dark and calm on a darkened photo of leaves, in Montserrat, with */
+/* large type, generous spacing, translucent dark panels and subtle motion. Colours are the TV's tokens, set as */
+/* variables by main.tsx; the virtual TV keeps the TV's own look and type. */
+
+:root { /* the studio's own tokens, beside the TV's colours */
+  --font: Montserrat, system-ui, "Segoe UI", Roboto, sans-serif; /* self-hosted from @fontsource/montserrat (main.tsx) */
+  --tv-font: system-ui, "Segoe UI", Roboto, sans-serif; /* the virtual TV keeps the type it had */
+  --mono: ui-monospace, Consolas, monospace; /* tool names and span operations */
+  --veil: rgba(5, 10, 8, 0.7); /* darkens the photo: every text colour on it meets WCAG AA (e2e/look.spec.ts) */
+  --glass: rgba(8, 14, 12, 0.6); /* a translucent dark panel: the leaves show through, blurred */
+  --well: rgba(4, 8, 7, 0.55); /* a well inside a panel: the text box, a hop */
+  --line: rgba(244, 247, 251, 0.1); /* hairline borders */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); /* one gentle easing for all motion */
+} /* end of the tokens */
 
 * { box-sizing: border-box; } /* sizes include padding and borders */
 html, body, #root { height: 100%; margin: 0; } /* the page fills the window */
-body { background: var(--bg); color: var(--text); font-family: system-ui, "Segoe UI", Roboto, sans-serif; font-size: 18px; } /* the TV's background and text */
+body { background: radial-gradient(ellipse 120% 90% at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.5)), linear-gradient(var(--veil), var(--veil)), #050a08 url("./assets/leaves-aaron-vasquez-unsplash.jpg") center / cover no-repeat; color: var(--text); font-family: var(--font); font-size: 18px; line-height: 1.4; -webkit-font-smoothing: antialiased; } /* the leaves under a veil, and a vignette that only darkens */
 h1, h2 { margin: 0; font-weight: 700; } /* tight headings */
-h2 { font-size: 20px; color: var(--text2); } /* panel titles */
+h2 { display: flex; align-items: center; gap: 14px; font-size: 15px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text2); } /* panel titles: small, spaced capitals */
+h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(--ring); } /* a short teal rule before each title */
 .muted { color: var(--text2); } /* secondary text */
 
-.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 16px 24px; height: 100vh; padding: 16px 24px 20px; } /* head, panels, trace */
-.studio-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 20px; } /* name and tagline across the top */
-.studio-head h1 { font-size: 30px; } /* the name */
-.studio-word { color: var(--text2); font-weight: 400; } /* "studio" */
-.tagline { margin: 0; color: var(--ring); font-size: 18px; } /* Your Voice. Your Choice */
-.panel { background: var(--surface); border-radius: 16px; padding: 16px 20px; } /* a panel */
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 16px 32px; height: 100vh; padding: 20px 32px 12px; } /* head, panels, trace, credits */
+.studio-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 28px; } /* name and tagline across the top */
+.studio-head h1 { font-size: 42px; letter-spacing: -0.02em; line-height: 1.05; } /* the name, large and confident */
+.studio-word { color: var(--text2); font-weight: 300; } /* "studio", lighter */
+.tagline { margin: 0; color: var(--ring); font-size: 15px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase; } /* Your Voice. Your Choice, as spaced capitals */
+.panel { background: var(--glass); border: 1px solid var(--line); border-radius: 22px; padding: 16px 22px; backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35); } /* a translucent dark panel over the leaves */
 
-.caregiver { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 16px; border: 2px solid var(--surfaceFocus); border-radius: 28px; min-height: 0; } /* a device-like frame */
-.banner { align-self: flex-start; background: var(--accent); color: var(--bg); font-weight: 700; padding: 6px 14px; border-radius: 999px; } /* permanent: Simulated Alexa+ experience */
-.transcript { flex: 1; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; min-height: 0; } /* the turn */
-.bubble { align-self: flex-end; max-width: 85%; margin: 0; padding: 12px 16px; background: var(--surfaceFocus); border-radius: 16px 16px 4px 16px; font-size: 22px; } /* the caregiver's words */
+.caregiver { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 20px; border-radius: 30px; padding: 26px 30px; min-height: 0; } /* a device-like frame, with room to breathe */
+.banner { align-self: flex-start; background: var(--accent); color: var(--bg); font-weight: 700; padding: 7px 16px; border-radius: 999px; letter-spacing: 0.02em; } /* permanent: Simulated Alexa+ experience */
+.transcript { flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; min-height: 0; } /* the turn */
+.bubble { align-self: flex-end; max-width: 85%; margin: 0; padding: 14px 20px; background: rgba(30, 51, 84, 0.7); border: 1px solid var(--line); border-radius: 20px 20px 6px 20px; font-size: 22px; } /* the caregiver's words, on the TV's focus blue */
 .chips { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; } /* the tool calls */
-.chip { padding: 6px 14px; border-radius: 999px; border: 2px solid var(--ring); font-family: ui-monospace, Consolas, monospace; font-size: 16px; } /* one call */
+.chip { padding: 6px 14px; border-radius: 999px; border: 2px solid var(--ring); font-family: var(--mono); font-size: 16px; transition: background-color 300ms var(--ease), color 300ms var(--ease); } /* one call */
 .chip.running { color: var(--ring); } /* waiting for its result */
 .chip.ok { background: var(--ring); color: var(--bg); } /* done */
 .chip.failed { border-color: var(--help); color: var(--help); } /* a tool error */
-.speech { margin: 0; font-size: 44px; font-weight: 700; line-height: 1.2; } /* the agent's answer, large */
+.speech { margin: 0; font-size: 46px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; } /* the agent's answer, large */
 .error { margin: 0; color: var(--help); } /* a failed turn */
 .ask { display: flex; gap: 12px; } /* the input row */
-.ask input { flex: 1; font: inherit; font-size: 22px; padding: 12px 16px; border-radius: 12px; border: 2px solid var(--surfaceFocus); background: var(--bg); color: var(--text); } /* the text box */
+.ask input { flex: 1; font: inherit; font-size: 22px; padding: 14px 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--well); color: var(--text); transition: border-color 200ms var(--ease); } /* the text box */
+.ask input::placeholder { color: var(--text2); } /* its hint, readable on the dark well */
 .ask input:focus { outline: none; border-color: var(--ring); } /* focus ring in the TV's teal */
-.ask button { font: inherit; font-size: 22px; font-weight: 700; padding: 12px 28px; border: 0; border-radius: 12px; background: var(--ring); color: var(--bg); cursor: pointer; } /* Send */
+.ask button { font: inherit; font-size: 22px; font-weight: 700; padding: 14px 32px; border: 0; border-radius: 14px; background: var(--ring); color: var(--bg); cursor: pointer; transition: opacity 200ms var(--ease); } /* Send */
 .ask button:disabled { opacity: 0.4; cursor: default; } /* a turn is running, or the box is empty */
 
 .tv-column { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; gap: 12px; min-height: 0; } /* the screen and the engine */
-.tv-head { display: flex; align-items: center; gap: 16px; } /* title, mirror label, drive switch */
+.tv-head { display: flex; align-items: center; gap: 18px; } /* title, mirror label, drive switch */
 .mirror { color: var(--accent); font-size: 16px; } /* labelled everywhere as a web mirror */
-.drive { margin-left: auto; display: flex; align-items: center; gap: 8px; font-weight: 700; cursor: pointer; } /* the drive-mode switch */
+.drive { margin-left: auto; display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; } /* the drive-mode switch */
 .drive input { width: 22px; height: 22px; accent-color: var(--ring); } /* the checkbox, in the TV's teal */
-.tv-frame { width: 960px; height: 540px; flex: none; overflow: hidden; border-radius: 12px; border: 2px solid var(--surfaceFocus); background: var(--bg); } /* 16:9 */
+.tv-frame { width: 960px; height: 540px; flex: none; overflow: hidden; border-radius: 14px; border: 2px solid var(--line); background: var(--bg); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); font-family: var(--tv-font); } /* 16:9 in the TV's own type, lifted off the leaves by a deep shadow */
 .tv-off { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text2); text-align: center; } /* drive mode off */
 .tv-canvas { width: 1920px; height: 1080px; transform: scale(0.4979); transform-origin: 0 0; } /* the TV's design grid, scaled into the frame inside its border */
 
@@ -68,20 +83,31 @@ h2 { font-size: 20px; color: var(--text2); } /* panel titles */
 .bars { flex: 1; display: flex; gap: 8px; min-height: 0; } /* one column per option */
 .bar { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; } /* one option */
 .bar-value { font-size: 14px; color: var(--text2); font-variant-numeric: tabular-nums; } /* the posterior, in % */
-.bar-track { position: relative; flex: 1; min-height: 40px; width: 40px; display: flex; align-items: flex-end; background: var(--surfaceFocus); border-radius: 4px; } /* the bar's full height is 1 */
-.bar-fill { width: 100%; background: var(--ring); border-radius: 4px; transition: height 150ms; } /* the posterior */
+.bar-track { position: relative; flex: 1; min-height: 40px; width: 40px; display: flex; align-items: flex-end; background: rgba(244, 247, 251, 0.08); border-radius: 4px; } /* the bar's full height is 1 */
+.bar-fill { width: 100%; background: var(--ring); border-radius: 4px; transition: height 150ms var(--ease); } /* the posterior */
 .bar-track::after { content: ""; position: absolute; left: -10px; right: -10px; bottom: calc(var(--theta) * 100%); border-top: 2px dashed var(--accent); } /* θ: commit when a bar reaches this line */
 .bar-label { width: 100%; font-size: 13px; text-align: center; line-height: 1.2; height: 2.4em; overflow: hidden; } /* the option, two lines at most */
 
 .trace { grid-column: 1 / -1; grid-row: 3; display: flex; flex-direction: column; gap: 10px; } /* along the bottom */
 .trace-head { display: flex; align-items: center; gap: 16px; } /* title and badge */
-.badge { padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 15px; background: var(--surfaceFocus); color: var(--text2); } /* mock, live, or not yet known */
+.badge { padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; letter-spacing: 0.08em; background: var(--surfaceFocus); color: var(--text2); } /* mock, live, or not yet known */
 .badge.live { background: var(--ok); color: var(--bg); } /* live: Bedrock and Polly */
 .badge.mock { background: var(--surfaceFocus); color: var(--text); } /* mock: no AWS */
 .hops { display: flex; gap: 36px; margin: 0; padding: 0; list-style: none; } /* the strip */
-.hop { position: relative; flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 12px; background: var(--bg); border: 2px solid var(--surfaceFocus); transition: border-color 200ms, box-shadow 200ms; } /* one hop */
+.hop { position: relative; flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; border-radius: 14px; background: var(--well); border: 2px solid var(--line); transition: border-color 300ms var(--ease), box-shadow 300ms var(--ease); } /* one hop */
 .hop + .hop::before { content: "→"; position: absolute; left: -30px; top: 50%; transform: translateY(-50%); color: var(--text2); font-size: 22px; } /* the arrow from the previous hop */
-.hop.lit { border-color: var(--ring); box-shadow: 0 0 18px color-mix(in srgb, var(--ring) 45%, transparent); } /* a span just arrived */
-.hop-label { font-weight: 700; } /* which hop */
-.hop-op { color: var(--text2); font-size: 14px; font-family: ui-monospace, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* what ran last */
+.hop.lit { border-color: var(--ring); box-shadow: 0 0 22px color-mix(in srgb, var(--ring) 45%, transparent); } /* a span just arrived */
+.hop-label { font-weight: 600; } /* which hop */
+.hop-op { color: var(--text2); font-size: 14px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* what ran last */
 .hop-ms { color: var(--ring); font-variant-numeric: tabular-nums; font-size: 16px; min-height: 1.2em; } /* how long it took */
+
+.credits { grid-column: 1 / -1; grid-row: 4; margin: 0; color: var(--text2); font-size: 15px; letter-spacing: 0.06em; text-align: center; } /* the credits line */
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } } /* fade up into place */
+.studio-head, .caregiver, .tv-column, .trace, .credits { animation: rise 900ms var(--ease) both; } /* the page settles in on load */
+.caregiver { animation-delay: 90ms; } /* then the caregiver panel */
+.tv-column { animation-delay: 180ms; } /* then the virtual TV */
+.trace { animation-delay: 270ms; } /* then the trace */
+.credits { animation-delay: 360ms; } /* and the credits last */
+.bubble, .chips, .speech, .error { animation: rise 500ms var(--ease) both; } /* each part of a turn rises in as it arrives */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } } /* no motion when the viewer asks for less */

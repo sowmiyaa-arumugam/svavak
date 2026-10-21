@@ -31,6 +31,21 @@ screen.
   - A badge shows MOCK or LIVE, from the latest server span. The mock adapters are marked "(mock)" on the Bedrock or
     Polly hop.
   - Spans from before the page opened are not drawn.
+- **Credits** (along the bottom): "Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash".
+
+## Look
+
+Dark and calm, in the spirit of [Hamish Williams' portfolio](https://hamishw.com), with our own CSS
+([src/styles.css](src/styles.css)): large type, generous spacing, translucent dark panels and subtle motion.
+
+- **Background:** "A group of green leaves with a dark background" by Aaron Vasquez on Unsplash, under the Unsplash
+  License (see [NOTICE](../../NOTICE)). It is resized to 1920 px wide and compressed to 272 KB
+  ([src/assets](src/assets)). A 70% overlay and a vignette that only darkens keep every text colour drawn on it at
+  WCAG AA contrast.
+- **Type:** Montserrat (SIL Open Font License), self-hosted from `@fontsource/montserrat` in weights 300, 400, 600 and
+  700. No font or image CDN is called at runtime. The virtual TV keeps the TV's own look and its system type.
+- **Motion:** the page rises into place on load, and each part of a caregiver turn as it arrives. Under
+  `prefers-reduced-motion: reduce` nothing animates or transitions.
 
 ## Run a demo
 
@@ -70,9 +85,9 @@ yarn workspace studio e2e         # Playwright, mock mode; its exit code is the 
 
 `yarn workspace studio playwright install chromium` downloads the pinned browser once.
 
-The end-to-end test ([e2e/loop.spec.ts](e2e/loop.spec.ts)) starts its own server, agent and studio (Playwright's
-`webServer`), in that order, in mock mode with fresh random tokens and no AWS profile. Ports 8787, 8790 and 5173 must
-be free. The test then:
+Playwright starts its own server, agent and studio (its `webServer`), in that order, in mock mode with fresh random
+tokens and no AWS profile. Ports 8787, 8790 and 5173 must be free. The end-to-end test
+([e2e/loop.spec.ts](e2e/loop.spec.ts)) then:
 
 1. switches Drive mode on (the virtual TV goes idle);
 2. sends "Ask Sam if he wants tea or coffee" from the caregiver panel;
@@ -83,17 +98,28 @@ be free. The test then:
 It drives the page through stable `data-testid` attributes, with `data-mode`, `data-label`, `data-lit`, `data-state`,
 `data-hop` and `data-seen` for state. It saves 1080p screenshots to `test-results/b5/` (git-ignored).
 
-Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 6.1.2, TypeScript 5.9.3 and
-`@playwright/test` 1.64.1.
+The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
+
+- The page draws the darkened photo in Montserrat, with the credits line, the banner, the mirror label and the mode
+  badge.
+- Every request goes to the studio, the server or the agent.
+- Every line of the main text has WCAG AA contrast (4.5:1, or 3:1 for large text) against the pixels drawn behind
+  it. They are measured in a 1080p screenshot taken with the text made transparent.
+- Nothing animates or transitions under `prefers-reduced-motion: reduce`.
+
+Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 6.1.2, TypeScript 5.9.3,
+`@playwright/test` 1.64.1 and `@fontsource/montserrat` 5.3.0.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `src/App.tsx` | The page layout and the Drive mode switch |
+| `src/App.tsx` | The page layout, the Drive mode switch and the credits |
+| `src/styles.css` | The look |
+| `src/assets/` | The background photo (Unsplash License, see NOTICE) |
 | `src/CaregiverPanel.tsx` | The simulated Alexa+: text, tool chips, speech |
 | `src/VirtualTv.tsx` | The web mirror of the TV, on the TV's own modules |
 | `src/EngineView.tsx` | The posterior bars and θ |
 | `src/TraceStrip.tsx` | The trace stream and the strip of hops |
 | `src/sse.ts` | Server-sent events read with `fetch` |
-| `e2e/` | The Playwright test |
+| `e2e/` | The Playwright tests: the loop and the look |

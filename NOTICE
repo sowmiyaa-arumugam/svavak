@@ -4,3 +4,17 @@ Copyright 2026 Sowmiya Arumugam
 The TV app (apps/tv) and the root ESLint configuration contain portions derived from
 AmazonAppDev/react-native-multi-tv-app-sample (https://github.com/AmazonAppDev/react-native-multi-tv-app-sample),
 Copyright Amazon.com, Inc. or its affiliates, licensed under MIT No Attribution (MIT-0).
+
+The studio (apps/studio) uses third-party material that is not under the Apache License 2.0:
+
+- Background photo: "A group of green leaves with a dark background" by Aaron Vasquez on Unsplash
+  (https://unsplash.com/photos/a-group-of-green-leaves-with-a-dark-background-A7lSMseTRHI), used under the
+  Unsplash License (https://unsplash.com/license), not the Apache License 2.0. It is resized to 1920 pixels wide
+  and compressed: apps/studio/src/assets/leaves-aaron-vasquez-unsplash.jpg.
+- Font: Montserrat, Copyright 2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat),
+  licensed under the SIL Open Font License, Version 1.1 (http://scripts.sil.org/OFL). The studio serves it from
+  the @fontsource/montserrat package, which Yarn installs and which carries the licence text in its LICENSE file;
+  no font file is committed.
+
+The studio's look is inspired by Hamish Williams' portfolio (https://hamishw.com). No code, images, fonts or other
+material from that site or its repository are used.

@@ -1931,6 +1931,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@fontsource/montserrat@npm:5.3.0":
+  version: 5.3.0
+  resolution: "@fontsource/montserrat@npm:5.3.0"
+  checksum: 10c0/6670ec471a9ae9cfa89593a11ba62062a9797049d0f93825f106b1bddd0d46f930ace87e79e56ebbd4a56186ff07844f073c2f2f4f1aca85115dde4cc02d8135
+  languageName: node
+  linkType: hard
+
 "@hono/node-server@npm:^1.19.9 || ^2.0.5":
   version: 2.1.5
   resolution: "@hono/node-server@npm:2.1.5"
@@ -10455,6 +10462,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "studio@workspace:apps/studio"
   dependencies:
+    "@fontsource/montserrat": "npm:5.3.0"
     "@playwright/test": "npm:1.64.1"
     "@types/node": "npm:24.19.1"
     "@types/react": "npm:19.1.17"
