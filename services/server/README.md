@@ -8,10 +8,11 @@ questions, their reply candidates and utterances, asked and answered through MCP
 (flow S3, without acknowledgement).
 
 - **Mock first.** `SVAVAK_MODE=mock` (the default) needs no AWS account. MockLlm makes deterministic candidates from
-  the question text and the profile facts, and MockTts makes a short WAV tone, so the TV's playback path runs without
-  AWS.
+  the question text and the profile facts, and MockTts makes a short WAV tone, for replies and question announcements
+  alike, so the TV's playback paths run without AWS.
 - **Live mode** (`SVAVAK_MODE=live`) uses Amazon Nova 2 Lite on Bedrock and Amazon Polly. It ran live on
-  2026-10-21 (gate K3 passed; see [Live mode](#live-mode)), and is tested against AWS SDK client mocks.
+  2026-10-21 (gate K3 passed; see [Live mode](#live-mode)), and is tested against AWS SDK client mocks. Question
+  announcements (B9) use Polly's standard voice Amy (en-GB); they are tested against the client mocks only so far.
 - **In memory.** Nothing survives a restart; SQLite is cut for now.
 - Bound to `127.0.0.1:8787`. The Android emulator reaches it as `10.0.2.2:8787`.
 
@@ -66,11 +67,12 @@ token gets 401, and the agent token gets 403, so an agent can never post an answ
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s). On connect, a TV first gets `question.created` for the newest question, if it is unanswered and was asked in the last 2 minutes, with its current candidates; nothing otherwise |
-| `POST /v1/questions` | Dev endpoint for `tools/smoke-stream.mjs`; agents use `ask_question`. Body: `text` (at most 200 characters), `asked_by` (at most 40). Returns 201 with the question |
+| `GET /v1/stream` (WebSocket) | Events: `question.created`, `question.candidates`, `ping` (every 25 s). A question carries `announcement_url`, the path of its spoken announcement, or null when it has none (see Spoken announcement below). On connect, a TV first gets `question.created` for the newest question, if it is unanswered and was asked in the last 2 minutes, with its current candidates; nothing otherwise |
+| `POST /v1/questions` | Dev endpoint for `tools/smoke-stream.mjs`; agents use `ask_question`. Body: `text` (at most 200 characters), `asked_by` (at most 40). Returns 201 with the question, once its announcement is made |
 | `POST /v1/utterances` | Commits a reply. Needs an `Idempotency-Key` header. Body: `question_id` (or null), `question_text` (optional; the TV's fixture question, at most 200 characters, or null; ignored when `question_id` names a question), `text`, `clicks`, `duration_ms`. Returns 201, or 200 with the same utterance for a repeated key |
 | `POST /v1/alerts` | A help request: Sam held the switch for 2 s or chose Help on the TV. Needs an `Idempotency-Key` header; no body. Returns 201 with `{id, created_at}`, or 200 with the same request for a repeated key, which raises no second alert. It is kept in memory and sent on `GET /v1/trace` as one span, `{hop: "server→caregiver", operation: "help.requested"}`, which the studio's caregiver panel shows and speaks as an alert. Its log line `help.requested` carries its id only. It neither answers nor closes the open question |
 | `GET /v1/utterances/{id}/audio` | The reply's audio: Polly's MP3 (`audio/mpeg`), or the mock's WAV tone (`audio/wav`) in mock mode. 404 when there is none |
+| `GET /v1/questions/{id}/announcement` | The question's spoken announcement, the `announcement_url` of its `question.created`: Polly's MP3 (`audio/mpeg`), or the mock's WAV tone (`audio/wav`) in mock mode. 404 when there is none |
 | `GET /v1/trace` (SSE) | Spans `{id, at, hop, operation, duration_ms, mode}`, plus `dropped` (a count) on `server→llm`: the last 500 first, then live. Never message text |
 | `GET /healthz` | Liveness, no token |
 
@@ -106,8 +108,8 @@ default does: Yes, please, No, thanks, or the option with "please" ("Coffee, ple
 please"), taking the weakest other reply's place if the list is full. A basic answer missing from the first four takes
 the place of the lowest-ranked of them, which moves down one place. Questions asked with options are left as they are.
 
-**Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` straight
-away, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
+**Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` as
+soon as its announcement is made, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
 the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
 profile facts. The question, the turns and the facts are quoted as data, never as instructions: each text is a JSON
 string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The question comes last,
@@ -138,7 +140,28 @@ list, so the TV starts its highlight without waiting out the budget.
 **Speech pipeline.** `POST /v1/utterances` synthesises speech on commit. A Polly failure commits the reply without
 audio; past the daily cap, the reply gets the mock's tone.
 
-**Cost guard.** At most 1,000 model calls and 100,000 Polly characters per UTC day; beyond that, mock output.
+**Spoken announcement** (B9). A question only shows on the TV, so Sam may not notice it arrive. AAC devices speak
+prompts in a voice other than the user's own, so nobody takes a prompt for the user speaking. Each new question, with
+or without options, gets a spoken announcement before `question.created` is pushed:
+
+- **Words.** "Alex asks: Would you like tea or coffee?", that is `<asked_by> asks: <question>`, or the question alone
+  when there is no asker name.
+- **Voice.** Polly's standard voice Amy (en-GB), with Polly's client for Sam's voice (`SVAVAK_POLLY_REGION`, the SSO
+  profile), so `SVAVAK_VOICE` should be another voice. In mock mode, the mock's tone.
+- **Delivery.** The question carries `announcement_url`, `/v1/questions/{id}/announcement`, which serves the audio to
+  the device token. A TV that connects while the announcement is made is not sent the question on connect: it gets it
+  from the push, with its announcement.
+- **Failures.** When Polly fails or takes longer than 2 s, or today's character cap is used up, the question still goes
+  out, with `announcement_url` null. A question replaced by a newer one while its announcement was made is never pushed
+  (`ask_question` reports `delivered: false`).
+- **Cost, logs and trace.** Its characters count against the daily Polly cap, in live mode. The log line
+  `question.created` says `announced: true` or `false`, a failure logs `announce.failed` with the question id and the
+  outcome, and the cap logs `cap.reached`; never the words. Each synthesis adds a `server→tts` span, `announce`,
+  `announce.error` or `announce.timeout`. The model is called once the question is pushed, and the
+  `question.candidates` span still counts from the ask, so gate K3's time includes the announcement.
+
+**Cost guard.** At most 1,000 model calls and 100,000 Polly characters per UTC day; beyond that, mock output for
+replies and no announcement for questions.
 
 ## MCP
 

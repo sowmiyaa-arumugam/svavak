@@ -33,6 +33,8 @@ export interface StorePort { // repository port
   getUtterance(id: string): Utterance | undefined; // by id
   utteranceByKey(idempotencyKey: string): Utterance | undefined; // an earlier commit with the same key
   getAudio(utteranceId: string): Uint8Array | undefined; // the audio of an utterance, if it has one
+  addAnnouncement(questionId: string, audio: Uint8Array): void; // a question's spoken announcement
+  getAnnouncement(questionId: string): Uint8Array | undefined; // the announcement of a question, if it has one
   recentTurns(limit: number): { question: string | null; reply: string }[]; // the last `limit` utterances with their questions, oldest first
   recentUtterances(limit: number, since: string | null): Utterance[]; // the last `limit` utterances created after `since` (any ISO 8601 time), oldest first
   addHelp(help: HelpRequest, idempotencyKey: string): void; // a help request, under its key

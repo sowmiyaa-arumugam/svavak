@@ -12,6 +12,7 @@ export class MemoryStore implements StorePort { // in-memory repository
   private readonly utterances = new Map<string, Utterance>(); // by id, in insertion (time) order
   private readonly keys = new Map<string, string>(); // idempotency key to utterance id
   private readonly audio = new Map<string, Uint8Array>(); // utterance id to audio bytes
+  private readonly announcements = new Map<string, Uint8Array>(); // question id to its announcement's audio bytes
   private readonly helps = new Map<string, HelpRequest>(); // help requests by idempotency key, in insertion (time) order
   private readonly facts: Map<string, readonly ProfileFact[]>; // household to its facts
 
@@ -49,6 +50,14 @@ export class MemoryStore implements StorePort { // in-memory repository
   getAudio(utteranceId: string): Uint8Array | undefined { // the audio
     return this.audio.get(utteranceId); // or undefined
   } // end of getAudio
+
+  addAnnouncement(questionId: string, audio: Uint8Array): void { // a question's announcement
+    this.announcements.set(questionId, audio); // kept with the question's id
+  } // end of addAnnouncement
+
+  getAnnouncement(questionId: string): Uint8Array | undefined { // the announcement's audio
+    return this.announcements.get(questionId); // or undefined
+  } // end of getAnnouncement
 
   recentTurns(limit: number): { question: string | null; reply: string }[] { // the conversation so far
     return [...this.utterances.values()].slice(-limit).map((u) => ({ question: u.question_text, reply: u.text })); // the last `limit` utterances, oldest first

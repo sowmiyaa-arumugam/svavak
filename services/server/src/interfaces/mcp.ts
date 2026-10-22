@@ -97,8 +97,8 @@ function toolServer(o: McpOptions): McpServer { // one per session
       asked_by: z.string().trim().min(1).max(ASKED_BY_MAX_CHARS).describe('Who is asking, shown as "<asked_by> asks"'), // the asker
     }, // end of the inputs
     annotations: { readOnlyHint: false, idempotentHint: false }, // Table 16: not read-only, not idempotent
-  }, (args) => run('ask_question', () => { // the call
-    const { question, delivered } = o.useCases.askQuestion(args.question, args.asked_by, { options: args.options, urgency: args.urgency }); // the existing ask path
+  }, (args) => run('ask_question', async () => { // the call
+    const { question, delivered } = await o.useCases.askQuestion(args.question, args.asked_by, { options: args.options, urgency: args.urgency }); // the existing ask path, with its announcement
     return { question_id: question.id, delivered }; // delivered: a TV was connected
   })); // end of ask_question
 

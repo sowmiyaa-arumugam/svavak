@@ -23,6 +23,8 @@ import type { Log } from './ports/index.ts'; // logging
 export const BUDGET_MS = 3500; // plan §4.3: the model's candidates must arrive within 3.5 s
 export const LLM_CALLS_PER_DAY = 1000; // plan §4.3 daily cap
 export const POLLY_CHARS_PER_DAY = 100_000; // plan §4.3 daily cap
+export const ANNOUNCER_VOICE = 'Amy'; // B9: questions are read aloud in Polly's standard voice Amy (en-GB), never in Sam's own voice
+export const ANNOUNCE_MS = 2000; // B9: a question waits at most this long for its announcement, then goes out without one
 const PING_MS = 25_000; // keep-alive event on the stream
 const MCP_IDLE_MS = 30 * 60_000; // an MCP session ends after 30 minutes without requests
 
@@ -38,6 +40,7 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
   const wss = new WebSocketServer({ noServer: true }); // upgrades are authenticated in http.ts first
   const trace = new SseTraceSink(clock, newId); // spans
   const notifier = new WsNotifier(wss); // pushes
+  const polly = live ? new PollyClient({ region: config.pollyRegion, profile }) : null; // Polly in its own region, for both voices
   const deps: Deps = { // the use-cases' ports
     mode: config.mode, // mock or live
     store: new MemoryStore({ [DEMO_HOUSEHOLD]: DEMO_FACTS }), // in memory, seeded with the demo facts
@@ -47,7 +50,7 @@ export function compose(config: Config, log: Log = jsonLog) { // wire everything
     clock, // time
     newId, // ids
     llm: { live: live ? new BedrockLlm(new BedrockRuntimeClient({ region: config.awsRegion, profile }), config.modelId, log) : null, mock: new MockLlm(), cap: new DailyCap(LLM_CALLS_PER_DAY, clock), budgetMs: BUDGET_MS }, // replies
-    tts: { live: live ? new PollyTts(new PollyClient({ region: config.pollyRegion, profile }), config.voice, config.pollyEngine) : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock) }, // speech, in Polly's own region
+    tts: { live: polly ? new PollyTts(polly, config.voice, config.pollyEngine) : null, announcer: polly ? new PollyTts(polly, ANNOUNCER_VOICE, 'standard') : null, mock: new MockTts(), cap: new DailyCap(POLLY_CHARS_PER_DAY, clock), announceMs: ANNOUNCE_MS }, // Sam's voice and the announcer's, one daily cap for both
   }; // end of deps
   const server = createServer({ token: config.deviceToken, agentToken: config.agentToken, mcpAllowedHosts: config.mcpAllowedHosts, mcpAllowedOrigins: config.mcpAllowedOrigins, mode: config.mode, useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: PING_MS, mcpIdleMs: MCP_IDLE_MS, studioOrigin: STUDIO_ORIGIN, tvOrigin: TV_ORIGIN }); // interfaces
   return { server, deps }; // the caller listens

@@ -24,7 +24,7 @@ const JSON_AUTH = { ...AUTH, 'Content-Type': 'application/json' }; // for POSTs
 let running: { server: Server; wss: WebSocketServer } | null = null; // closed after each test
 
 /** Starts a mock-mode server on a free loopback port. */
-async function start(options: { tts?: TtsPort; pingMs?: number } = {}) { // the system under test
+async function start(options: { tts?: TtsPort; announcer?: TtsPort; pingMs?: number } = {}) { // the system under test; an announcer stands in for Polly's Amy
   const clock = () => Date.now(); // real time
   const newId = () => randomUUID(); // real ids
   const wss = new WebSocketServer({ noServer: true }); // stream
@@ -32,7 +32,7 @@ async function start(options: { tts?: TtsPort; pingMs?: number } = {}) { // the 
   const notifier = new WsNotifier(wss); // pushes
   const logs: Record<string, unknown>[] = []; // log lines
   const log = (msg: string, fields?: Record<string, unknown>) => { logs.push({ msg, ...fields }); }; // records them
-  const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: options.tts ?? new MockTts(), cap: new DailyCap(100_000, clock) } }; // mock wiring
+  const deps: Deps = { mode: 'mock', store: new MemoryStore(), notifier, trace, log, clock, newId, llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, announcer: options.announcer ?? null, mock: options.tts ?? new MockTts(), cap: new DailyCap(100_000, clock), announceMs: 2000 } }; // mock wiring, unless the test gives an announcer
   const server = createServer({ token: TOKEN, agentToken: 'a'.repeat(32), mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: ['http://localhost:5173'], mode: 'mock', useCases: createUseCases(deps), trace, wss, notifier, log, pingMs: options.pingMs ?? 60_000, mcpIdleMs: 60_000, studioOrigin: 'http://localhost:5173', tvOrigin: 'http://10.0.2.2:8787' }); // interfaces
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve)); // any free port
   running = { server, wss }; // for clean-up
@@ -97,7 +97,7 @@ describe('authentication', () => { // the static device token
 
   it('refuses every other route without the right token, as problem+json', async () => { // 401
     const { http } = await start(); // server
-    const routes: [string, string][] = [['POST', '/v1/questions'], ['POST', '/v1/utterances'], ['GET', '/v1/utterances/x/audio'], ['GET', '/v1/trace'], ['GET', '/v1/nothing']]; // every route
+    const routes: [string, string][] = [['POST', '/v1/questions'], ['POST', '/v1/utterances'], ['GET', '/v1/utterances/x/audio'], ['GET', '/v1/questions/x/announcement'], ['GET', '/v1/trace'], ['GET', '/v1/nothing']]; // every route
     for (const [method, path] of routes) { // each route
       for (const headers of [{}, { Authorization: 'Bearer wrong' }, { Authorization: TOKEN }]) { // none, wrong, no scheme
         const res = await fetch(`${http}${path}`, { method, headers }); // request
@@ -132,6 +132,29 @@ describe('POST /v1/questions and GET /v1/stream', () => { // flow S1 on the stre
     expect(update.candidates.slice(0, 2).map((c: Candidate) => c.text)).toEqual(['Tea, please', 'Coffee, please']); // best guess first
     expect(update.candidates.reduce((s: number, c: Candidate) => s + c.prior, 0)).toBeCloseTo(1, 9); // priors
     expect(tv.events.map((e) => e.type)).toEqual(['question.created', 'question.candidates']); // in this order
+  }); // end of the case
+
+  it("pushes question.created with its announcement's URL, which serves the mock tone; 404 for a question without one", async () => { // B9
+    const { http, ws, logs } = await start(); // mock speech
+    const tv = await connect(ws); // a connected TV
+    const question = (await (await ask(http)).json()) as Question; // the caregiver asks
+    expect(question.announcement_url).toBe(`/v1/questions/${question.id}/announcement`); // where its announcement is
+    expect(JSON.stringify(logs)).not.toMatch(/tea|asks|alex/i); // the logs never carry the words, nor who asked
+    expect(await until(() => tv.events.find((e) => e.type === 'question.created'))).toEqual({ type: 'question.created', question }); // pushed with it
+    const audio = await fetch(`${http}${question.announcement_url}`, { headers: AUTH }); // fetch it, as the TV does
+    expect([audio.status, audio.headers.get('content-type')]).toEqual([200, 'audio/wav']); // the mock's WAV
+    expect(Buffer.from(await audio.arrayBuffer()).toString('latin1', 0, 4)).toBe('RIFF'); // a RIFF file
+    await expectProblem(await fetch(`${http}/v1/questions/unknown/announcement`, { headers: AUTH }), 404); // nothing there
+  }); // end of the case
+
+  it('still pushes the question to the TV, without an announcement, when the voice fails', async () => { // Polly down
+    const { http, ws, logs } = await start({ announcer: { synthesize: async () => { throw new Error('ServiceFailureException'); } } }); // a failing voice
+    const tv = await connect(ws); // a connected TV
+    const question = (await (await ask(http)).json()) as Question; // the caregiver asks
+    expect(question.announcement_url).toBeNull(); // none
+    expect(await until(() => tv.events.find((e) => e.type === 'question.created'))).toEqual({ type: 'question.created', question }); // it arrives all the same
+    await expectProblem(await fetch(`${http}/v1/questions/${question.id}/announcement`, { headers: AUTH }), 404); // nothing to fetch
+    expect(JSON.stringify(logs)).not.toMatch(/tea|asks|alex/i); // the logs never carry the words, nor who asked
   }); // end of the case
 
   it('refuses invalid, malformed and oversized bodies as problem+json', async () => { // validation at the edge

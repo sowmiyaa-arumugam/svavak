@@ -33,7 +33,7 @@ function setup(patch: { llm?: Partial<Deps['llm']>; tts?: Partial<Deps['tts']>; 
     clock, // time
     newId: () => `id${++n}`, // predictable ids
     llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 200, ...patch.llm }, // replies
-    tts: { live: null, mock: new MockTts(), cap: new DailyCap(100_000, clock), ...patch.tts }, // speech
+    tts: { live: null, announcer: null, mock: new MockTts(), cap: new DailyCap(100_000, clock), announceMs: 200, ...patch.tts }, // speech: replies, and announcements in the mock tone unless the test gives an announcer
   }; // end of deps
   const advance = (ms: number) => { now += ms; }; // moves the clock on
   return { uc: createUseCases(deps), events, spans, logs, store, advance }; // what tests inspect
@@ -49,7 +49,7 @@ const commit = { question_id: null, question_text: null, text: 'Tea, please', cl
 describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('pushes the question with the defaults at once, then the model candidates', async () => { // defaults first
     const { uc, events, store, spans } = setup(); // mock model
-    const { question, suggested } = uc.askQuestion('Would you like tea or coffee?', 'Alex'); // ask
+    const { question, suggested } = await uc.askQuestion('Would you like tea or coffee?', 'Alex'); // ask
     expect(events).toEqual([{ type: 'question.created', question }]); // before the model has answered
     expect(question.candidates.map((c) => c.text)).toEqual(['Tea, please', 'Coffee, please', 'You decide', 'Not sure', 'Tell me more', 'Not now']); // a choice question's options, then its four defaults, fallbacks last
     await suggested; // the model's turn
@@ -65,7 +65,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('drops a candidate with a banned term and counts it in the span, never logging or tracing the text', async () => { // plan §4.6 filter
     const rude = `What a ${BANNED_TERMS[0]}`; // a candidate with the first listed term
     const { uc, events, spans, logs } = setup({ llm: { mock: fakeLlm({ candidates: [{ text: rude, intent: 'social', score: 0.9 }, ...TEA.candidates] }) } }); // a model that swears
-    await uc.askQuestion('Tea or coffee?', 'Alex').suggested; // ask
+    await (await uc.askQuestion('Tea or coffee?', 'Alex')).suggested; // ask
     const pushed = events.find((e) => e.type === 'question.candidates'); // the model's candidates
     if (pushed?.type !== 'question.candidates') throw new Error('no candidates pushed'); // narrow the type
     expect(pushed.candidates.map((c) => c.text)).not.toContain(rude); // filtered out
@@ -77,7 +77,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('keeps the defaults when the model misses the budget', async () => { // timeout
     const never: LlmPort = { suggest: () => new Promise(() => {}) }; // never answers
     const { uc, events, spans, logs } = setup({ llm: { mock: never, budgetMs: 30 } }); // short budget
-    await uc.askQuestion('Tea?', 'Alex').suggested; // resolves when the budget runs out
+    await (await uc.askQuestion('Tea?', 'Alex')).suggested; // resolves when the budget runs out
     expect(events.map((e) => e.type)).toEqual(['question.created']); // no candidates event
     expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest.timeout', dropped: 0 })); // traced
     expect(logs).toContainEqual(expect.objectContaining({ msg: 'suggest.failed', outcome: 'suggest.timeout' })); // logged
@@ -86,10 +86,10 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('keeps the defaults when the model fails or returns nothing usable', async () => { // error and invalid output
     const failing: LlmPort = { suggest: async () => { throw new Error('throttled'); } }; // adapter error
     const a = setup({ llm: { mock: failing } }); // failing model
-    await a.uc.askQuestion('Tea?', 'Alex').suggested; // ask
+    await (await a.uc.askQuestion('Tea?', 'Alex')).suggested; // ask
     expect(a.spans).toContainEqual(expect.objectContaining({ operation: 'suggest.error', dropped: 0 })); // error span
     const b = setup({ llm: { mock: fakeLlm({ candidates: [{ text: '', intent: 'yes', score: 1 }] }) } }); // nothing valid
-    await b.uc.askQuestion('Tea?', 'Alex').suggested; // ask
+    await (await b.uc.askQuestion('Tea?', 'Alex')).suggested; // ask
     expect(b.spans).toContainEqual(expect.objectContaining({ operation: 'suggest.invalid' })); // invalid span
     expect([...a.events, ...b.events].map((e) => e.type)).toEqual(['question.created', 'question.created']); // defaults stay
   }); // end of the case
@@ -97,8 +97,8 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('uses the live model until the daily cap, then falls back to mock', async () => { // cost guard
     const calls: SuggestRequest[] = []; // live requests
     const { uc, spans, logs } = setup({ llm: { live: fakeLlm(TEA, calls), cap: new DailyCap(1, () => 0) } }); // one live call a day
-    await uc.askQuestion('Tea or coffee?', 'Alex').suggested; // live
-    await uc.askQuestion('Shall I open the window?', 'Alex').suggested; // over the cap: mock
+    await (await uc.askQuestion('Tea or coffee?', 'Alex')).suggested; // live
+    await (await uc.askQuestion('Shall I open the window?', 'Alex')).suggested; // over the cap: mock
     expect(calls).toHaveLength(1); // the live model saw one request
     expect(spans.filter((s) => s.hop === 'server→llm').map((s) => s.mode)).toEqual(['live', 'mock']); // modes traced
     expect(logs).toContainEqual(expect.objectContaining({ msg: 'cap.reached', cap: 'llm_calls' })); // logged
@@ -108,11 +108,11 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     const calls: SuggestRequest[] = []; // requests
     const { uc } = setup({ llm: { mock: fakeLlm(TEA, calls) }, facts: { [DEMO_HOUSEHOLD]: DEMO_FACTS, other: [{ text: 'Not this household', category: 'other' }] } }); // recording model, seeded facts
     for (let i = 1; i <= 6; i++) await uc.commitUtterance(`f${i}`, { ...commit, question_text: i === 6 ? null : `Fixture ${i}?`, text: `Reply ${i}` }); // replies to the TV's fixture questions; the sixth spontaneous
-    await uc.askQuestion('Open the window?', 'Alex').suggested; // never answered, so never a turn
-    const first = uc.askQuestion('Tea or coffee?', 'Alex'); // a server question
+    await (await uc.askQuestion('Open the window?', 'Alex')).suggested; // never answered, so never a turn
+    const first = await uc.askQuestion('Tea or coffee?', 'Alex'); // a server question
     await first.suggested; // its candidates
     await uc.commitUtterance('k1', { ...commit, question_id: first.question.id, question_text: 'Ignored?' }); // answered; the stored text wins
-    await uc.askQuestion('Milk?', 'Alex').suggested; // the question under test
+    await (await uc.askQuestion('Milk?', 'Alex')).suggested; // the question under test
     expect(calls[2]).toEqual({ question: 'Milk?', askedBy: 'Alex', localTime: expect.stringMatching(/^\d\d:\d\d$/), facts: DEMO_FACTS, recentTurns: [ // the six latest, oldest first
       { question: 'Fixture 2?', reply: 'Reply 2' }, // the first reply is the seventh latest, so it is left out
       { question: 'Fixture 3?', reply: 'Reply 3' }, // a fixture question's text, as the TV sent it
@@ -131,7 +131,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     ]; // end of the cases
     for (const [question, named, never] of cases) { // each question
       const { uc, events } = setup(); // the mock model
-      await uc.askQuestion(question, 'Alex').suggested; // the defaults at once, then the mock's replies
+      await (await uc.askQuestion(question, 'Alex')).suggested; // the defaults at once, then the mock's replies
       const lists = events.map((e) => (e.type === 'question.created' ? e.question.candidates : e.type === 'question.candidates' ? e.candidates : []).map((c) => c.text)); // both pushed lists
       expect(lists).toHaveLength(2); // question.created and question.candidates
       for (const texts of lists) expect([texts.slice(0, 4), texts.includes(never)]).toEqual([expect.arrayContaining(named), false]); // the options on the first row, the wrong reply nowhere
@@ -142,7 +142,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     let release: (v: unknown) => void = () => {}; // resolves the model call
     const slow: LlmPort = { suggest: () => new Promise((r) => { release = r; }) }; // waits for release
     const { uc, events } = setup({ llm: { mock: slow } }); // slow model
-    const { question, suggested } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question, suggested } = await uc.askQuestion('Tea?', 'Alex'); // ask
     await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // answered with a default
     release(TEA); // the model answers now
     await suggested; // pipeline done
@@ -153,7 +153,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
 describe('commitUtterance', () => { // POST /v1/utterances
   it('stores a reply, answers its question and logs it without the text', async () => { // the commit
     const { uc, store, logs } = setup(); // mock speech
-    const { question } = uc.askQuestion('Tea or coffee?', 'Alex'); // a question
+    const { question } = await uc.askQuestion('Tea or coffee?', 'Alex'); // a question
     const result = await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // commit
     expect(result).toEqual({ created: true, hasAudio: true, utterance: { id: expect.any(String), text: 'Tea, please', kind: 'reply', question_id: question.id, question_text: 'Tea or coffee?', clicks: 2, duration_ms: 3400, created_at: '2026-10-19T10:00:00.000Z' } }); // stored, with the mock tone
     expect(store.getQuestion(question.id)).toMatchObject({ status: 'answered', answered_utterance_id: result.utterance.id }); // answered
@@ -206,7 +206,7 @@ describe('requestHelp', () => { // POST /v1/alerts: Sam asks for help
 
   it('leaves the open question open and pushes nothing to the TV', async () => { // help is not an answer
     const { uc, store, events } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'] }); // an open question
+    const { question } = await uc.askQuestion('Tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'] }); // an open question
     const pushed = events.length; // its events
     uc.requestHelp('h1'); // Sam asks for help
     expect(store.getQuestion(question.id)?.status).toBe('pending'); // still open
@@ -242,11 +242,118 @@ describe('synthesizeSpeech (through commitUtterance)', () => { // speech pipelin
   }); // end of the case
 }); // end of synthesizeSpeech
 
+/** A voice that records what it is asked to say and answers with `audio` at once. */
+function fakeVoice(said: string[], audio = new Uint8Array([7])): TtsPort { // a fake Polly voice
+  return { synthesize: async (text) => { said.push(text); return audio; } }; // immediate answer
+} // end of fakeVoice
+
+describe('announceQuestion (through askQuestion)', () => { // B9: each new question is read aloud on the TV, in a voice that is not Sam's
+  const ASKED = 'Would you like tea or coffee?'; // the question
+  const SPOKEN = 'Alex asks: Would you like tea or coffee?'; // its announcement
+
+  it('pushes a new question with the URL of its announcement, "Alex asks: …" in the announcer\'s voice, its characters counted against the daily cap', async () => { // live mode
+    const amy: string[] = []; // what the announcer was asked to say
+    const sam: string[] = []; // what Sam's voice was asked to say
+    const cap = new DailyCap(1000, () => 0); // today's Polly characters
+    const { uc, events, spans, logs } = setup({ tts: { live: fakeVoice(sam), announcer: fakeVoice(amy), cap } }); // live voices
+    const { question } = await uc.askQuestion(ASKED, 'Alex'); // ask
+    expect(amy).toEqual([SPOKEN]); // said once, in the announcer's voice
+    expect(sam).toEqual([]); // never in Sam's
+    expect(question.announcement_url).toBe(`/v1/questions/${question.id}/announcement`); // where the TV fetches it
+    expect(events[0]).toEqual({ type: 'question.created', question }); // pushed with the question
+    expect(uc.announcementAudio(question.id)).toEqual(new Uint8Array([7])); // served by GET .../announcement
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: 'announce', mode: 'live' })); // traced
+    expect(logs).toContainEqual({ msg: 'question.created', question_id: question.id, options: 0, announced: true }); // logged
+    expect(JSON.stringify(logs)).not.toMatch(/tea|asks|alex/i); // never the words, nor who asked
+    expect([cap.take(1000 - SPOKEN.length), cap.take(1)]).toEqual([true, false]); // exactly its characters were counted
+  }); // end of the case
+
+  it("times question.candidates from the ask, the announcement's time included, and the model call on its own", async () => { // gate K3 measures ask to candidates
+    const clock = { advance: (_ms: number) => {} }; // moves the fake clock; set below
+    const announcer: TtsPort = { synthesize: async () => { clock.advance(400); return new Uint8Array([7]); } }; // Amy takes 400 ms
+    const model: LlmPort = { suggest: async () => { clock.advance(1000); return TEA; } }; // the model takes 1 s
+    const { uc, spans, advance } = setup({ tts: { live: fakeVoice([]), announcer }, llm: { mock: model } }); // live voices
+    clock.advance = advance; // the fake clock
+    await (await uc.askQuestion(ASKED, 'Alex')).suggested; // ask, and wait for the replies
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: 'announce', duration_ms: 400 })); // the announcement
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest', duration_ms: 1000 })); // the model call alone
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 1400 })); // since the ask
+  }); // end of the case
+
+  it('replays no question whose announcement is still being made, and replays it with its announcement once pushed', async () => { // a TV that connects meanwhile gets the push itself
+    let release: (audio: Uint8Array) => void = () => {}; // resolves the announcement
+    const { uc } = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: () => new Promise((r) => { release = r; }) } } }); // a slow announcer
+    const asking = uc.askQuestion(ASKED, 'Alex'); // its announcement is being made
+    expect(uc.openQuestion()).toBeUndefined(); // not on any TV yet: nothing to replay
+    release(new Uint8Array([7])); // ready
+    const { question } = await asking; // pushed
+    expect(uc.openQuestion()).toEqual(question); // replayed from now on, with its announcement
+    expect(question.announcement_url).not.toBeNull(); // which it has
+  }); // end of the case
+
+  it('says just the question when there is no asker name', async () => { // nobody to name
+    const amy: string[] = []; // what the announcer was asked to say
+    const { uc } = setup({ tts: { live: fakeVoice([]), announcer: fakeVoice(amy) } }); // live voices
+    await uc.askQuestion('Tea?', ''); // no asker
+    expect(amy).toEqual(['Tea?']); // the question alone
+  }); // end of the case
+
+  it('announces with the mock tone in mock mode, a question asked with options too, without counting characters', async () => { // mock mode
+    const { uc, spans } = setup({ tts: { cap: new DailyCap(0, () => 0) } }); // no live voices; no Polly characters left today
+    const { question } = await uc.askQuestion(ASKED, 'Alex', { options: ['Tea', 'Coffee'] }); // ask with options
+    expect(question.announcement_url).toBe(`/v1/questions/${question.id}/announcement`); // announced all the same
+    expect(uc.announcementAudio(question.id)).toEqual(await new MockTts().synthesize(SPOKEN)); // the mock's tone
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: 'announce', mode: 'mock' })); // traced as mock
+  }); // end of the case
+
+  it('still pushes the question, without an announcement, when the voice fails or is too slow, and logs no text', async () => { // Polly errors or stalls
+    const failing = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: async () => { throw new Error('ThrottlingException'); } } } }); // a failing voice
+    const stalled = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: () => new Promise(() => {}) }, announceMs: 30 } }); // a voice that never answers
+    for (const [{ uc, events, spans, logs }, outcome] of [[failing, 'announce.error'], [stalled, 'announce.timeout']] as const) { // each
+      const started = performance.now(); // real time: the time limit is a real timer
+      const { question, delivered } = await uc.askQuestion(ASKED, 'Alex'); // ask
+      expect(performance.now() - started).toBeLessThan(1000); // a stalled voice held it for announceMs (30 ms here), not longer
+      expect([question.announcement_url, delivered]).toEqual([null, true]); // pushed, without one
+      expect(events[0]).toEqual({ type: 'question.created', question }); // on the TV's stream
+      expect(uc.announcementAudio(question.id)).toBeUndefined(); // nothing to fetch
+      expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: outcome, mode: 'live' })); // traced
+      expect(logs).toContainEqual(expect.objectContaining({ msg: 'announce.failed', question_id: question.id, outcome })); // logged
+      expect(logs).toContainEqual(expect.objectContaining({ msg: 'question.created', announced: false })); // and said so
+      expect(JSON.stringify(logs)).not.toMatch(/tea|asks|alex/i); // never the words, nor who asked
+    } // end of the voices
+  }); // end of the case
+
+  it('still pushes the question, without an announcement, past the daily cap, and calls no voice', async () => { // cost guard
+    const amy: string[] = []; // what the announcer was asked to say
+    const { uc, events, logs } = setup({ tts: { live: fakeVoice([]), announcer: fakeVoice(amy), cap: new DailyCap(SPOKEN.length - 1, () => 0) } }); // one character short
+    const { question } = await uc.askQuestion(ASKED, 'Alex'); // ask
+    expect(question.announcement_url).toBeNull(); // no announcement, not even the tone
+    expect(events[0]).toEqual({ type: 'question.created', question }); // pushed all the same
+    expect(amy).toEqual([]); // Polly was never called
+    expect(logs).toContainEqual({ msg: 'cap.reached', cap: 'tts_chars' }); // logged
+    expect(JSON.stringify(logs)).not.toMatch(/tea|asks|alex/i); // never the words, nor who asked
+  }); // end of the case
+
+  it('pushes nothing for a question replaced while its announcement was being made', async () => { // two questions in quick succession
+    let release: (audio: Uint8Array) => void = () => {}; // resolves the first announcement
+    let calls = 0; // announcements asked for
+    const announcer: TtsPort = { synthesize: () => (++calls === 1 ? new Promise((r) => { release = r; }) : Promise.resolve(new Uint8Array([7]))) }; // the first one waits
+    const { uc, events, store } = setup({ tts: { live: fakeVoice([]), announcer } }); // live voices
+    const older = uc.askQuestion('Tea?', 'Alex'); // its announcement takes a while
+    const newer = await uc.askQuestion('Coffee?', 'Alex'); // asked meanwhile: pushed at once
+    release(new Uint8Array([7])); // the first announcement is ready now
+    const late = await older; // its ask returns
+    await Promise.all([late.suggested, newer.suggested]); // both settled
+    expect(events.map((e) => (e.type === 'question.created' ? e.question.id : e.type === 'question.candidates' ? e.question_id : null))).toEqual([newer.question.id, newer.question.id]); // only the newer reached the TV, with its replies
+    expect([late.delivered, store.getQuestion(late.question.id)?.status]).toEqual([false, 'expired']); // never shown, and it stays expired
+  }); // end of the case
+}); // end of announceQuestion
+
 describe('openQuestion', () => { // the question a TV that connects late should still see
   it('returns the newest pending question, with its current candidates, up to 2 minutes after it was asked', async () => { // the window
     const { uc, store, advance } = setup(); // fresh, with an adjustable clock
     expect(uc.openQuestion()).toBeUndefined(); // nothing asked yet
-    const { question, suggested } = uc.askQuestion('Tea or coffee?', 'Alex'); // a question
+    const { question, suggested } = await uc.askQuestion('Tea or coffee?', 'Alex'); // a question
     await suggested; // the model's candidates are stored
     advance(120_000); // exactly 2 minutes later
     expect(uc.openQuestion()).toEqual(store.getQuestion(question.id)); // still open, as stored now
@@ -256,8 +363,8 @@ describe('openQuestion', () => { // the question a TV that connects late should 
 
   it('replays only the newest question: nothing once it is answered, not an older one', async () => { // answered is not open
     const { uc } = setup(); // fresh
-    const older = uc.askQuestion('Tea?', 'Alex'); // the older question, never answered
-    const newer = uc.askQuestion('Coffee?', 'Alex'); // the newer question
+    const older = await uc.askQuestion('Tea?', 'Alex'); // the older question, never answered
+    const newer = await uc.askQuestion('Coffee?', 'Alex'); // the newer question
     await Promise.all([older.suggested, newer.suggested]); // both settled
     await uc.commitUtterance('k1', { ...commit, question_id: newer.question.id }); // the newer one is answered
     expect(uc.openQuestion()).toBeUndefined(); // nothing open: the older one expired when the newer one was asked
@@ -266,8 +373,8 @@ describe('openQuestion', () => { // the question a TV that connects late should 
   it('skips a question whose reply is still being committed', async () => { // speech can take a while
     let release: (audio: Uint8Array | null) => void = () => {}; // resolves the synthesis
     const slow: TtsPort = { synthesize: () => new Promise((r) => { release = r; }) }; // waits for release
-    const { uc } = setup({ tts: { mock: slow } }); // slow speech
-    const { question, suggested } = uc.askQuestion('Tea?', 'Alex'); // a question
+    const { uc } = setup({ tts: { live: slow } }); // slow speech for the reply; the announcement uses the mock tone
+    const { question, suggested } = await uc.askQuestion('Tea?', 'Alex'); // a question
     await suggested; // settled
     const committing = uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the TV has answered; speech is on its way
     expect(uc.openQuestion()).toBeUndefined(); // answered already, so not replayed
@@ -277,9 +384,9 @@ describe('openQuestion', () => { // the question a TV that connects late should 
 
   it('returns the newer of two questions asked', async () => { // newest first
     const { uc, advance } = setup(); // fresh
-    await uc.askQuestion('Tea?', 'Alex').suggested; // the older question
+    await (await uc.askQuestion('Tea?', 'Alex')).suggested; // the older question
     advance(1000); // a second later
-    const newer = uc.askQuestion('Coffee?', 'Alex'); // the newer question
+    const newer = await uc.askQuestion('Coffee?', 'Alex'); // the newer question
     await newer.suggested; // settled
     expect(uc.openQuestion()?.id).toBe(newer.question.id); // the newer one
   }); // end of the case
@@ -289,7 +396,7 @@ describe('askQuestion with options', () => { // ask_question's options: no model
   it('pushes exactly the options, Not now and Not sure, then question.candidates at once, without calling the model', async () => { // the TV starts its scan at once
     const calls: SuggestRequest[] = []; // model requests
     const { uc, events, spans } = setup({ llm: { mock: fakeLlm(TEA, calls) } }); // a recording model
-    const { question, delivered, suggested } = uc.askQuestion('Would you like tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'], urgency: 'high' }); // ask
+    const { question, delivered, suggested } = await uc.askQuestion('Would you like tea or coffee?', 'Alex', { options: ['Tea', 'Coffee'], urgency: 'high' }); // ask
     expect(question.candidates.map((c) => c.text)).toEqual(['Tea', 'Coffee', 'Not now', 'Not sure']); // four replies
     expect(question.urgency).toBe('high'); // stored as asked
     expect(events).toEqual([{ type: 'question.created', question }, { type: 'question.candidates', question_id: question.id, candidates: question.candidates }]); // both events now
@@ -300,9 +407,9 @@ describe('askQuestion with options', () => { // ask_question's options: no model
     expect(spans.filter((s) => s.hop === 'server→llm')).toEqual([]); // no model hop
   }); // end of the case
 
-  it('reports delivered false when no TV is connected, and stores urgency normal by default', () => { // delivered
+  it('reports delivered false when no TV is connected, and stores urgency normal by default', async () => { // delivered
     const { uc } = setup({ tvs: 0 }); // no TV
-    const { question, delivered } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question, delivered } = await uc.askQuestion('Tea?', 'Alex'); // ask
     expect([delivered, question.urgency]).toEqual([false, 'normal']); // nobody saw it yet
   }); // end of the case
 }); // end of askQuestion with options
@@ -310,10 +417,10 @@ describe('askQuestion with options', () => { // ask_question's options: no model
 describe('question lifecycle', () => { // one open question per household
   it('expires an earlier unanswered question when a new one is asked, and leaves an answered one answered', async () => { // expiry
     const { uc, store } = setup(); // fresh
-    const first = uc.askQuestion('Tea?', 'Alex'); // answered below
+    const first = await uc.askQuestion('Tea?', 'Alex'); // answered below
     await uc.commitUtterance('k1', { ...commit, question_id: first.question.id }); // answered
-    const second = uc.askQuestion('Coffee?', 'Alex'); // never answered
-    const third = uc.askQuestion('Milk?', 'Alex'); // the newest
+    const second = await uc.askQuestion('Coffee?', 'Alex'); // never answered
+    const third = await uc.askQuestion('Milk?', 'Alex'); // the newest
     await Promise.all([first.suggested, second.suggested, third.suggested]); // all settled
     expect([first, second, third].map((q) => store.getQuestion(q.question.id)?.status)).toEqual(['answered', 'expired', 'pending']); // one open question
     expect(await uc.getAnswer(second.question.id, 0)).toEqual({ status: 'expired', answer_text: null, answered_at: null, clicks: null }); // get_answer says so
@@ -321,8 +428,8 @@ describe('question lifecycle', () => { // one open question per household
 
   it('keeps an expired question expired when a late reply to it arrives', async () => { // a TV still saying the old reply
     const { uc, store } = setup(); // fresh
-    const older = uc.askQuestion('Tea?', 'Alex'); // replaced below
-    uc.askQuestion('Coffee?', 'Alex'); // the newer question expires it
+    const older = await uc.askQuestion('Tea?', 'Alex'); // replaced below
+    await uc.askQuestion('Coffee?', 'Alex'); // the newer question expires it
     const late = await uc.commitUtterance('k1', { ...commit, question_id: older.question.id }); // the reply to the older one
     expect(late.utterance).toMatchObject({ kind: 'reply', question_id: older.question.id, question_text: 'Tea?' }); // still recorded with its question
     expect(store.getQuestion(older.question.id)?.status).toBe('expired'); // but the question stays expired
@@ -334,7 +441,7 @@ describe('getAnswer', () => { // get_answer
 
   it('reports pending, then the answer with its time and clicks once committed', async () => { // fetch without waiting
     const { uc } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     expect(await uc.getAnswer(question.id, 0)).toEqual(PENDING); // not yet
     await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the TV commits
     expect(await uc.getAnswer(question.id, 0)).toEqual({ status: 'answered', answer_text: 'Tea, please', answered_at: '2026-10-19T10:00:00.000Z', clicks: 2 }); // the answer
@@ -342,7 +449,7 @@ describe('getAnswer', () => { // get_answer
 
   it('returns as soon as the answer is committed while it waits', async () => { // long-poll
     const { uc } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const started = performance.now(); // real time
     const waiting = uc.getAnswer(question.id, 5000); // waits up to 5 s
     setTimeout(() => void uc.commitUtterance('k1', { ...commit, question_id: question.id }), 20); // the TV commits 20 ms later
@@ -352,7 +459,7 @@ describe('getAnswer', () => { // get_answer
 
   it('returns pending when the wait ends without an answer', async () => { // timeout
     const { uc } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const started = performance.now(); // real time
     expect(await uc.getAnswer(question.id, 50)).toEqual(PENDING); // still nothing
     expect(performance.now() - started).toBeGreaterThanOrEqual(45); // it did wait (timer granularity aside)
@@ -360,15 +467,15 @@ describe('getAnswer', () => { // get_answer
 
   it('returns expired as soon as a newer question replaces it while it waits', async () => { // expiry wakes the wait
     const { uc } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const waiting = uc.getAnswer(question.id, 5000); // waits
-    uc.askQuestion('Coffee?', 'Alex'); // a newer question
+    await uc.askQuestion('Coffee?', 'Alex'); // a newer question
     expect(await waiting).toMatchObject({ status: 'expired' }); // at once
   }); // end of the case
 
   it('stops waiting when its signal aborts', async () => { // the agent cancelled the call
     const { uc } = setup(); // fresh
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const controller = new AbortController(); // the request's signal
     const waiting = uc.getAnswer(question.id, 5000, controller.signal); // waits
     controller.abort(); // cancelled
@@ -378,8 +485,8 @@ describe('getAnswer', () => { // get_answer
   it('reports pending while the reply is still being spoken, and answered once it is stored', async () => { // commit = stored
     let release: (audio: Uint8Array | null) => void = () => {}; // resolves the synthesis
     const slow: TtsPort = { synthesize: () => new Promise((r) => { release = r; }) }; // waits for release
-    const { uc } = setup({ tts: { mock: slow } }); // slow speech
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { uc } = setup({ tts: { live: slow } }); // slow speech for the reply; the announcement uses the mock tone
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const committing = uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the TV has answered; speech is on its way
     expect(await uc.getAnswer(question.id, 0)).toEqual(PENDING); // no stored answer yet
     const waiting = uc.getAnswer(question.id, 5000); // waits
@@ -391,8 +498,8 @@ describe('getAnswer', () => { // get_answer
   it('keeps waiting when another reply to the same question is stored before the answer', async () => { // two TVs answering
     const releases: ((audio: Uint8Array | null) => void)[] = []; // one per synthesis, in commit order
     const slow: TtsPort = { synthesize: () => new Promise((r) => { releases.push(r); }) }; // waits for release
-    const { uc } = setup({ tts: { mock: slow } }); // slow speech
-    const { question } = uc.askQuestion('Tea?', 'Alex'); // ask
+    const { uc } = setup({ tts: { live: slow } }); // slow speech for the reply; the announcement uses the mock tone
+    const { question } = await uc.askQuestion('Tea?', 'Alex'); // ask
     const first = uc.commitUtterance('k1', { ...commit, question_id: question.id }); // the answer; its speech is still running
     const second = uc.commitUtterance('k2', { ...commit, question_id: question.id, text: 'Coffee, please' }); // another TV's reply
     const waiting = uc.getAnswer(question.id, 5000); // waits
@@ -412,7 +519,7 @@ describe('getAnswer', () => { // get_answer
 describe('recentMessages', () => { // get_recent_messages
   it('lists what was said, oldest first, with time, kind and the question text when there is one; since and limit narrow it', async () => { // the list
     const { uc, advance } = setup(); // fresh, with an adjustable clock
-    const { question } = uc.askQuestion('Tea or coffee?', 'Alex'); // a server question
+    const { question } = await uc.askQuestion('Tea or coffee?', 'Alex'); // a server question
     await uc.commitUtterance('k1', { ...commit, question_id: question.id }); // its reply, at 10:00:00
     advance(1000); // a second later
     await uc.commitUtterance('k2', { ...commit, text: 'Hello' }); // something said on its own
@@ -450,7 +557,7 @@ describe('addProfileFact', () => { // add_profile_fact
     const calls: SuggestRequest[] = []; // model requests
     const { uc } = setup({ llm: { mock: fakeLlm(TEA, calls) } }); // no facts yet
     const id = uc.addProfileFact({ text: 'Sam follows cricket', category: 'likes' }); // add one
-    await uc.askQuestion('What shall we watch?', 'Alex').suggested; // the next question
+    await (await uc.askQuestion('What shall we watch?', 'Alex')).suggested; // the next question
     expect(calls[0]?.facts).toEqual([{ id, text: 'Sam follows cricket', category: 'likes' }]); // as stored; promptFacts drops the id
   }); // end of the case
 

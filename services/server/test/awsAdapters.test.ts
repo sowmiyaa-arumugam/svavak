@@ -188,9 +188,22 @@ describe('compose', () => { // adapter selection by SVAVAK_MODE
     expect(bedrock.calls()).toHaveLength(0); // nothing sent
   }); // end of the case
 
+  it("announces questions in Polly's standard voice Amy, in the region of Sam's voice, whatever Sam's engine (B9)", async () => { // the announcer
+    for (const [pollyRegion, pollyEngine] of [['eu-north-1', 'standard'], ['eu-central-1', 'neural']] as const) { // Sam's voice standard, then neural
+      const { deps } = compose({ ...config, pollyRegion, pollyEngine }, () => {}); // live settings
+      const amy = deps.tts.announcer as unknown as { client: PollyClient; voice: string; engine: string }; // private fields, for the test
+      expect(amy).toBeInstanceOf(PollyTts); // a live voice
+      expect([amy.voice, amy.engine]).toEqual(['Amy', 'standard']); // Amy (en-GB), standard engine
+      expect(await amy.client.config.region()).toBe(pollyRegion); // where Sam's voice is
+      expect(amy.client.config.profile).toBe('svavak-dev'); // the SSO profile
+      expect(deps.tts.announceMs).toBe(2000); // a stalled voice holds a question 2 s at most
+    } // end of the settings
+    expect(polly.calls()).toHaveLength(0); // nothing sent
+  }); // end of the case
+
   it('uses only mock adapters in mock mode', () => { // mock
     const { deps } = compose({ ...config, mode: 'mock' }, () => {}); // mock settings
-    expect([deps.llm.live, deps.tts.live]).toEqual([null, null]); // no AWS clients at all
+    expect([deps.llm.live, deps.tts.live, deps.tts.announcer]).toEqual([null, null, null]); // no AWS clients at all
   }); // end of the case
 
   it('seeds the demo household with the demo facts', () => { // plan FR-03 demo

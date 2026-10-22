@@ -17,8 +17,8 @@ import { EVAL_SET, evalChecks } from './evalSet.ts'; // tested
 async function candidatesFor(question: string): Promise<Candidate[]> { // ask, then read question.candidates
   const events: StreamEvent[] = []; // pushed to the TV
   const clock = () => Date.parse('2026-10-20T18:00:00Z'); // a fixed time
-  const uc = createUseCases({ mode: 'mock', store: new MemoryStore({ [DEMO_HOUSEHOLD]: DEMO_FACTS }), notifier: { publish: (e) => { events.push(e); return 1; } }, trace: { span: () => {} }, log: () => {}, clock, newId: () => 'q1', llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, mock: new MockTts(), cap: new DailyCap(100_000, clock) } }); // mock wiring, as compose.ts seeds it
-  await uc.askQuestion(question, 'Alex').suggested; // the model's turn
+  const uc = createUseCases({ mode: 'mock', store: new MemoryStore({ [DEMO_HOUSEHOLD]: DEMO_FACTS }), notifier: { publish: (e) => { events.push(e); return 1; } }, trace: { span: () => {} }, log: () => {}, clock, newId: () => 'q1', llm: { live: null, mock: new MockLlm(), cap: new DailyCap(1000, clock), budgetMs: 3500 }, tts: { live: null, announcer: null, mock: new MockTts(), cap: new DailyCap(100_000, clock), announceMs: 2000 } }); // mock wiring, as compose.ts seeds it
+  await (await uc.askQuestion(question, 'Alex')).suggested; // the model's turn
   const pushed = events.find((e) => e.type === 'question.candidates'); // the final list
   if (pushed?.type !== 'question.candidates') throw new Error(`no candidates for "${question}"`); // the model gave nothing usable
   return pushed.candidates; // as the TV gets them

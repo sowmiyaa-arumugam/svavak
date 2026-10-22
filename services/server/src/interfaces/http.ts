@@ -92,10 +92,10 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
 
   app.use(express.json({ limit: '32kb' })); // plan §6.2: 32 KB JSON limit; parsed only after authentication
 
-  app.post('/v1/questions', (req, res) => { // ask a question (dev endpoint)
+  app.post('/v1/questions', async (req, res) => { // ask a question (dev endpoint)
     const body = questionBody.safeParse(req.body); // validate
     if (!body.success) return problem(res, 400, issues(body.error)); // refuse
-    const { question } = o.useCases.askQuestion(body.data.text, body.data.asked_by); // pushes it with the defaults
+    const { question } = await o.useCases.askQuestion(body.data.text, body.data.asked_by); // pushes it with the defaults and its announcement
     res.status(201).json(question); // the model's candidates follow on the stream
   }); // end of POST /v1/questions
 
@@ -118,9 +118,14 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
   app.get('/v1/utterances/:id/audio', (req, res) => { // the speech
     const audio = o.useCases.utteranceAudio(req.params.id); // audio bytes, if any
     if (!audio) return problem(res, 404, 'no audio for this utterance'); // failed synthesis or unknown id
-    const bytes = Buffer.from(audio); // for Express
-    res.type(bytes.toString('latin1', 0, 4) === 'RIFF' ? 'audio/wav' : 'audio/mpeg').send(bytes); // the mock's WAV tone, or Polly's MP3
+    sendAudio(res, audio); // WAV or MP3
   }); // end of GET /v1/utterances/{id}/audio
+
+  app.get('/v1/questions/:id/announcement', (req, res) => { // a question's spoken announcement (B9)
+    const audio = o.useCases.announcementAudio(req.params.id); // audio bytes, if any
+    if (!audio) return problem(res, 404, 'no announcement for this question'); // failed or skipped synthesis, or unknown id
+    sendAudio(res, audio); // WAV or MP3
+  }); // end of GET /v1/questions/{id}/announcement
 
   app.get('/v1/trace', (_req, res) => { // live spans (plan Table 13)
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }); // SSE
@@ -172,6 +177,11 @@ function problemBody(status: number, detail?: string): Record<string, unknown> {
 function problem(res: Response, status: number, detail?: string): void { // send problem+json
   res.status(status).type('application/problem+json').json(problemBody(status, detail)); // content type kept by res.json
 } // end of problem
+
+function sendAudio(res: Response, audio: Uint8Array): void { // audio bytes with their media type
+  const bytes = Buffer.from(audio); // for Express
+  res.type(bytes.toString('latin1', 0, 4) === 'RIFF' ? 'audio/wav' : 'audio/mpeg').send(bytes); // the mock's WAV tone, or Polly's MP3
+} // end of sendAudio
 
 function refuse(socket: { end(data: string): void }, status: number): void { // reject a WebSocket upgrade
   const body = JSON.stringify(problemBody(status)); // problem+json here too

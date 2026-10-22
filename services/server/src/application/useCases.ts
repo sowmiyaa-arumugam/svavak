@@ -1,7 +1,8 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Use-cases of plan §4.3 for flow S1: AskQuestion, SuggestReplies, CommitUtterance and SynthesizeSpeech, plus those
-// behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact, and RequestHelp for flow S3.
+// Use-cases of plan §4.3 for flow S1: AskQuestion (with AnnounceQuestion, B9), SuggestReplies, CommitUtterance and
+// SynthesizeSpeech, plus those behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact, and
+// RequestHelp for flow S3.
 
 import { EventEmitter, once } from 'node:events'; // wakes a waiting get_answer
 import { cleanDrafts, defaultCandidates, defaultsFor, dropBanned, optionCandidates, toCandidates } from '../domain/candidates.ts'; // reply pipeline
@@ -20,7 +21,7 @@ export interface Deps { // ports and settings
   clock: () => number; // ClockPort: epoch milliseconds
   newId: () => string; // IdPort: random identifiers
   llm: { live: LlmPort | null; mock: LlmPort; cap: DailyCap; budgetMs: number }; // live is null in mock mode
-  tts: { live: TtsPort | null; mock: TtsPort; cap: DailyCap }; // live is null in mock mode
+  tts: { live: TtsPort | null; announcer: TtsPort | null; mock: TtsPort; cap: DailyCap; announceMs: number }; // Sam's voice and the announcer's, both null in mock mode; a question waits at most announceMs for its announcement
 } // end of Deps
 
 /** Body of POST /v1/utterances after validation. */
@@ -70,20 +71,23 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
   const iso = () => new Date(deps.clock()).toISOString(); // now, as ISO 8601 UTC
   const settled = new EventEmitter(); // emits a question's id when its answer is stored or it expires
   settled.setMaxListeners(0); // any number of get_answer calls may wait on one question
+  const announcing = new Set<string>(); // questions stored but not pushed yet, while their announcement is made: never replayed
 
   /**
-   * AskQuestion: expire the open question, store the new one and push it at once. With options, its replies are final
-   * and question.candidates follows at once; without, the defaults that fit it go first and SuggestReplies pushes the
-   * model's candidates. `delivered` says whether a TV was connected to receive it.
+   * AskQuestion: expire the open question, store the new one, make its spoken announcement and then push it. With
+   * options, its replies are final and question.candidates follows at once; without, the defaults that fit it go first
+   * and SuggestReplies pushes the model's candidates. `delivered` says whether a TV was connected to receive it; a
+   * question replaced by a newer one while its announcement was made is never pushed.
    */
-  function askQuestion(text: string, askedBy: string, extra: { options?: readonly string[]; urgency?: Question['urgency'] } = {}): { question: Question; delivered: boolean; suggested: Promise<void> } { // S1 steps 1-5
+  async function askQuestion(text: string, askedBy: string, extra: { options?: readonly string[]; urgency?: Question['urgency'] } = {}): Promise<{ question: Question; delivered: boolean; suggested: Promise<void> }> { // S1 steps 1-5
+    const askedAt = deps.clock(); // the ask, for the question.candidates span
     const turns = deps.store.recentTurns(TURNS); // the six latest, question then reply
     const open = deps.store.newestPending(); // the household's open question; asking expires it, so there is at most one
     if (open) { // never answered
       deps.store.saveQuestion({ ...open, status: 'expired' }); // replaced by the new one
       settled.emit(open.id); // a get_answer waiting on it returns now
     } // end of the expiry
-    const question: Question = { // a new pending question
+    const asked: Question = { // a new pending question
       id: deps.newId(), // random id
       text, // the question
       asked_by: askedBy, // who asked
@@ -91,20 +95,28 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       status: 'pending', // not answered yet
       created_at: iso(), // now
       answered_utterance_id: null, // no answer yet
+      announcement_url: null, // made below
       candidates: extra.options ? optionCandidates(extra.options) : defaultCandidates(text), // plan §4.3 step 1: replies immediately
     }; // end of the question
+    deps.store.saveQuestion(asked); // persist: a newer question expires it from now on
+    announcing.add(asked.id); // not on any TV yet, so not replayed to one
+    const announcement = await announceQuestion(asked); // its path, or null
+    announcing.delete(asked.id); // pushed below, or replaced meanwhile
+    const current = deps.store.getQuestion(asked.id)!; // as stored now
+    if (current.status !== 'pending') return { question: current, delivered: false, suggested: Promise.resolve() }; // replaced meanwhile: the TV shows the newer one
+    const question = { ...current, announcement_url: announcement }; // with its announcement
     deps.store.saveQuestion(question); // persist
     const delivered = deps.notifier.publish({ type: 'question.created', question }) > 0; // to the TV, before any model call
     deps.trace.span({ hop: 'server→tv', operation: 'question.created', duration_ms: 0, mode: deps.mode }); // pushed now
-    deps.log('question.created', { question_id: question.id, options: extra.options?.length ?? 0 }); // no text in logs
-    if (!extra.options) return { question, delivered, suggested: suggestReplies(question, turns) }; // the caller does not wait for the model
+    deps.log('question.created', { question_id: question.id, options: extra.options?.length ?? 0, announced: announcement !== null }); // no text in logs
+    if (!extra.options) return { question, delivered, suggested: suggestReplies(question, turns, askedAt) }; // the caller does not wait for the model
     deps.notifier.publish({ type: 'question.candidates', question_id: question.id, candidates: question.candidates }); // the final list now, so the TV starts its scan without waiting out the budget
     deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 0, mode: deps.mode }); // pushed now
     return { question, delivered, suggested: Promise.resolve() }; // no model call
   } // end of askQuestion
 
-  /** SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. */
-  async function suggestReplies(question: Question, recentTurns: SuggestRequest['recentTurns']): Promise<void> { // steps 2-5
+  /** SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. `askedAt` times their push from the ask. */
+  async function suggestReplies(question: Question, recentTurns: SuggestRequest['recentTurns'], askedAt: number): Promise<void> { // steps 2-5
     const live = deps.llm.live !== null && deps.llm.cap.take(1); // live model, unless mock mode or today's cap is used up
     if (deps.llm.live !== null && !live) deps.log('cap.reached', { cap: 'llm_calls' }); // fell back to mock
     const llm = live ? deps.llm.live! : deps.llm.mock; // the adapter for this call
@@ -124,7 +136,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
         const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text), 'llm', current.text) }; // merged with the defaults that fit, the basic answers in the first four, priors computed
         deps.store.saveQuestion(updated); // persist
         deps.notifier.publish({ type: 'question.candidates', question_id: updated.id, candidates: updated.candidates }); // to the TV
-        deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - started, mode: deps.mode }); // since asked
+        deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - askedAt, mode: deps.mode }); // since asked, the announcement included (gate K3)
       } // end of the push
     } catch (error) { // timeout or adapter failure
       outcome = signal.aborted ? 'suggest.timeout' : 'suggest.error'; // which one
@@ -150,6 +162,32 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     deps.trace.span({ hop: 'server→tts', operation, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock' }); // hop
     return audio; // bytes or null
   } // end of synthesizeSpeech
+
+  /**
+   * AnnounceQuestion: "<asked_by> asks: <question>" (the question alone without an asker) in the announcer's voice, a
+   * voice other than Sam's, or the mock's tone in mock mode; stored for GET /v1/questions/{id}/announcement. Returns its
+   * path, or null when the voice fails or takes longer than announceMs, or today's cap is used up. Never throws.
+   */
+  async function announceQuestion(question: Question): Promise<string | null> { // a spoken prompt, so Sam knows a question has come
+    const words = question.asked_by ? `${question.asked_by} asks: ${question.text}` : question.text; // what is said
+    const live = deps.tts.announcer !== null; // live mode
+    if (live && !deps.tts.cap.take(words.length)) { deps.log('cap.reached', { cap: 'tts_chars' }); return null; } // past today's cap: no announcement, not even the tone
+    const tts = live ? deps.tts.announcer! : deps.tts.mock; // the adapter for this call
+    const started = deps.clock(); // for the span
+    const signal = AbortSignal.timeout(deps.tts.announceMs); // the question waits no longer than this
+    let audio: Uint8Array | null = null; // no announcement unless synthesis succeeds in time
+    let operation = 'announce'; // span operation; a suffix marks failures
+    try { // the synthesis call
+      audio = await Promise.race([tts.synthesize(words), rejectOnAbort(signal)]); // whichever comes first
+    } catch (error) { // Polly failed or stalled: the question goes out without it
+      operation = signal.aborted ? 'announce.timeout' : 'announce.error'; // which one
+      deps.log('announce.failed', { question_id: question.id, outcome: operation, error: String(error) }); // no text in logs
+    } // end of the call
+    deps.trace.span({ hop: 'server→tts', operation, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock' }); // hop
+    if (!audio) return null; // nothing to play
+    deps.store.addAnnouncement(question.id, audio); // for GET .../announcement
+    return `/v1/questions/${question.id}/announcement`; // relative, as an utterance's audio_url
+  } // end of announceQuestion
 
   /** CommitUtterance: idempotent by key; a retry while the first request still runs gets the same result. */
   function commitUtterance(key: string, input: CommitInput): Promise<CommitResult> { // POST /v1/utterances
@@ -233,13 +271,19 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     return deps.store.getAudio(id); // from the store
   } // end of utteranceAudio
 
+  /** The announcement of a question, if it has one. */
+  function announcementAudio(id: string): Uint8Array | undefined { // GET /v1/questions/{id}/announcement
+    return deps.store.getAnnouncement(id); // from the store
+  } // end of announcementAudio
+
   /** The newest unanswered question, if it was asked within REPLAY_MS: replayed to a TV when it connects. */
   function openQuestion(): Question | undefined { // GET /v1/stream on connect
     const question = deps.store.newestPending(); // with its current candidates
+    if (question && announcing.has(question.id)) return undefined; // not pushed yet: the TV gets it from the push, with its announcement
     return question && deps.clock() - Date.parse(question.created_at) <= REPLAY_MS ? question : undefined; // recent enough, or nothing
   } // end of openQuestion
 
-  return { askQuestion, commitUtterance, utteranceAudio, openQuestion, getAnswer, recentMessages, addProfileFact, requestHelp }; // the public use-cases
+  return { askQuestion, commitUtterance, utteranceAudio, announcementAudio, openQuestion, getAnswer, recentMessages, addProfileFact, requestHelp }; // the public use-cases
 } // end of createUseCases
 
 /** The use-cases object, for typing the REST layer. */
