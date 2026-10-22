@@ -1,7 +1,7 @@
 # CLAUDE.md: SvaVāk
 
 Single-switch AAC communicator for Fire TV, entered in the Amazon Developer Hackathon 2026
-(deadline Fri 23 Oct 2026, 21:00 CEST). The product is "SvaVāk", tagline "Your Voice. Your Choice" (decision D1,
+(deadline Fri 23 Oct 2026, 21:00 CEST). The product is "SvaVāk", tagline "Your Voice. Your Choice" (decided on
 20 Oct 2026), replacing the working name "Aloud", which the repository folder and the root workspace package still
 use. Where ā cannot go, it is plain ASCII: "svavak" in package ids, slugs and identifiers, `SVAVAK_` in settings.
 Author and owner: Sowmiya Arumugam.
@@ -9,11 +9,11 @@ Licence: Apache-2.0.
 
 ## Plan (source of truth)
 
-- `docs/private/ALD-PLN-001_Aloud_Implementation_Design_Plan_v1.1.pdf`: §3.5 layout, §4 components,
-  §6.3 guardrails, §7.3 tests, §7.5 Definition of Done, §10 scope and cut order.
+- `docs/private/ALD-PLN-001_Aloud_Implementation_Design_Plan_v1.1.pdf`: the layout, components, secret
+  guardrails, test strategy, Definition of Done, scope tiers and cut order.
 - `docs/private/` is git-ignored. Never commit it, copy it into tracked files or push it.
-- Layout follows §3.5, except that the engine starts as `packages/switchclock` in this repo
-  (it is split into its own repo before publishing).
+- Layout follows the plan, except that the engine lives in `packages/switchclock` in this repo; it is also
+  published on its own as https://github.com/sowmiyaa-arumugam/switchclock.
 
 ## Licence header on every source file
 
@@ -65,7 +65,7 @@ installed package, not memory.
 
 ## Scope
 
-Build P0 only (plan §10.1) unless told otherwise. Never cut: the Fire TV app on the emulator, rule
+Build P0 (the must-have scope tier) only unless told otherwise. Never cut: the Fire TV app on the emulator, rule
 compliance, engine and MCP tests, the secret guardrails, the video and the product feedback.
 
 ## Repository mechanics
@@ -73,5 +73,5 @@ compliance, engine and MCP tests, the secret guardrails, the video and the produ
 - Yarn 4.5 workspaces (`apps/*`, `services/*`, `packages/*`) through Corepack; `nodeLinker: node-modules`.
 - Enable the hook once per clone: `git config core.hooksPath .githooks` (needs gitleaks on PATH).
   It also blocks UTF-16 files and any file over 1 MiB (`yarn.lock` excepted).
-- Log every tool problem in `docs/friction-log.md`, with the fields of plan §11.4.
+- Log every tool problem in `docs/friction-log.md`, with the fields its introduction lists.
 - Before any git push, complete docs/private/pre-push.md.

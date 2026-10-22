@@ -20,15 +20,15 @@ import { DEMO_FACTS, DEMO_HOUSEHOLD } from './domain/facts.ts'; // the demo pers
 import { createServer } from './interfaces/http.ts'; // REST, WebSocket, SSE
 import type { Log } from './ports/index.ts'; // logging
 
-export const BUDGET_MS = 3500; // plan §4.3: the model's candidates must arrive within 3.5 s
-export const LLM_CALLS_PER_DAY = 1000; // plan §4.3 daily cap
-export const POLLY_CHARS_PER_DAY = 100_000; // plan §4.3 daily cap
+export const BUDGET_MS = 3500; // the model's candidates must arrive within 3.5 s
+export const LLM_CALLS_PER_DAY = 1000; // daily cap
+export const POLLY_CHARS_PER_DAY = 100_000; // daily cap
 export const ANNOUNCER_VOICE = 'Amy'; // B9: questions are read aloud in Polly's standard voice Amy (en-GB), never in Sam's own voice
 export const ANNOUNCE_MS = 2000; // B9: a question waits at most this long for its announcement, then goes out without one
 const PING_MS = 25_000; // keep-alive event on the stream
 const MCP_IDLE_MS = 30 * 60_000; // an MCP session ends after 30 minutes without requests
 
-/** JSON log lines on stdout (plan §4.3: structured logs, no message text). */
+/** JSON log lines on stdout: structured logs, no message text. */
 export const jsonLog: Log = (msg, fields = {}) => console.log(JSON.stringify({ at: new Date().toISOString(), msg, ...fields })); // one line each
 
 /** The server and its dependencies for a configuration. Live mode makes no AWS call until a request needs one. */

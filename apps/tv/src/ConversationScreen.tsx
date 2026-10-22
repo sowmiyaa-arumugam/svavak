@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen (plan §5.2) in scan mode: question band, up to 2 x 4 reply cards, two control pills and a hint;
+// The conversation screen in scan mode: question band, up to 2 x 4 reply cards, two control pills and a hint;
 // an idle screen between the server's questions.
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks

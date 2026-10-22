@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import fc from 'fast-check'; // property-based testing
 import { priors } from '../src/core/priors.ts'; // unit under test
 
-const CFG = { priorFloor: 0.02, temperature: 1, controlShare: 0.03 }; // Table 11 initial values
+const CFG = { priorFloor: 0.02, temperature: 1, controlShare: 0.03 }; // the default initial values
 const replies = (scores: number[]) => scores.map((score, i) => ({ id: `r${i}`, score })); // reply options from scores
 const controls = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `c${i}`, score: 0, control: true })); // control options
 

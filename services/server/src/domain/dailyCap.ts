@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Cost guard of plan §4.3: a global daily cap (1,000 LLM calls, 100,000 Polly characters); beyond it, mock output.
+// Cost guard: a global daily cap (1,000 LLM calls, 100,000 Polly characters); beyond it, mock output.
 
 /** Counts usage per UTC day and refuses what would go over the limit. */
 export class DailyCap { // one per capped resource

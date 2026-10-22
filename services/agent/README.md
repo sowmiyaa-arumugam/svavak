@@ -2,9 +2,8 @@
 
 *Your Voice. Your Choice*
 
-The simulated Alexa+ of plan §4.5: a [Strands](https://strandsagents.com) agent that reaches Sam only through the
-[server](../server)'s MCP tools. It streams each caregiver turn as server-sent events, for the studio's caregiver panel
-(plan §4.7).
+The simulated Alexa+: a [Strands](https://strandsagents.com) agent that reaches Sam only through the
+[server](../server)'s MCP tools. It streams each caregiver turn as server-sent events, for the studio's caregiver panel.
 
 - **Tools from MCP.** At start-up the agent connects to `http://127.0.0.1:8787/mcp` with Strands' `MCPClient` over
   Streamable HTTP, sending `SVAVAK_AGENT_TOKEN`, and lists the server's tools: `ask_question`, `get_answer`,
@@ -57,7 +56,7 @@ It reads the repository's `.env`, and the process environment overrides it. The 
 
 **Live.** A Strands `BedrockModel` with the model set explicitly to `SVAVAK_MODEL_ID`, at temperature 0.2. Its region
 is `AWS_REGION`, and its credentials come from the `AWS_PROFILE` session, never from access keys. The system prompt is
-the agent policy of plan §4.6:
+the agent policy:
 
 - Call `ask_question` (as Alex), then `get_answer` with a wait of at most 20 s.
 - If the answer is still pending, say that Sam hasn't answered yet.
@@ -151,7 +150,7 @@ Bedrock's usage metadata (Strands' `accumulated_usage`). They are 0 in mock mode
 failed. Never caregiver text, answers or the token. Strands' own log lines are switched off, because they can quote
 model-written tool input or tool names; the agent reports failures itself.
 
-**Known limits.** Tool calls have no timeout of their own. There is no second SSE stream for help alerts (plan §4.5):
+**Known limits.** Tool calls have no timeout of their own. There is no second SSE stream for help alerts:
 the caregiver panel takes them from the server's trace stream, and "What did Sam say?" mentions the latest one.
 
 ## Layout

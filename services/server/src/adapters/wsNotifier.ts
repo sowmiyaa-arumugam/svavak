@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// WsNotifier (plan §4.3): sends every stream event to every client connected to GET /v1/stream.
+// WsNotifier: sends every stream event to every client connected to GET /v1/stream.
 
 import { WebSocket, type WebSocketServer } from 'ws'; // the WebSocket server
 import type { StreamEvent } from '../domain/model.ts'; // event shapes

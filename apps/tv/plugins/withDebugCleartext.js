@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Config plugin (plan §4.2): debug builds may use cleartext HTTP to the emulator's host (10.0.2.2) and nowhere else.
+// Config plugin: debug builds may use cleartext HTTP to the emulator's host (10.0.2.2) and nowhere else.
 // React Native's debug manifests allow cleartext to every host; a network security config narrows that, and Android
 // ignores usesCleartextTraffic once one is present. Release builds, which make the judges' demo APK (B11), get the same
 // config, as the mock server it talks to on the emulator's host has no HTTPS; every other host stays HTTPS only.

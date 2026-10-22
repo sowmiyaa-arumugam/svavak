@@ -62,7 +62,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest', mode: 'mock', dropped: 0 })); // traced, nothing filtered
   }); // end of the case
 
-  it('drops a candidate with a banned term and counts it in the span, never logging or tracing the text', async () => { // plan §4.6 filter
+  it('drops a candidate with a banned term and counts it in the span, never logging or tracing the text', async () => { // the banned-term filter
     const rude = `What a ${BANNED_TERMS[0]}`; // a candidate with the first listed term
     const { uc, events, spans, logs } = setup({ llm: { mock: fakeLlm({ candidates: [{ text: rude, intent: 'social', score: 0.9 }, ...TEA.candidates] }) } }); // a model that swears
     await (await uc.askQuestion('Tea or coffee?', 'Alex')).suggested; // ask
@@ -104,7 +104,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
     expect(logs).toContainEqual(expect.objectContaining({ msg: 'cap.reached', cap: 'llm_calls' })); // logged
   }); // end of the case
 
-  it('sends the question, who asked, the time, the six latest turns and the household facts to the model', async () => { // §4.6 inputs
+  it('sends the question, who asked, the time, the six latest turns and the household facts to the model', async () => { // the model's inputs
     const calls: SuggestRequest[] = []; // requests
     const { uc } = setup({ llm: { mock: fakeLlm(TEA, calls) }, facts: { [DEMO_HOUSEHOLD]: DEMO_FACTS, other: [{ text: 'Not this household', category: 'other' }] } }); // recording model, seeded facts
     for (let i = 1; i <= 6; i++) await uc.commitUtterance(`f${i}`, { ...commit, question_text: i === 6 ? null : `Fixture ${i}?`, text: `Reply ${i}` }); // replies to the TV's fixture questions; the sixth spontaneous
@@ -617,7 +617,7 @@ describe('addProfileFact', () => { // add_profile_fact
     expect(calls[0]?.facts).toEqual([{ id, text: 'Sam follows cricket', category: 'likes' }]); // as stored; promptFacts drops the id
   }); // end of the case
 
-  it('refuses a 21st fact', () => { // plan §6.1: at most 20 facts
+  it('refuses a 21st fact', () => { // at most 20 facts
     const nineteen = Array.from({ length: 19 }, (_, i) => ({ text: `Fact ${i}`, category: 'other' as const })); // 19 facts
     const { uc, store } = setup({ facts: { [DEMO_HOUSEHOLD]: nineteen } }); // seeded
     uc.addProfileFact({ text: 'Fact 19', category: 'other' }); // the 20th

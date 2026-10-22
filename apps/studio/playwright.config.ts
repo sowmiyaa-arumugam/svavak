@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The studio's browser end-to-end test (plan §4.7, §7.3), in mock mode: Playwright starts the server, the agent and the
+// The studio's browser end-to-end test, in mock mode: Playwright starts the server, the agent and the
 // studio one after another, each with fresh tokens made here (never the .env's), and no AWS profile.
 
 import { randomBytes } from 'node:crypto'; // throwaway tokens

@@ -1,13 +1,13 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Profile facts (plan FR-03, §4.6 inputs, §6.1): what the reply model may know about the person, kept as data.
+// Profile facts: what the reply model may know about the person, kept as data.
 
 import { z } from 'zod'; // validation of stored facts before they reach a prompt
 
-export const FACT_CATEGORIES = ['likes', 'dislikes', 'people', 'routines', 'other'] as const; // plan Table 16, add_profile_fact
+export const FACT_CATEGORIES = ['likes', 'dislikes', 'people', 'routines', 'other'] as const; // add_profile_fact's categories
 export type FactCategory = (typeof FACT_CATEGORIES)[number]; // one of the above
-export const FACT_MAX_CHARS = 120; // plan §6.1: a length limit per fact
-export const FACTS_MAX = 20; // plan §6.1: at most this many facts in one prompt
+export const FACT_MAX_CHARS = 120; // a length limit per fact
+export const FACTS_MAX = 20; // at most this many facts in one prompt
 export const NO_ANGLE_BRACKETS = /^[^<>]*$/; // no "<" or ">", so no fact can close the prompt's <facts> block
 
 /** One thing known about the person. */

@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The server's question stream (plan §4.2, Table 13): GET /v1/stream over WebSocket, reconnecting with back-off.
+// The server's question stream: GET /v1/stream over WebSocket, reconnecting with back-off.
 
 import { REPLY_COUNT } from './conversation'; // the grid takes at most eight replies
 import type { Question } from './questions'; // the screen's question shape
@@ -28,7 +28,7 @@ type NativeWebSocket = new (url: string, protocols: null, options: { headers: Re
 
 const connectNative: Connect = (url, headers) => new (WebSocket as unknown as NativeWebSocket)(url, null, { headers }); // the device token as a header, never in the URL
 
-/** Plan §4.2: exponential back-off from 0.5 s to 8 s, jittered (half to all of a doubling ceiling of 1, 2, 4, 8 s). */
+/** Exponential back-off from 0.5 s to 8 s, jittered (half to all of a doubling ceiling of 1, 2, 4, 8 s). */
 export function backoffMs(attempt: number, random: number): number { // attempt 0, 1, 2 ... and a random number in [0, 1)
   const ceiling = Math.min(8000, 1000 * 2 ** attempt); // 1, 2, 4, 8, 8 ... s
   return ceiling / 2 + (random * ceiling) / 2; // equal jitter: 0.5-1 s first, at most 8 s

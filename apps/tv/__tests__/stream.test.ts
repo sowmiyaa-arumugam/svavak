@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The stream client (plan §4.2): event parsing, back-off and reconnects, with a fake socket and fake timers.
+// The stream client: event parsing, back-off and reconnects, with a fake socket and fake timers.
 
 import { backoffMs, parseEvent, StreamClient, type SocketLike, type StreamEvent } from '../src/stream'; // tested
 
@@ -52,7 +52,7 @@ describe('parseEvent', () => { // server JSON to screen events
   }); // end of the case
 }); // end of parseEvent
 
-describe('backoffMs', () => { // plan §4.2: 0.5 to 8 s, jittered
+describe('backoffMs', () => { // 0.5 to 8 s, jittered
   it('starts between 0.5 and 1 s, doubles its ceiling, and never exceeds 8 s', () => { // bounds
     expect([backoffMs(0, 0), backoffMs(0, 0.999)]).toEqual([500, expect.closeTo(999.5, 6)]); // first retry
     expect([1, 2, 3].map((a) => backoffMs(a, 0))).toEqual([1000, 2000, 4000]); // ceilings 2, 4, 8 s

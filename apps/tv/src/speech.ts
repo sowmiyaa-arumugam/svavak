@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Speech playback (plan §4.2): the server's audio (Polly's MP3, or the mock's WAV tone), played with Expo's audio module:
+// Speech playback: the server's audio (Polly's MP3, or the mock's WAV tone), played with Expo's audio module:
 // a reply's speech, and a question's spoken announcement (B9), each on a player of its own.
 
 import { createAudioPlayer } from 'expo-audio'; // Expo's audio module

@@ -10,11 +10,11 @@ from pathlib import Path  # the .env location
 
 from dotenv import dotenv_values  # parses the .env file
 
-HOST = "127.0.0.1"  # loopback only (plan Table 21)
-PORT = 8790  # the agent's port (plan Table 21)
+HOST = "127.0.0.1"  # loopback only
+PORT = 8790  # the agent's port
 MCP_URL = "http://127.0.0.1:8787/mcp"  # the server's MCP endpoint
 ENV_FILE = Path(__file__).resolve().parents[3] / ".env"  # the repository's .env: three folders up from this file
-PUBLIC_DEMO_TOKENS = ("svavak-public-demo-device-token", "svavak-public-demo-agent-token")  # .env.example's tokens (plan §4.2): public, mock mode only
+PUBLIC_DEMO_TOKENS = ("svavak-public-demo-device-token", "svavak-public-demo-agent-token")  # .env.example's tokens: public, mock mode only
 
 
 @dataclass(frozen=True)  # read-only once loaded
@@ -22,7 +22,7 @@ class Config:  # what the agent needs; AWS credentials are never part of it
     mode: str  # SVAVAK_MODE: "mock" (no AWS at all) or "live" (Bedrock)
     agent_token: str = field(repr=False)  # SVAVAK_AGENT_TOKEN for /mcp; left out of repr, so it is never printed
     aws_profile: str | None  # AWS_PROFILE: the IAM Identity Center (SSO) profile, live mode only
-    aws_region: str  # AWS_REGION: the Bedrock region (plan §8.1)
+    aws_region: str  # AWS_REGION: the Bedrock region
     model_id: str  # SVAVAK_MODEL_ID: the Bedrock model or inference profile id
 
 
@@ -48,6 +48,6 @@ def load_config(env: Mapping[str, str | None]) -> Config:  # checks the settings
         mode=mode,  # mock or live
         agent_token=token,  # the bearer token for /mcp
         aws_profile=profile,  # SSO profile name, or None
-        aws_region=env.get("AWS_REGION") or "eu-central-1",  # Frankfurt (plan §8.1)
-        model_id=env.get("SVAVAK_MODEL_ID") or "eu.amazon.nova-2-lite-v1:0",  # Nova 2 Lite, EU geo inference profile (plan §8.1)
+        aws_region=env.get("AWS_REGION") or "eu-central-1",  # Frankfurt, so processing stays in the EU
+        model_id=env.get("SVAVAK_MODEL_ID") or "eu.amazon.nova-2-lite-v1:0",  # Nova 2 Lite, EU geo inference profile
     )  # end of the settings

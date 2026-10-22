@@ -28,7 +28,7 @@ module.exports = { // read by the Expo CLI for prebuild, build and start
       ], // end of the TV plugin
       [ // native build settings
         'expo-build-properties', // sets Android SDK levels in the generated project
-        { android: { compileSdkVersion: 36, targetSdkVersion: 34, minSdkVersion: 28 } }, // the sample's levels; minSdk 28 is Fire OS 7 (plan §4.2)
+        { android: { compileSdkVersion: 36, targetSdkVersion: 34, minSdkVersion: 28 } }, // the sample's levels; minSdk 28 is Fire OS 7
       ], // end of build settings
     ], // end of plugins
   }, // end of the Expo app config

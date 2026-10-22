@@ -242,6 +242,6 @@ describe('SwitchInput', () => { // key events to presses and holds
   }); // end of the case
 
   it("waits the engine's debounce after a release", () => { // one value for both checks
-    expect(RELEASE_DEBOUNCE_MS).toBe(CONFIG.debounceMs); // 150 ms (plan Table 11)
+    expect(RELEASE_DEBOUNCE_MS).toBe(CONFIG.debounceMs); // 150 ms, the engine's debounce
   }); // end of the case
 }); // end of SwitchInput

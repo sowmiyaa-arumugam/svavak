@@ -1,10 +1,10 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Evaluation set of plan §4.6: 30 synthetic household questions and the automatic checks on their candidates. The
+// Evaluation set: 30 synthetic household questions and the automatic checks on their candidates. The
 // server tests run the checks against the mock model (evalSet.test.ts); tools/k3-eval.mjs runs them against the live one.
 
 import { dropBanned, questionKind } from '../src/domain/candidates.ts'; // the banned-term filter and the question kinds
-import { CANDIDATE_MAX_CHARS, INTENTS, REPLY_COUNT, type Candidate } from '../src/domain/model.ts'; // the §4.6 limits
+import { CANDIDATE_MAX_CHARS, INTENTS, REPLY_COUNT, type Candidate } from '../src/domain/model.ts'; // the reply limits
 
 /** One question; `fact` matches a reply that uses one of the seeded demo facts (domain/facts.ts), where one should show. */
 export interface EvalQuestion { // one entry
@@ -47,7 +47,7 @@ export const EVAL_SET: readonly EvalQuestion[] = [ // synthetic, household topic
 ]; // end of EVAL_SET
 
 /**
- * The automatic checks of plan §4.6 on a question's candidates as the TV gets them: schema (one to eight, each with
+ * The automatic checks on a question's candidates as the TV gets them: schema (one to eight, each with
  * text, a known intent, a score and a prior), length (at most 60 characters), intent coverage (a later reply always,
  * and yes and no replies for a yes/no question) and banned terms. Returns the failures; none means it passes.
  */
@@ -60,7 +60,7 @@ export function evalChecks(question: string, candidates: readonly Candidate[]): 
     else if (c.text.length > CANDIDATE_MAX_CHARS) failures.push(`length: "${c.text}"`); // too long
   } // end of the candidates
   const intents = new Set<string>(candidates.map((c) => c.intent)); // the intents offered
-  const needed = questionKind(question) === 'yesno' ? ['yes', 'no', 'later'] : ['later']; // FR-03: yes, no and later where the question allows
+  const needed = questionKind(question) === 'yesno' ? ['yes', 'no', 'later'] : ['later']; // yes, no and later where the question allows
   for (const intent of needed) if (!intents.has(intent)) failures.push(`intent: no ${intent} reply`); // missing
   const { dropped } = dropBanned(candidates); // anything the filter would remove
   if (dropped > 0) failures.push(`banned: ${dropped} candidates`); // must be none

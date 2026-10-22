@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The caregiver panel (plan §4.7): the simulated Alexa+. A typed turn goes to the sim agent's POST /agent/turn; each
+// The caregiver panel: the simulated Alexa+. A typed turn goes to the sim agent's POST /agent/turn; each
 // tool call shows as a chip while the turn runs, and the agent's final speech is shown large and spoken by the browser.
 // A help request from the TV shows as an alert in the conversation, with its time, and is spoken once.
 

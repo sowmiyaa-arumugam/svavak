@@ -47,7 +47,7 @@ const TEA: ProfileFact = { text: 'Sam prefers tea to coffee', category: 'likes' 
 const WATCH = 'What shall we watch tonight?'; // a question the cricket fact fits
 const DRINK = 'Would you like coffee or tea?'; // a question the tea fact fits
 
-describe('mockReplies with profile facts', () => { // plan FR-03: replies that use what is known about Sam
+describe('mockReplies with profile facts', () => { // replies that use what is known about Sam
   it('ranks "The cricket, please" first for a watch question with the cricket fact, and does not offer it without', () => { // cricket
     expect(mockReplies(WATCH, [CRICKET])[0]).toEqual({ text: 'The cricket, please', intent: 'choice', score: 0.4 }); // first, above every rule
     expect(mockReplies(WATCH).map((d) => d.text)).not.toContain('The cricket, please'); // not without the fact

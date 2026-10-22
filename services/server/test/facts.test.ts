@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Profile facts (plan FR-03, §6.1): which stored facts may enter a prompt, and the demo persona's facts.
+// Profile facts: which stored facts may enter a prompt, and the demo persona's facts.
 
 import { describe, expect, it } from 'vitest'; // test API
 import { DEMO_FACTS, FACT_MAX_CHARS, FACTS_MAX, promptFacts } from '../src/domain/facts.ts'; // tested

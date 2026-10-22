@@ -1,19 +1,19 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The selection engine of plan §4.1: log-space posterior, commit at theta, top-two confirm, re-phasing, debounce.
+// The clock-mode selection engine: log-space posterior, commit at theta, top-two confirm, re-phasing, debounce.
 
 import { type ClickModel, logLikelihood, normalise, offsetMs } from './model.ts'; // clock and click model
 import { phasesByRank, rankOrder } from './phases.ts'; // ranking and bit-reversal phase layout
 import { type Option, type PriorConfig, priors } from './priors.ts'; // scores to priors
 
-/** Engine parameters (plan Table 11). Times in milliseconds. */
+/** Engine parameters. Times in milliseconds. */
 export interface EngineConfig extends ClickModel, PriorConfig { // likelihood and prior parameters, plus:
   threshold: number; // theta: commit once the leading posterior reaches this
   maxClicks: number; // K_max: clicks before falling back to a top-two confirm
   debounceMs: number; // clicks closer than this to the last accepted click are ignored
 } // end of EngineConfig
 
-/** Initial values from plan Table 11; bias and noise are the defaults used until calibration (P1). */
+/** Initial design values; bias and noise are the defaults used until calibration (P1). */
 export const DEFAULT_CONFIG: EngineConfig = { // design values, not measurements
   periodMs: 2400, // T = 2.4 s
   threshold: 0.95, // theta

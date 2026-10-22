@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Phase layout of plan §4.1: phases by posterior rank, in bit-reversal order.
+// Phase layout: phases by posterior rank, in bit-reversal order.
 
 /** The r-th value of the base-2 van der Corput sequence: 0, 1/2, 1/4, 3/4, 1/8, ... */
 export function vanDerCorput(r: number): number { // r reversed as a binary fraction

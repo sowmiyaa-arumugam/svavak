@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The SvaVāk server, as the TV sees it (plan §4.2): where it is, and POST /v1/utterances and POST /v1/alerts, each with
+// The SvaVāk server, as the TV sees it: where it is, and POST /v1/utterances and POST /v1/alerts, each with
 // a timeout and one retry.
 
 import Constants from 'expo-constants'; // the app config embedded at build time
@@ -20,7 +20,7 @@ export function serverFrom(entry: { url?: unknown; token?: unknown } | undefined
   return typeof entry?.url === 'string' && typeof entry.token === 'string' && entry.token !== '' ? { url: entry.url, token: entry.token } : null; // both set
 } // end of serverFrom
 
-const TIMEOUT_MS = 4000; // plan §4.2: REST calls time out after 4 s
+const TIMEOUT_MS = 4000; // REST calls time out after 4 s
 
 /**
  * Posts a reply and returns the absolute URL of its speech, or null when the server made none. The

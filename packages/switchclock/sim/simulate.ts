@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Seeded synthetic user and simulator (plan §4.1, P0 part): drives the real engine with simulated presses.
+// Seeded synthetic user and simulator: drives the real engine with simulated presses.
 
 import { Engine, type EngineConfig } from '../src/core/engine.ts'; // the engine under simulation
 import type { Option } from '../src/core/priors.ts'; // option shape

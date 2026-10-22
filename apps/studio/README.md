@@ -2,7 +2,7 @@
 
 *Your Voice. Your Choice*
 
-One localhost page that makes the whole loop visible (plan §4.7, decision D6), for judges, testing and the video. Its
+One localhost page that makes the whole loop visible, for judges, testing and the video. Its
 virtual TV is labelled as the web version of the TV app: the real app runs on Fire OS. It uses the TV's colour tokens
 ([apps/tv/src/colors.ts](../tv/src/colors.ts)), so the two read as one product. It is laid out on a 1920 × 1080
 stage that is scaled to fit the window (see Look).

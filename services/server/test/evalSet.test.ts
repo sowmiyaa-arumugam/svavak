@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The evaluation set's automatic checks (plan §4.6) against mock output, through the real reply pipeline.
+// The evaluation set's automatic checks against mock output, through the real reply pipeline.
 
 import { describe, expect, it } from 'vitest'; // test API
 import { MemoryStore } from '../src/adapters/memoryStore.ts'; // the real store
@@ -24,7 +24,7 @@ async function candidatesFor(question: string): Promise<Candidate[]> { // ask, t
   return pushed.candidates; // as the TV gets them
 } // end of candidatesFor
 
-describe('evaluation set', () => { // plan §4.6
+describe('evaluation set', () => { // 30 synthetic questions
   it('has 30 questions of every kind, three of them with a seeded fact to show', () => { // the set itself
     expect(EVAL_SET).toHaveLength(30); // thirty
     expect(new Set(EVAL_SET.map((q) => q.text)).size).toBe(30); // all different
@@ -34,7 +34,7 @@ describe('evaluation set', () => { // plan §4.6
 
   it.each(EVAL_SET.map((q) => q.text))('mock output for "%s" is schema-valid in full', (question) => { // schema of the raw tool input
     const raw = { candidates: mockReplies(question, promptFacts(DEMO_FACTS)) }; // what MockLlm returns
-    expect(raw.candidates.length).toBeGreaterThanOrEqual(6); // 6 to 8 (plan §4.6)
+    expect(raw.candidates.length).toBeGreaterThanOrEqual(6); // 6 to 8
     expect(cleanDrafts(raw)).toHaveLength(raw.candidates.length); // none dropped by validation or de-duplication
   }); // end of the case
 

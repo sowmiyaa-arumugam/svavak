@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The system trace (plan §4.7): the server's live spans (GET /v1/trace, read with fetch and the device token) as a strip
+// The system trace: the server's live spans (GET /v1/trace, read with fetch and the device token) as a strip
 // of hops, caregiver -> agent -> MCP -> server -> Bedrock or Polly -> TV. Each hop lights up with its last duration when
 // a span for it arrives; the caregiver and agent hops come from the caregiver panel. A badge shows mock or live. A help
 // request from the TV lights TV, server and caregiver, and becomes an alert for the caregiver panel.

@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Priors of plan §4.1: pi_i proportional to max(s_i, s_floor)^(1/tau), after a fixed share per control.
+// Priors: pi_i proportional to max(s_i, s_floor)^(1/tau), after a fixed share per control.
 
 /** One selectable option. */
 export interface Option { // a reply or a control

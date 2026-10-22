@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// PollyTts (plan §4.3 speech pipeline): MP3 from Amazon Polly (neural, or standard where a region has no neural voices), cached in memory by a hash of voice and text.
+// PollyTts (the speech pipeline): MP3 from Amazon Polly (neural, or standard where a region has no neural voices), cached in memory by a hash of voice and text.
 
 import { createHash } from 'node:crypto'; // SHA-256 cache keys
 import { SynthesizeSpeechCommand, type PollyClient, type VoiceId } from '@aws-sdk/client-polly'; // Polly

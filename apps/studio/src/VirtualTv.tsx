@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The virtual TV (plan §4.7, drive mode): the TV's conversation screen in the browser, run by the TV's own state
+// The virtual TV (drive mode): the TV's conversation screen in the browser, run by the TV's own state
 // machine, scan engine, switch handling and stream client (apps/tv/src), connected to the server as the household's
 // TV. The space bar is the switch. It draws the TV's layout on the 1920 x 1080 design grid, scaled to its frame.
 

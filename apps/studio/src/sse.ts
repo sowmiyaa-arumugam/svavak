@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Server-sent events read with fetch (plan §4.7): the agent's POST /agent/turn and the server's GET /v1/trace both
+// Server-sent events read with fetch: the agent's POST /agent/turn and the server's GET /v1/trace both
 // need a request EventSource cannot make (a POST, an Authorization header), so frames are parsed here.
 
 /** One SSE frame: its event name ("message" when the frame has none) and its data. */

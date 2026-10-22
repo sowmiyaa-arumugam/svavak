@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// App root, registered by Expo's AppEntry: the conversation screen is the only screen so far (plan §4.2, P0).
+// App root, registered by Expo's AppEntry: the conversation screen is the only screen so far.
 
 import { LogBox } from 'react-native'; // dev-build warning overlay
 import { ConversationScreen } from './src/ConversationScreen'; // the screen

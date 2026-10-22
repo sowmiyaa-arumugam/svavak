@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The HTTP interface (plan §4.5): POST /agent/turn streams the turn as server-sent events to the studio's caregiver
+# The HTTP interface: POST /agent/turn streams the turn as server-sent events to the studio's caregiver
 # panel, on 127.0.0.1:8790, with Host and Origin allow-lists; and main(), the entry point.
 
 import json  # SSE data

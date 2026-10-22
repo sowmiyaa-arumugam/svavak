@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Reply pipeline post-processing (plan §4.6): validation, trimming, length cap, de-duplication, merge and priors.
+// Reply pipeline post-processing: validation, trimming, length cap, de-duplication, merge and priors.
 
 import { describe, expect, it } from 'vitest'; // test API
 import { BANNED_TERMS, cleanDrafts, DEFAULT_REPLIES, defaultCandidates, defaultsFor, dropBanned, optionCandidates, questionKind, toCandidates } from '../src/domain/candidates.ts'; // tested
@@ -53,7 +53,7 @@ describe('cleanDrafts', () => { // raw model output to drafts
   }); // end of the case
 }); // end of cleanDrafts
 
-describe('dropBanned', () => { // plan §4.6: no profanity
+describe('dropBanned', () => { // no profanity
   const draft = (text: string) => ({ text, intent: 'social' as const, score: 0.5 }); // a draft with this text
 
   it('drops drafts that contain a listed term as a whole word, in any case, and counts them', () => { // whole words only
@@ -82,7 +82,7 @@ describe('dropBanned', () => { // plan §4.6: no profanity
 }); // end of dropBanned
 
 describe('toCandidates', () => { // merge with defaults and priors
-  it('returns the eight defaults, Yes and No first, when the model gave nothing', () => { // FR-02
+  it('returns the eight defaults, Yes and No first, when the model gave nothing', () => { // basic answers at once
     const c = defaultCandidates('Shall I open the window?'); // no model output, for a yes/no question
     expect(c).toHaveLength(REPLY_COUNT); // a full grid
     expect(c.slice(0, 4).map((x) => x.text)).toEqual(['Yes, please', 'No, thanks', 'Thank you', 'Not now']); // shown at once; Thank you is no fallback
@@ -113,7 +113,7 @@ describe('toCandidates', () => { // merge with defaults and priors
     expect(c[0]!.prior).toBeCloseTo(0.9 / total, 12); // proportional to the score
   }); // end of the case
 
-  it('replaces the weakest candidate with "Not now" when no candidate has intent later', () => { // plan §4.6: a later reply is kept
+  it('replaces the weakest candidate with "Not now" when no candidate has intent later', () => { // a later reply is kept
     const model = Array.from({ length: 8 }, (_, i) => ({ text: `Reply ${i}`, intent: 'choice' as const, score: 0.9 - i / 10 })); // eight drafts, none later
     const c = toCandidates(model); // merged
     expect(c.map((x) => x.text)).toEqual([...model.slice(0, 7).map((d) => d.text), 'Not now']); // the lowest-scored draft gave way, order by score

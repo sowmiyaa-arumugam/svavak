@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Visual tokens of plan §5.3 and the 1920 x 1080 design grid of plan §5.2.
+// Visual tokens and the 1920 x 1080 design grid of the TV screens.
 
 import { Dimensions } from 'react-native'; // screen size
 

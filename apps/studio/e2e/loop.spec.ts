@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Flow S1 through the studio in mock mode (plan §4.7, FR "browser end-to-end test"): ask in the caregiver panel, press
+// Flow S1 through the studio in mock mode: ask in the caregiver panel, press
 // the virtual switch (the space bar) on the virtual TV, and hear the answer; the trace shows the MCP and TV hops.
 // Screenshots at 1080p go to test-results/b5/.
 

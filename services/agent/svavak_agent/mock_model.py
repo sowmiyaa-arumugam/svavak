@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# Mock mode (plan §4.5): a deterministic Strands model provider that maps a few caregiver phrases to the server's
+# Mock mode: a deterministic Strands model provider that maps a few caregiver phrases to the server's
 # tools, so the real Strands tool loop runs without an AWS account.
 
 import json  # tool inputs and outputs
@@ -43,7 +43,7 @@ def next_step(tool: str, ok: bool, output: dict[str, Any], fact: str = "") -> tu
     if not ok:  # refused (invalid input, unknown question, too many facts)
         return FAILED  # never guess
     if tool == "ask_question":  # asked: now wait for the answer
-        return ("get_answer", {"question_id": output["question_id"], "wait_seconds": 20})  # at most 20 s (plan §4.6)
+        return ("get_answer", {"question_id": output["question_id"], "wait_seconds": 20})  # at most 20 s, as the agent policy says
     if tool == "get_answer":  # answered, or not yet
         return f"Sam says: {sentence(output['answer_text'])}" if output["status"] == "answered" else NOT_YET  # verbatim, attributed
     if tool == "get_recent_messages":  # what Sam said lately, and any help request

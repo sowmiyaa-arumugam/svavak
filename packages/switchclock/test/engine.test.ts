@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import fc from 'fast-check'; // property-based testing
 import { DEFAULT_CONFIG, Engine, type EngineConfig } from '../src/core/engine.ts'; // unit under test
 
-const CFG: EngineConfig = { ...DEFAULT_CONFIG, noiseMs: 100 }; // Table 11 values with sigma = 100 ms
+const CFG: EngineConfig = { ...DEFAULT_CONFIG, noiseMs: 100 }; // the default values with sigma = 100 ms
 const T0 = 1000; // the injected clock's time when options are set
 const ABC = [{ id: 'a', score: 0.5 }, { id: 'b', score: 0.5 }, { id: 'c', score: 0.5 }]; // three equally likely replies
 const make = (config: EngineConfig = CFG): Engine => { // engine with options set at T0

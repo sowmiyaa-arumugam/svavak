@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// API and WebSocket contract (plan Table 13): auth, problem+json, the S1 events on the stream, utterances and trace.
+// API and WebSocket contract: auth, problem+json, the S1 events on the stream, utterances and trace.
 
 import { randomUUID } from 'node:crypto'; // ids
 import type { AddressInfo } from 'node:net'; // listening address
@@ -252,7 +252,7 @@ describe('POST /v1/utterances and GET /v1/utterances/{id}/audio', () => { // com
   }); // end of the case
 }); // end of utterances
 
-describe('POST /v1/alerts', () => { // Sam asks for help from the TV (plan Table 13: raise a help alert)
+describe('POST /v1/alerts', () => { // Sam asks for help from the TV
   const help = (http: string, headers: Record<string, string>) => fetch(`${http}/v1/alerts`, { method: 'POST', headers }); // no body: a help request has no text
 
   it('refuses a help request without the device token (401), or with the agent token (403)', async () => { // the TV's token only
@@ -299,7 +299,7 @@ describe('POST /v1/alerts', () => { // Sam asks for help from the TV (plan Table
   }); // end of the case
 }); // end of POST /v1/alerts
 
-describe('the studio in a browser (plan §4.7)', () => { // Origin checks, CORS and the WebSocket token in a subprotocol
+describe('the studio in a browser', () => { // Origin checks, CORS and the WebSocket token in a subprotocol
   const STUDIO = 'http://localhost:5173'; // the studio's origin
   const FOREIGN = 'http://evil.example'; // any other site
   const TV = 'http://10.0.2.2:8787'; // the emulator TV's origin, as React Native derives it from the URL
@@ -383,7 +383,7 @@ describe('the studio in a browser (plan §4.7)', () => { // Origin checks, CORS 
   }); // end of the case
 }); // end of the studio
 
-describe('GET /v1/trace and unknown routes', () => { // the rest of Table 13
+describe('GET /v1/trace and unknown routes', () => { // the rest of the API
   it('streams spans (hop, operation, duration, mode) as SSE, without message text', async () => { // trace
     const { http } = await start(); // server
     const res = await fetch(`${http}/v1/trace`, { headers: AUTH }); // subscribe

@@ -57,7 +57,7 @@ describe('simulator', () => { // trials through the real engine
     expect(trial.committed).toBe('c'); // reached the target
     expect(trial.presses).toBeGreaterThanOrEqual(1); // at least one press
   }); // end of the case
-  it('gives the same summary for the same seed', () => { // reproducible from a seed (FR-22)
+  it('gives the same summary for the same seed', () => { // reproducible from a seed
     const run = { config: DEFAULT_CONFIG, options: ABC, targets: ['a', 'b', 'c'], user: { ...SHARP, noiseMs: 150, spuriousRate: 0.1 }, trials: 300 }; // a noisy run
     expect(simulate({ ...run, seed: 9 })).toEqual(simulate({ ...run, seed: 9 })); // identical
   }); // end of the case

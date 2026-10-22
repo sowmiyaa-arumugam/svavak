@@ -42,7 +42,7 @@ def text(words: str) -> list[dict]:  # a model reply that speaks
     return [{"messageStart": {"role": "assistant"}}, {"contentBlockDelta": {"delta": {"text": words}}}, {"contentBlockStop": {}}, {"messageStop": {"stopReason": "end_turn"}}]  # Bedrock's stream events
 
 
-def test_live_mode_sends_the_policy_temperature_and_model_id(aws, stub):  # plan §4.5 and §4.6
+def test_live_mode_sends_the_policy_temperature_and_model_id(aws, stub):  # live-mode request settings
     stub.messages = [{"text": "Tea", "time": "2026-10-19T10:05:00Z", "kind": "reply", "question_text": "Would you like tea or coffee?"}]  # Sam's answer
     agent = AgentService(config("live", PROFILE), stub.url)  # the real BedrockModel
     requests: list[dict] = []  # what reached the stub model
@@ -56,7 +56,7 @@ def test_live_mode_sends_the_policy_temperature_and_model_id(aws, stub):  # plan
     assert agent.model.client.meta.region_name == "eu-central-1"  # AWS_REGION from the config, over the profile's region
     first = requests[0]  # the first model call
     assert first["modelId"] == "eu.amazon.nova-2-lite-v1:0"  # named explicitly, never a default
-    assert first["inferenceConfig"] == {"temperature": 0.2}  # plan §4.5
+    assert first["inferenceConfig"] == {"temperature": 0.2}  # set explicitly
     assert first["system"] == [{"text": POLICY}]  # the agent policy as the system prompt
     assert [t["toolSpec"]["name"] for t in first["toolConfig"]["tools"]] == ["ask_question", "get_answer", "get_recent_messages", "add_profile_fact"]  # the server's tools, from MCP
     assert requests[1]["messages"][-1]["content"][0]["toolResult"]["content"][0]["text"].startswith('{"messages":[{"text":"Tea"')  # the tool output reached the model
@@ -125,7 +125,7 @@ def test_every_turn_starts_without_the_earlier_ones(aws, stub):  # a fresh Agent
     assert [r["messages"] for r in requests] == [[{"role": "user", "content": [{"text": "first"}]}], [{"role": "user", "content": [{"text": "second"}]}]]  # nothing carried over
 
 
-def test_the_policy_carries_the_plan_rules():  # plan §4.6 and the agent brief
+def test_the_policy_carries_the_plan_rules():  # the agent policy and the agent brief
     for rule in ("call ask_question", "get_answer", "at most 20", "hasn't answered yet", '"Sam says: "', "word for word", "Never invent, guess", "second person", "options only when the caregiver named them", "Never make options up", "leave options out", "passwords, health records or financial data", 'When add_profile_fact succeeds, say only "Noted: "', "Sorry, that didn't work.", "at most two short sentences"):  # each rule
         assert rule in POLICY  # present
 

@@ -2,7 +2,7 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
 #
-# Pre-commit guardrail (plan §6.3, layer L3). Blocks the commit when the staged changes contain
+# Pre-commit guardrail, the layer after .gitignore. Blocks the commit when the staged changes contain
 # (a) a secret found by gitleaks, or a UTF-16 file that gitleaks cannot scan,
 # (b) a .env file other than .env.example (any letter case),
 # (c) a source file (code, Dockerfile or YAML) without the licence header in its first 10 lines, or
@@ -25,7 +25,7 @@ while IFS= read -r -d '' path; do  # one staged path per iteration
       failed=1 ;;  # record the failure and keep checking
   esac  # end of the .env check
 
-  # (d) large files (plan §6.3 L3): measured in the index, which holds what will be committed
+  # (d) large files: measured in the index, which holds what will be committed
   size=$(git cat-file -s ":$path" 2>/dev/null || echo 0)  # staged blob size in bytes
   if [ "$name" != yarn.lock ] && [ "$size" -gt 1048576 ]; then  # over 1 MiB, and not the lockfile
     echo "pre-commit: file over 1 MiB ($size bytes; limit 1048576): $path" >&2  # name the file and its size

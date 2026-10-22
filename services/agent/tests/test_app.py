@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The HTTP interface (plan §4.5): POST /agent/turn as SSE, the Host and Origin allow-lists, CORS for the studio only,
+# The HTTP interface: POST /agent/turn as SSE, the Host and Origin allow-lists, CORS for the studio only,
 # input checks, and logs without caregiver text or answers.
 
 import threading  # a safety release
@@ -94,7 +94,7 @@ def test_other_methods_and_paths_are_refused(client):  # one route, one method
     assert client.post("/other", json={"text": "hello"}).status_code == 404  # no other route
 
 
-def test_logs_never_contain_caregiver_text_or_answers(client, stub, capsys, caplog):  # privacy (plan §4.3, observability)
+def test_logs_never_contain_caregiver_text_or_answers(client, stub, capsys, caplog):  # privacy: logs carry no message text
     stub.answer = "Pistachio ice cream"  # a distinctive answer
     caplog.set_level("WARNING")  # what the service shows by default
     events = client.post("/agent/turn", json={"text": "Ask Sam if he wants pistachio ice cream or lemon sorbet"}).text  # a distinctive question

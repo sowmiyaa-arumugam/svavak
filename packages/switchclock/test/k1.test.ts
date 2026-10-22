@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import { DEFAULT_CONFIG, type EngineConfig } from '../src/core/engine.ts'; // engine defaults
 import { simulate } from '../sim/simulate.ts'; // seeded simulator
 
-// Gate K1 (plan §7.3, §10.4): engine and user share mu = 0, sigma = 100 ms, eps = 0.05; theta = 0.95, T = 2.4 s
+// Gate K1 (error at most 2%): engine and user share mu = 0, sigma = 100 ms, eps = 0.05; theta = 0.95, T = 2.4 s
 const CONFIG: EngineConfig = { ...DEFAULT_CONFIG, biasMs: 0, noiseMs: 100, spuriousRate: 0.05, threshold: 0.95, periodMs: 2400 }; // engine side
 const USER = { biasMs: 0, noiseMs: 100, spuriousRate: 0.05 }; // synthetic-user side, matching the engine
 const REPLIES = Array.from({ length: 8 }, (_, i) => ({ id: `reply${i}`, score: 0.5 })); // 8 replies with uniform priors

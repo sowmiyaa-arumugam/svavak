@@ -1,11 +1,11 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// SseTraceSink (plan §4.3): spans in an in-memory ring buffer (last 500), fanned out to GET /v1/trace subscribers.
+// SseTraceSink: spans in an in-memory ring buffer (last 500), fanned out to GET /v1/trace subscribers.
 
 import type { Span } from '../domain/model.ts'; // the span shape
 import type { TracePort } from '../ports/index.ts'; // the port
 
-const CAPACITY = 500; // plan Table 14: in memory only, the last 500
+const CAPACITY = 500; // in memory only, the last 500
 
 /** Keeps recent spans and notifies subscribers of each new one. */
 export class SseTraceSink implements TracePort { // trace adapter

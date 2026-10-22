@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// MemoryStore (plan §4.3): the store port in process memory. SQLite is cut for now; nothing survives a restart.
+// MemoryStore: the store port in process memory. SQLite is cut for now; nothing survives a restart.
 
 import type { ProfileFact } from '../domain/facts.ts'; // profile facts
 import type { HelpRequest, Question, Utterance } from '../domain/model.ts'; // the model

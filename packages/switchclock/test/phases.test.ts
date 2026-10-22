@@ -8,7 +8,7 @@ import { phasesByRank, vanDerCorput } from '../src/core/phases.ts'; // units und
 const circular = (a: number, b: number): number => Math.min(Math.abs(a - b), 1 - Math.abs(a - b)); // distance on the dial, in turns
 
 describe('vanDerCorput', () => { // bit-reversal order
-  it('gives 0, 1/2, 1/4, 3/4, 1/8, 5/8, 3/8, 7/8', () => { // plan §4.1 sequence
+  it('gives 0, 1/2, 1/4, 3/4, 1/8, 5/8, 3/8, 7/8', () => { // the bit-reversal sequence
     expect([0, 1, 2, 3, 4, 5, 6, 7].map(vanDerCorput)).toEqual([0, 0.5, 0.25, 0.75, 0.125, 0.625, 0.375, 0.875]); // first eight ranks
   }); // end of the case
 }); // end of vanDerCorput

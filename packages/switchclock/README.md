@@ -1,6 +1,6 @@
 # switchclock
 
-A Bayesian single-switch selection engine (plan §4.1), with a seeded synthetic user and simulator.
+A Bayesian single-switch selection engine, with a seeded synthetic user and simulator.
 
 Each option has a small clock, and every clock turns with the same period T. To choose an option, the user
 presses the one switch when that option's hand points to noon. Each press updates a posterior over the options,

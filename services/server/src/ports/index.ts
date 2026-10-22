@@ -1,11 +1,11 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Ports of plan §4.3 (Table 12), cut to the S1 flow. Interfaces only; adapters implement them.
+// Ports, cut to the S1 flow. Interfaces only; adapters implement them.
 
 import type { ProfileFact } from '../domain/facts.ts'; // profile facts
 import type { HelpRequest, Question, Span, StreamEvent, Utterance } from '../domain/model.ts'; // the domain model
 
-/** What the reply model sees (plan §4.6 inputs). */
+/** What the reply model sees. */
 export interface SuggestRequest { // input to LlmPort.suggest
   question: string; // the question text
   askedBy: string; // who asked

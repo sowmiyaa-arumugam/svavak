@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// MockTts (plan §4.3): a short WAV tone made in code for every reply, so the TV's playback path runs without AWS.
+// MockTts: a short WAV tone made in code for every reply, so the TV's playback path runs without AWS.
 
 import type { TtsPort } from '../ports/index.ts'; // the port
 

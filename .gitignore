@@ -1,4 +1,4 @@
-# Ignore rules: guardrail layer L2 of plan §6.3. The pre-commit hook (L3) backs these up.
+# Ignore rules: the first guardrail against committing secrets. The pre-commit hook (.githooks) backs these up.
 
 # Private planning documents: never committed
 docs/private/

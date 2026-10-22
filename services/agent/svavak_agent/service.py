@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The agent's core (plan §4.5, §4.6): the MCP sessions, the model for the mode, and one Strands agent and MCP session per
+# The agent's core: the MCP sessions, the model for the mode, and one Strands agent and MCP session per
 # caregiver turn, turned into the events the caregiver panel shows. Logs carry no caregiver text and no answers.
 
 import asyncio  # waits for the session's blocking calls without blocking the event loop
@@ -25,7 +25,7 @@ from .mock_model import ASKED_BY, NOT_YET, MockModel, next_step  # mock mode, an
 
 logging.getLogger("strands").setLevel(logging.CRITICAL)  # off: its lines can quote model-written tool input or tool names; the service reports failures itself
 
-POLICY = " ".join((  # the system prompt: plan §4.6's agent policy
+POLICY = " ".join((  # the system prompt: the agent policy
     "You are a simulated Alexa+ assistant for a caregiver.",  # the role
     "Sam answers questions on a TV by pressing a single switch; you can only reach Sam through your tools.",  # who Sam is
     f'To ask Sam something, call ask_question with asked_by "{ASKED_BY}", then call get_answer with its question_id and a wait_seconds of at most 20.',  # ask, then wait
@@ -37,10 +37,10 @@ POLICY = " ".join((  # the system prompt: plan §4.6's agent policy
     "To say what Sam said recently, call get_recent_messages; to remember something about Sam, call add_profile_fact.",  # the other tools
     'When add_profile_fact succeeds, say only "Noted: " followed by the fact, such as "Noted: Sam loves gardening.", and nothing else.',  # a live run's model added two sentences of its own
     "If a tool fails, say \"Sorry, that didn't work.\"",  # never "Noted" for a fact that was not stored; mock mode says the same
-    "Never ask for passwords, health records or financial data.",  # plan §4.4's safety rule
+    "Never ask for passwords, health records or financial data.",  # the MCP tools' safety rule
     "Every reply is at most two short sentences, as a voice assistant speaks: no explanations or offers of more help.",  # spoken aloud
 ))  # end of the policy
-TEMPERATURE = 0.2  # plan §4.5: set explicitly, never a default
+TEMPERATURE = 0.2  # set explicitly, never a default
 THINKING = re.compile(r"<thinking>.*?</thinking>", re.DOTALL)  # Nova's reasoning in its text blocks, across lines: never spoken
 ATTRIBUTION = re.compile(r"\bSam (?:says|said)\s*:", re.IGNORECASE)  # the reporting form, "Sam says:" or "Sam said:"
 SAM_TOOLS = ("get_answer", "get_recent_messages")  # the tools whose results carry Sam's words

@@ -101,7 +101,7 @@ describe('scan simulator', () => { // trials through the real engine
     expect(errors).toBeGreaterThan(0); // the error count is exercised
     expect(summary).toEqual({ trials: 200, errorRate: errors / 200, meanClicks: presses / 200, meanSeconds: ms / 200 / 1000 }); // exact
   }); // end of the case
-  it('gives the same summary for the same seed', () => { // reproducible from a seed (FR-22)
+  it('gives the same summary for the same seed', () => { // reproducible from a seed
     const user = { biasMs: 150, noiseMs: 150, spuriousRate: 0.1 }; // a noisy user
     const run = { config: CFG, options: FIVE, targetWeights: [1, 1, 1, 1, 1], user, trials: 300 }; // a short run
     expect(simulateScan({ ...run, seed: 9 })).toEqual(simulateScan({ ...run, seed: 9 })); // identical

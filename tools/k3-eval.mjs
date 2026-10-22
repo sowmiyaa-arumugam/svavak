@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Gate K3 and the evaluation set's live run (plan §4.6, §10): asks the 30 evaluation questions on a running server,
+// Gate K3 and the evaluation set's live run: asks the 30 evaluation questions on a running server,
 // one at a time, and takes from the server's trace the time from each ask to its question.candidates. Writes
 // test-results/k3/eval.md (each question's top four replies, the automatic checks, the time) and eval.json.
 // Usage, from the repository root, with the server running (SVAVAK_MODE=live for the gate): node tools/k3-eval.mjs
@@ -64,8 +64,8 @@ writeFileSync(`${OUT}/eval.md`, [ // for the reader
   `- Model mode (server→llm spans): ${modes}`, // live or mock
   `- Ask to question.candidates on the server (trace): p50 ${ms(p50)}, p95 ${ms(p95)}, nearest rank over ${rows.length}; a question without candidates counts as slowest`, // the gate's numbers
   `- Gate K3 (p50 at most ${GATE_MS} ms): ${pass ? 'PASS' : 'FAIL'}`, // the verdict
-  `- Automatic checks (schema, length, intent coverage, banned terms): ${checked} of ${rows.length} pass`, // plan §4.6
-  `- Seeded fact in the top four: ${facts.filter((r) => r.fact).length} of ${facts.length}`, // FR-03
+  `- Automatic checks (schema, length, intent coverage, banned terms): ${checked} of ${rows.length} pass`, // the automatic checks
+  `- Seeded fact in the top four: ${facts.filter((r) => r.fact).length} of ${facts.length}`, // a seeded fact shows in the replies
   '- Target: an acceptable reply in the top four for 25 of 30. Fill in the last column.', '', // the human judgement
   '| # | Question | Top four replies (intent) | ms | From model | Checks | Fact | Acceptable? |', // header
   '| --- | --- | --- | --- | --- | --- | --- | --- |', // separator

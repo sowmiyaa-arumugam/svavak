@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2) in scan mode: Waiting (while a server question's announcement
+// The conversation screen's state machine in scan mode: Waiting (while a server question's announcement
 // plays and its replies are found), Asking, Saying (2 s to cancel), Help (with its help request), and Idle (where a
 // short press only shows how to ask for help).
 
@@ -12,7 +12,7 @@ export const CONTROLS = ['Something else', 'Help'] as const; // labels, in scan 
 
 export const REPLY_COUNT = 8; // most replies per question: the 2 x 4 grid; a server question may have fewer
 export const SAY_MS = 2000; // a committed reply fills the screen this long; a press in that time cancels it
-export const BUDGET_MS = 3500; // the server's budget for the model's replies (plan §4.3): a server question's scan starts by then
+export const BUDGET_MS = 3500; // the server's budget for the model's replies: a server question's scan starts by then
 
 /** Mock AI-like reply scores by rank: the fixture lists each question's replies best guess first. */
 export const MOCK_SCORES = [0.35, 0.2, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04] as const; // as in gate K1-scan

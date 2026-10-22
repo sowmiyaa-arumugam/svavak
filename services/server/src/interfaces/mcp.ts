@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The MCP server of plan §4.4 on /mcp: Streamable HTTP sessions (Table 15) and the caregiver tools (Table 16).
+// The MCP server on /mcp: Streamable HTTP sessions and the caregiver tools.
 
 import { randomUUID } from 'node:crypto'; // session ids
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'; // tool registration and protocol handling
@@ -26,7 +26,7 @@ export interface McpOptions { // wired by http.ts
   idleMs: number; // a session ends after this long without requests
 } // end of McpOptions
 
-const NEVER = 'Never ask for or store passwords, health records or financial data.'; // plan §4.4: the agents' safety rule
+const NEVER = 'Never ask for or store passwords, health records or financial data.'; // the agents' safety rule
 const TOOLS = new Set(['ask_question', 'get_answer', 'get_recent_messages', 'add_profile_fact']); // the names a span may carry; anything else is "unknown"
 
 /** The /mcp middleware chain: Host, Origin, token, JSON body, then the session's transport. */
@@ -41,7 +41,7 @@ export function mcpHandlers(o: McpOptions): RequestHandler[] { // for app.all('/
     idle.set(sid, timer); // the current wait
   }; // end of touch
 
-  const origin: RequestHandler = (req, res, next) => { // plan §6.1: a page on another origin must not drive /mcp
+  const origin: RequestHandler = (req, res, next) => { // a page on another origin must not drive /mcp
     const value = req.get('origin'); // browsers send it; other clients usually do not
     if (value === undefined || o.allowedOrigins.includes(value)) return next(); // allowed
     rpcError(res, 403, -32000, 'Forbidden: Origin not allowed'); // refused
@@ -71,7 +71,7 @@ export function mcpHandlers(o: McpOptions): RequestHandler[] { // for app.all('/
   return [hostHeaderValidation(o.allowedHosts), origin, o.authorize, express.json({ limit: '32kb' }), handle]; // in this order
 } // end of mcpHandlers
 
-/** An McpServer with the four tools of Table 16 (P0, plus add_profile_fact). */
+/** An McpServer with the four caregiver tools (P0, plus add_profile_fact). */
 function toolServer(o: McpOptions): McpServer { // one per session
   const server = new McpServer({ name: 'svavak', title: 'SvaVāk', version: '0.1.0' }); // an ASCII identifier, the product's name as people read it, and the server package's version
 
@@ -90,13 +90,13 @@ function toolServer(o: McpOptions): McpServer { // one per session
   server.registerTool('ask_question', { // put a question on the TV
     title: 'Ask a question on the TV', // display name
     description: `Shows a short question on the TV of the person who answers with a single switch. Give up to ${OPTIONS_MAX} short options when the answer is a choice; "Not now" and "Not sure" are added. A new question replaces any unanswered one. ${NEVER} Then call get_answer with the question_id.`, // for the agent
-    inputSchema: { // plan Table 16
+    inputSchema: { // the tool's arguments
       question: z.string().trim().min(1).max(QUESTION_MAX_CHARS).describe(`The question, at most ${QUESTION_MAX_CHARS} characters`), // the text
       options: z.array(z.string().trim().min(1).max(OPTION_MAX_CHARS)).min(1).max(OPTIONS_MAX).optional().describe(`Up to ${OPTIONS_MAX} answers to choose from, each at most ${OPTION_MAX_CHARS} characters`), // optional choices
       urgency: z.enum(URGENCIES).default('normal').describe('normal or high'), // how urgent
       asked_by: z.string().trim().min(1).max(ASKED_BY_MAX_CHARS).describe('Who is asking, shown as "<asked_by> asks"'), // the asker
     }, // end of the inputs
-    annotations: { readOnlyHint: false, idempotentHint: false }, // Table 16: not read-only, not idempotent
+    annotations: { readOnlyHint: false, idempotentHint: false }, // not read-only, not idempotent
   }, (args) => run('ask_question', async () => { // the call
     const { question, delivered } = await o.useCases.askQuestion(args.question, args.asked_by, { options: args.options, urgency: args.urgency }); // the existing ask path, with its announcement
     return { question_id: question.id, delivered }; // delivered: a TV was connected
@@ -105,31 +105,31 @@ function toolServer(o: McpOptions): McpServer { // one per session
   server.registerTool('get_answer', { // the answer to a question
     title: 'Get the answer', // display name
     description: 'Waits for or fetches the answer to a question from ask_question. Waits up to wait_seconds (0 to 25) and returns as soon as it is answered. status is pending, answered or expired (a newer question replaced it). Report answer_text word for word as the person\'s own answer.', // for the agent
-    inputSchema: { // plan Table 16
+    inputSchema: { // the tool's arguments
       question_id: z.string().min(1).max(64).describe('The question_id from ask_question'), // which question
       wait_seconds: z.number().int().min(0).max(25).default(0).describe('How long to wait for the answer, 0 to 25 whole seconds'), // the long-poll; whole seconds, so the timer always gets whole milliseconds
     }, // end of the inputs
-    annotations: { readOnlyHint: true }, // Table 16: read-only
+    annotations: { readOnlyHint: true }, // read-only
   }, (args, extra) => run('get_answer', () => o.useCases.getAnswer(args.question_id, args.wait_seconds * 1000, extra.signal))); // ends early when the call is cancelled
 
   server.registerTool('get_recent_messages', { // what was said lately
     title: 'Get recent messages', // display name
     description: 'Lists what the person said recently, oldest first: text, time, kind (reply or spontaneous) and the question it answered, if any. A message of kind help, with no text, is the time the person asked for help on the TV. Optionally only messages after since, and at most limit (1 to 20) of them.', // for the agent
-    inputSchema: { // plan Table 16
+    inputSchema: { // the tool's arguments
       since: z.iso.datetime({ offset: true }).optional().describe('Only messages after this time (ISO 8601)'), // optional filter
       limit: z.number().int().min(1).max(20).default(20).describe('At most this many of the latest messages, 1 to 20'), // optional cap
     }, // end of the inputs
-    annotations: { readOnlyHint: true }, // Table 16: read-only
+    annotations: { readOnlyHint: true }, // read-only
   }, (args) => run('get_recent_messages', () => ({ messages: o.useCases.recentMessages(args.since ?? null, args.limit) }))); // the list
 
   server.registerTool('add_profile_fact', { // context for the reply suggestions
     title: 'Add a profile fact', // display name
     description: `Remembers a fact about the person that helps suggest replies, such as "Sam prefers tea to coffee". At most ${FACT_MAX_CHARS} characters, without < or >; at most ${FACTS_MAX} facts. ${NEVER}`, // for the agent
-    inputSchema: { // plan Table 16, with the promptFacts limits
+    inputSchema: { // the tool's arguments, with the promptFacts limits
       fact: z.string().trim().min(1).max(FACT_MAX_CHARS).regex(NO_ANGLE_BRACKETS, 'must not contain < or >').describe(`The fact, at most ${FACT_MAX_CHARS} characters`), // the text
       category: z.enum(FACT_CATEGORIES).describe('likes, dislikes, people, routines or other'), // what kind
     }, // end of the inputs
-  }, (args) => run('add_profile_fact', () => ({ fact_id: o.useCases.addProfileFact({ text: args.fact, category: args.category }) }))); // Table 16 gives it no hints
+  }, (args) => run('add_profile_fact', () => ({ fact_id: o.useCases.addProfileFact({ text: args.fact, category: args.category }) }))); // no hints
 
   return server; // ready to connect
 } // end of toolServer

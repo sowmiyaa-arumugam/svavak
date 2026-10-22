@@ -1,7 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Use-cases of plan §4.3 for flow S1: AskQuestion (with AnnounceQuestion, B9), SuggestReplies, CommitUtterance and
-// SynthesizeSpeech, plus those behind the MCP tools of plan §4.4: GetAnswer, GetRecentMessages and AddProfileFact, and
+// Use-cases for flow S1: AskQuestion (with AnnounceQuestion, B9), SuggestReplies, CommitUtterance and
+// SynthesizeSpeech, plus those behind the MCP tools: GetAnswer, GetRecentMessages and AddProfileFact, and
 // RequestHelp for flow S3.
 
 import { EventEmitter, once } from 'node:events'; // wakes a waiting get_answer
@@ -40,7 +40,7 @@ export interface CommitResult { // what the REST layer returns
   hasAudio: boolean; // whether GET /v1/utterances/{id}/audio has audio
 } // end of CommitResult
 
-/** What get_answer returns (plan Table 16). */
+/** What get_answer returns. */
 export interface Answer { // the answer, or why there is none
   status: Question['status']; // pending, answered or expired
   answer_text: string | null; // what Sam said, once answered
@@ -48,7 +48,7 @@ export interface Answer { // the answer, or why there is none
   clicks: number | null; // presses that made the selection
 } // end of Answer
 
-/** One item of get_recent_messages (plan Table 16). */
+/** One item of get_recent_messages. */
 export interface Message { // something Sam said, or that Sam asked for help
   text: string | null; // the words; null for a help request
   time: string; // when, ISO 8601 UTC
@@ -62,7 +62,7 @@ export class NotFoundError extends Error {} // mapped to 404 by the REST layer, 
 /** The household already has FACTS_MAX facts. */
 export class FactLimitError extends Error {} // mapped to a tool error by MCP
 
-const TURNS = 6; // plan §4.6: up to six recent turns
+const TURNS = 6; // up to six recent turns go to the model
 const REPLAY_MS = 120_000; // a TV that connects within 2 minutes of a question still gets it; an older one is stale
 
 /** The use-cases, sharing one set of ports. */
@@ -97,7 +97,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
       created_at: iso(), // now
       answered_utterance_id: null, // no answer yet
       announcement_url: null, // made below
-      candidates: extra.options ? optionCandidates(extra.options) : defaultCandidates(text), // plan §4.3 step 1: replies immediately
+      candidates: extra.options ? optionCandidates(extra.options) : defaultCandidates(text), // default replies at once
     }; // end of the question
     deps.store.saveQuestion(asked); // persist: a newer question expires it from now on
     announcing.add(asked.id); // not on any TV yet, so not replayed to one
@@ -130,8 +130,8 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     if (deps.llm.live !== null && !live) deps.log('cap.reached', { cap: 'llm_calls' }); // fell back to mock
     const llm = live ? deps.llm.live! : deps.llm.mock; // the adapter for this call
     const started = deps.clock(); // for the span
-    const signal = AbortSignal.timeout(deps.llm.budgetMs); // plan §4.3: 3.5 s budget
-    const request = { question: question.text, askedBy: question.asked_by, recentTurns, localTime: hhmm(started), facts: deps.store.profileFacts(DEMO_HOUSEHOLD) }; // §4.6 inputs
+    const signal = AbortSignal.timeout(deps.llm.budgetMs); // the 3.5 s budget
+    const request = { question: question.text, askedBy: question.asked_by, recentTurns, localTime: hhmm(started), facts: deps.store.profileFacts(DEMO_HOUSEHOLD) }; // the model's inputs
     let outcome = 'suggest'; // span operation; a suffix marks failures
     let dropped = 0; // candidates the banned-term filter removed
     let drafts: Draft[] = []; // what may reach the TV
@@ -156,7 +156,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
   } // end of suggestReplies
 
   /** SynthesizeSpeech: MP3 from the live voice, or the mock's WAV tone in mock mode or past today's cap; null on failure. Never throws. */
-  async function synthesizeSpeech(text: string): Promise<Uint8Array | null> { // plan §4.3 speech pipeline
+  async function synthesizeSpeech(text: string): Promise<Uint8Array | null> { // the speech pipeline
     const live = deps.tts.live !== null && deps.tts.cap.take(text.length); // characters count against the daily cap
     if (deps.tts.live !== null && !live) deps.log('cap.reached', { cap: 'tts_chars' }); // fell back to mock
     const tts = live ? deps.tts.live! : deps.tts.mock; // the adapter for this call
@@ -215,7 +215,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     if (question === undefined) throw new NotFoundError('question not found'); // an id that was never issued
     const id = deps.newId(); // random id, known before the speech so the question can name it
     if (question?.status === 'pending') deps.store.saveQuestion({ ...question, status: 'answered', answered_utterance_id: id }); // answered at once, so a TV that connects during synthesis is not sent it again
-    const audio = await synthesizeSpeech(input.text); // speech on commit (plan §3.3)
+    const audio = await synthesizeSpeech(input.text); // speech on commit
     const utterance: Utterance = { // the record
       id, // random id
       text: input.text, // the words
@@ -269,7 +269,7 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
 
   /** AddProfileFact: a fact for the household's later questions; refused once it has FACTS_MAX. Returns its id. */
   function addProfileFact(fact: ProfileFact): string { // add_profile_fact
-    if (deps.store.profileFacts(DEMO_HOUSEHOLD).length >= FACTS_MAX) throw new FactLimitError(`the profile already has ${FACTS_MAX} facts`); // plan §6.1 limit
+    if (deps.store.profileFacts(DEMO_HOUSEHOLD).length >= FACTS_MAX) throw new FactLimitError(`the profile already has ${FACTS_MAX} facts`); // the fact limit
     const id = deps.newId(); // random id
     deps.store.addProfileFact(DEMO_HOUSEHOLD, { ...fact, id }); // SuggestReplies reads it for the next question
     deps.log('fact.added', { fact_id: id, category: fact.category }); // never the text

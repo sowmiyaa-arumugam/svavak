@@ -1,6 +1,6 @@
 # Copyright 2026 Sowmiya Arumugam
 # SPDX-License-Identifier: Apache-2.0
-# The SvaVāk sim agent (plan §4.5): a Strands agent over the server's MCP tools, managed with uv.
+# The SvaVāk sim agent: a Strands agent over the server's MCP tools, managed with uv.
 
 [project]  # package metadata
 name = "svavak-agent"  # the service's name
@@ -8,7 +8,7 @@ version = "0.1.0"  # first version
 description = "SvaVāk sim agent: a Strands agent over the server's MCP tools, streaming its turns over SSE"  # what it is
 license = "Apache-2.0"  # SPDX licence expression
 authors = [{ name = "Sowmiya Arumugam" }]  # the author
-requires-python = "==3.12.*"  # Python 3.12, as in the agent's Compose image (plan Table 21)
+requires-python = "==3.12.*"  # Python 3.12, the version planned for the agent's container image
 dependencies = [  # exact pins
   "strands-agents==1.61.1",  # the agent loop, its MCP client and the Bedrock model
   "mcp==1.30.0",  # MCP SDK: protocol 2025-11-25, as the server; 2.x drops the initialize handshake and sessions

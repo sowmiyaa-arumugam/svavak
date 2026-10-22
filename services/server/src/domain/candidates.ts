@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Reply candidates (plan §4.3 reply pipeline, §4.6 post-processing): defaults, validation, merge and priors.
+// Reply candidates (the reply pipeline and its post-processing): defaults, validation, merge and priors.
 
 import { priors } from 'switchclock'; // the engine's prior formula, so server and TV agree on it
 import { z } from 'zod'; // schema validation of the model's output
@@ -14,14 +14,14 @@ export interface Draft { // one proposed reply
 } // end of Draft
 
 /**
- * Shown the instant a yes/no question arrives (FR-02: Yes, No and Not now at once), and used to fill the model's list
+ * Shown the instant a yes/no question arrives (Yes, No and Not now at once), and used to fill the model's list
  * to 8. A choice or open question gets its own four instead (CHOICE_OR_OPEN, through defaultsFor).
  */
 export const DEFAULT_REPLIES: readonly Draft[] = [ // design values, best guess first
   { text: 'Yes, please', intent: 'yes', score: 0.3 }, // yes
   { text: 'No, thanks', intent: 'no', score: 0.25 }, // no
   { text: 'Not now', intent: 'later', score: 0.12 }, // later
-  { text: 'Not sure', intent: 'clarify', score: 0.1 }, // plan §4.6: always one "not sure"
+  { text: 'Not sure', intent: 'clarify', score: 0.1 }, // always one "not sure"
   { text: 'Ask me later', intent: 'later', score: 0.08 }, // and one "ask me later"
   { text: 'Tell me more', intent: 'clarify', score: 0.06 }, // ask for detail
   { text: 'Thank you', intent: 'social', score: 0.05 }, // politeness
@@ -118,17 +118,17 @@ function weakest(picked: readonly Draft[], basics: readonly BasicAnswer[]): numb
   return picked.reduce((w, c, i) => (keep.includes(c) || (w >= 0 && c.score > picked[w]!.score) ? w : i), -1); // the lowest score of the rest
 } // end of weakest
 
-/** Plan §4.6 rule "no profanity": the one list of words a candidate may not contain. */
+/** The "no profanity" rule: the one list of words a candidate may not contain. */
 export const BANNED_TERMS: readonly string[] = ['bastard', 'bitch', 'bollocks', 'crap', 'damn', 'fuck', 'fucking', 'piss', 'shit', 'wanker']; // whole words, any case
 
 /** The engine's scan defaults for priors; the TV adds the controls' shares itself. */
 const PRIOR_CONFIG = { priorFloor: 0.02, temperature: 1, controlShare: 0 }; // s_floor, tau, no controls here
 
-const outputSchema = z.object({ candidates: z.array(z.unknown()) }); // the tool call's top level (plan §4.6)
+const outputSchema = z.object({ candidates: z.array(z.unknown()) }); // the tool call's top level
 const draftSchema = z.object({ text: z.string(), intent: z.enum(INTENTS), score: z.number().min(0).max(1) }); // one candidate
 
 /**
- * Plan §4.6 post-processing of the model's raw output: schema validation (an invalid candidate is dropped, not the
+ * Post-processing of the model's raw output: schema validation (an invalid candidate is dropped, not the
  * whole list), whitespace trimming, no closing full stop, a 60-character cap and case-insensitive de-duplication that
  * keeps the best score.
  * Returns the surviving drafts, best score first; an empty list when nothing is usable.
@@ -149,7 +149,7 @@ export function cleanDrafts(raw: unknown): Draft[] { // raw tool input to clean 
 } // end of cleanDrafts
 
 /**
- * Plan §4.6: drops every draft that contains a listed term as a whole word, in any case, or one of its simple variants
+ * Drops every draft that contains a listed term as a whole word, in any case, or one of its simple variants
  * (-s, -es, -ed, -ing, -er, the last three also after a doubled last letter). Returns the rest, in order, and how many went.
  */
 export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = BANNED_TERMS): { kept: Draft[]; dropped: number } { // the profanity filter
@@ -160,9 +160,9 @@ export function dropBanned(drafts: readonly Draft[], terms: readonly string[] = 
 } // end of dropBanned
 
 /**
- * Plan §4.3 step 4: the drafts (up to 8) filled up with the given defaults they do not already contain; a basic answer
+ * The merge: the drafts (up to 8) filled up with the given defaults they do not already contain; a basic answer
  * of the question (basicAnswers) that no reply gives is added as a short default, in place of the weakest other reply
- * when the list is full; without a later reply the weakest that is not a basic answer gives way to one (plan §4.6);
+ * when the list is full; without a later reply the weakest that is not a basic answer gives way to one;
  * then all of them (at most eight) ordered best guess first, except that every fallback (a later or clarify reply)
  * comes after every substantive one, and that the first four hold the best reply for each basic answer: one missing
  * there takes the place of the lowest-ranked of the four, which moves down. Priors come from the scores. The drafts

@@ -4,9 +4,9 @@
 
 export const HOST = '127.0.0.1'; // loopback only; the Android emulator reaches it as 10.0.2.2
 export const PORT = 8787; // the server's port
-export const STUDIO_ORIGIN = 'http://localhost:5173'; // the studio (plan §4.7): the browser origin /v1/trace and /v1/stream accept
+export const STUDIO_ORIGIN = 'http://localhost:5173'; // the studio: the browser origin /v1/trace and /v1/stream accept
 export const TV_ORIGIN = `http://10.0.2.2:${PORT}`; // the emulator TV: React Native's Android WebSocket sends the URL's own origin
-const PUBLIC_DEMO_TOKENS = ['svavak-public-demo-device-token', 'svavak-public-demo-agent-token']; // .env.example's tokens (plan §4.2): public, mock mode only
+const PUBLIC_DEMO_TOKENS = ['svavak-public-demo-device-token', 'svavak-public-demo-agent-token']; // .env.example's tokens: public, mock mode only
 
 /** Validated settings. AWS credentials are never part of it: the SDK's default chain resolves the SSO profile. */
 export interface Config { // what compose.ts needs
@@ -16,7 +16,7 @@ export interface Config { // what compose.ts needs
   mcpAllowedHosts: string[]; // SVAVAK_MCP_ALLOWED_HOSTS: Host names /mcp accepts (DNS-rebinding protection)
   mcpAllowedOrigins: string[]; // SVAVAK_MCP_ALLOWED_ORIGINS: browser origins /mcp accepts; requests without an Origin are allowed
   awsProfile: string | undefined; // AWS_PROFILE: the IAM Identity Center (SSO) profile, used in live mode only
-  awsRegion: string; // AWS_REGION: the Bedrock region (plan §8.1), and Polly's unless SVAVAK_POLLY_REGION is set
+  awsRegion: string; // AWS_REGION: the Bedrock region, and Polly's unless SVAVAK_POLLY_REGION is set
   modelId: string; // SVAVAK_MODEL_ID: the Bedrock model or inference profile id
   voice: string; // SVAVAK_VOICE: the Polly voice
   pollyRegion: string; // SVAVAK_POLLY_REGION: Polly's region, AWS_REGION by default
@@ -35,7 +35,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config { //
   if (mode === 'live' && (PUBLIC_DEMO_TOKENS.includes(deviceToken) || PUBLIC_DEMO_TOKENS.includes(agentToken))) throw new Error('SVAVAK_MODE=live refuses the public demo tokens from .env.example: set your own SVAVAK_DEVICE_TOKEN and SVAVAK_AGENT_TOKEN'); // anyone can read them
   const awsProfile = env.AWS_PROFILE || undefined; // empty counts as unset
   if (mode === 'live' && !awsProfile) throw new Error('SVAVAK_MODE=live needs AWS_PROFILE, an IAM Identity Center (SSO) profile'); // never access keys
-  const awsRegion = env.AWS_REGION || 'eu-central-1'; // Frankfurt (plan §8.1)
+  const awsRegion = env.AWS_REGION || 'eu-central-1'; // Frankfurt, so processing stays in the EU
   const pollyEngine = env.SVAVAK_POLLY_ENGINE || 'neural'; // neural by default
   if (pollyEngine !== 'neural' && pollyEngine !== 'standard') throw new Error(`SVAVAK_POLLY_ENGINE must be "neural" or "standard", not "${pollyEngine}"`); // typo guard
   return { // the settings
@@ -46,7 +46,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config { //
     mcpAllowedOrigins: list(env.SVAVAK_MCP_ALLOWED_ORIGINS || 'http://localhost:5173'), // the studio by default
     awsProfile, // SSO profile name
     awsRegion, // the Bedrock region
-    modelId: env.SVAVAK_MODEL_ID || 'eu.amazon.nova-2-lite-v1:0', // Nova 2 Lite, EU geo inference profile (plan §8.1)
+    modelId: env.SVAVAK_MODEL_ID || 'eu.amazon.nova-2-lite-v1:0', // Nova 2 Lite, EU geo inference profile
     voice: env.SVAVAK_VOICE || 'Brian', // a British English voice, neural in eu-central-1 and standard in eu-north-1
     pollyRegion: env.SVAVAK_POLLY_REGION || awsRegion, // Polly's own region, if it has one
     pollyEngine, // neural or standard

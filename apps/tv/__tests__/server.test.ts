@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// POST /v1/utterances and POST /v1/alerts from the TV (plan §4.2): request shape, idempotent retry, and the audio URL.
+// POST /v1/utterances and POST /v1/alerts from the TV: request shape, idempotent retry, and the audio URL.
 
 import { postHelp, postUtterance, serverFrom } from '../src/server'; // tested
 

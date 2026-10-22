@@ -15,7 +15,7 @@ export interface Question { // one fixture entry, or a question from the server
 
 /** Shown in order; after the last question the first comes again. */
 export const QUESTIONS: readonly Question[] = [ // five questions, eight replies each
-  { // question 1 (the example of plan Figure 4)
+  { // question 1 (the design's worked example)
     speaker: 'Alex', // the partner in the room
     text: 'Would you like tea or coffee?', // the question
     replies: [ // two rows of four

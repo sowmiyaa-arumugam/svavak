@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import fc from 'fast-check'; // property-based testing
 import { logLikelihood, logSumExp, normalise, offsetMs, wrap } from '../src/core/model.ts'; // units under test
 
-const PLAN = { periodMs: 2400, biasMs: 0, noiseMs: 120, spuriousRate: 0.05 }; // plan §4.1 worked-example values
+const PLAN = { periodMs: 2400, biasMs: 0, noiseMs: 120, spuriousRate: 0.05 }; // the worked example's values
 
 describe('wrap', () => { // fractional part mapped to [-1/2, 1/2)
   it('stays in [-1/2, 1/2) and differs from its input by an integer', () => { // the defining properties
@@ -36,7 +36,7 @@ describe('logLikelihood', () => { // log of (1 - eps) N(d; mu, sigma) + eps / T
     const n = Math.exp(-0.5 * (d / 120) ** 2) / (120 * Math.sqrt(2 * Math.PI)); // Gaussian density
     expect(logLikelihood(d, PLAN)).toBeCloseTo(Math.log(0.95 * n + 0.05 / 2400), 10); // same value
   }); // end of the case
-  it('reproduces the plan ratios: about 153:1 a quarter turn apart, about 20:1 an eighth apart', () => { // §4.1 text
+  it('reproduces the worked-example ratios: about 153:1 a quarter turn apart, about 20:1 an eighth apart', () => { // likelihood ratios between nearby presses
     const atNoon = logLikelihood(0, PLAN); // click on the intended option's noon
     expect(Math.exp(atNoon - logLikelihood(600, PLAN))).toBeCloseTo(152.5, 0); // a quarter turn = 0.6 s away
     expect(Math.exp(atNoon - logLikelihood(300, PLAN))).toBeCloseTo(19.9, 0); // an eighth of a turn = 0.3 s away

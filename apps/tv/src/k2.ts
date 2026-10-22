@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Gate K2 instrumentation (plan §10.4), used in dev builds only: frames per second, and press offsets from onset.
+// Gate K2 instrumentation (the on-device timing check), used in dev builds only: frames per second, and press offsets from onset.
 
 import type { Selection } from './conversation'; // one committed selection
 

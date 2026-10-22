@@ -2,7 +2,7 @@
 
 *Your Voice. Your Choice*
 
-The Fire TV conversation screen (plan §4.2 and §5.2) in Smart Scan mode. It shows a question band, a 2 × 4 grid of
+The Fire TV conversation screen in Smart Scan mode. It shows a question band, a 2 × 4 grid of
 reply cards and two control pills (Something else, Help). All ten are options of one
 [switchclock](../../packages/switchclock) `ScanEngine`. A server question may have fewer cards (at least one), for
 example one asked with options; the pills then follow its last card. One thick teal highlight steps through the cards
@@ -139,7 +139,7 @@ yarn workspace tv typecheck   # strict tsc over the app, the tests and the engin
 The judges' APK (B11) is a release build: it carries its own JavaScript bundle (no Metro) and the public demo device
 token from `.env.example`, and works against a mock-mode server on the emulator's host. The token in the environment
 wins over `.env`. Gradle signs a release build with the template's debug key; `apksigner` replaces that signature
-with your own key (schemes v1 and v2, as Fire OS 8 requires; plan §4.2). Keep the keystore and the APK outside the
+with your own key (schemes v1 and v2, as Fire OS 8 requires). Keep the keystore and the APK outside the
 repository. `EXPO_NO_METRO_WORKSPACE_ROOT=1` makes the app's folder Metro's root for the bundle, which otherwise
 looks for the app's entry at the repository root (see the friction log).
 
@@ -151,7 +151,7 @@ apksigner sign --ks <keystore> --v1-signing-enabled true --v2-signing-enabled tr
 
 ## Gate K2 (scan mode)
 
-Pass condition (plan §10.4): 19 of 20 intended selections, at least 50 fps, timing jitter recorded.
+Pass condition: 19 of 20 intended selections, at least 50 fps, timing jitter recorded.
 
 ### Instrumentation (dev builds only)
 

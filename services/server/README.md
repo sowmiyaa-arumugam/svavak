@@ -2,7 +2,7 @@
 
 *Your Voice. Your Choice*
 
-One Node.js service for the TV and for caregiver agents (plan §3.2, §4.3, §4.4): REST, the WebSocket question stream
+One Node.js service for the TV and for caregiver agents: REST, the WebSocket question stream
 and the trace stream for the TV, and an MCP endpoint for agents, over a ports-and-adapters core. It covers flow S1:
 questions, their reply candidates and utterances, asked and answered through MCP. It also takes the TV's help requests
 (flow S3, without acknowledgement).
@@ -109,7 +109,7 @@ default does: Yes, please, No, thanks, or the option with "please" ("Coffee, ple
 please"), taking the weakest other reply's place if the list is full. A basic answer missing from the first four takes
 the place of the lowest-ranked of them, which moves down one place. Questions asked with options are left as they are.
 
-**Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` as
+**Reply pipeline.** Asking without options stores the question and pushes `question.created` as
 soon as its announcement is made, with the default replies that fit it. It calls the model at the same moment as the
 announcement (B9.1), so a slow or stalled Polly call never delays it, within a 3.5 s budget, with
 the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
@@ -169,7 +169,7 @@ replies and no announcement for questions.
 
 ## MCP
 
-`/mcp` on the same process and port is an MCP server for caregiver agents (plan §4.4), built with
+`/mcp` on the same process and port is an MCP server for caregiver agents, built with
 `@modelcontextprotocol/sdk` 1.32.1 and its Streamable HTTP transport.
 
 - **Sessions.** `initialize` (a POST without `Mcp-Session-Id`) opens a session with a random UUID, returned in the
@@ -223,7 +223,7 @@ npx @modelcontextprotocol/inspector@2.11.0 --cli --server-url http://localhost:8
 - Gate K3 passed: ask to `question.candidates` p50 1,024 ms and p95 1,559 ms over the 30 evaluation questions
   (gate: p50 at most 2.0 s), with the automatic checks passing for all 30 and the seeded fact in the top four for 3 of 3.
 - Polly's speech played on the TV for 10 of 10 replies: from the end of the 2 s cancel window to audio start, p50
-  290 ms and p95 879 ms (FR-04 target: 1.2 s p50).
+  290 ms and p95 879 ms (target: 1.2 s p50).
 - An `aws login` session lasts about an hour; sign in again just before a live run.
 
 To set it up:
@@ -255,7 +255,7 @@ headroom; input was about 1,300 tokens per call and Bedrock's own latency 744 to
 
 ## Evaluation set
 
-`test/evalSet.ts` holds the evaluation set of plan §4.6: 30 synthetic household questions (twelve yes/no, eight choice,
+`test/evalSet.ts` holds the evaluation set: 30 synthetic household questions (twelve yes/no, eight choice,
 ten open), three of which should bring up a seeded demo fact (tea, cricket, lunch at one). Its automatic checks run
 on every `yarn workspace server test` against mock output, through the real pipeline: schema (raw and pushed),
 at most 60 characters, intent coverage (a later reply always, yes and no for a yes/no question) and no banned terms.

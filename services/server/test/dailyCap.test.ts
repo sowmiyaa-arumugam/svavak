@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Daily cost cap (plan §4.3).
+// Daily cost cap.
 
 import { expect, it } from 'vitest'; // test API
 import { DailyCap } from '../src/domain/dailyCap.ts'; // tested

@@ -1,7 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Interfaces of plan §4.3 for flow S1: REST (Express 5), the WebSocket stream (ws) and the trace stream (SSE), plus
-// the MCP endpoint of plan §4.4 (mcp.ts) on the same port, and the TV's help request of flow S3 (POST /v1/alerts).
+// Interfaces for flow S1: REST (Express 5), the WebSocket stream (ws) and the trace stream (SSE), plus
+// the MCP endpoint (mcp.ts) on the same port, and the TV's help request of flow S3 (POST /v1/alerts).
 
 import { createHash, timingSafeEqual } from 'node:crypto'; // token comparison
 import { createServer as createHttpServer, STATUS_CODES, type Server } from 'node:http'; // the HTTP server
@@ -70,7 +70,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
   app.get('/healthz', (_req, res) => { res.json({ status: 'ok' }); }); // liveness, no token, no data
 
   const allowedOrigin = (origin: string | undefined) => origin === undefined || origin === o.studioOrigin || origin === o.tvOrigin; // none (tools), the studio's, or the emulator TV's; a fixed list, so a DNS-rebound page cannot pass
-  app.use('/v1', (req, res, next) => { // the studio's browser calls (plan §4.7): CORS for its origin only
+  app.use('/v1', (req, res, next) => { // the studio's browser calls: CORS for its origin only
     if (req.get('origin') !== o.studioOrigin) return next(); // the TV and tools send no Origin; other sites get no CORS headers
     res.set({ 'Access-Control-Allow-Origin': o.studioOrigin, Vary: 'Origin' }); // the studio may read the response
     if (req.method !== 'OPTIONS') return next(); // the request itself
@@ -78,7 +78,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     res.status(204).end(); // its preflight, answered before the span and the token check: browsers send no token on it
   }); // end of CORS
 
-  app.use((req, res, next) => { // one span per request (plan §4.3 observability), except the trace stream itself
+  app.use((req, res, next) => { // one span per request, except the trace stream itself
     if (req.path === '/v1/trace') return next(); // an SSE stream never finishes
     const started = performance.now(); // request start
     res.on('finish', () => o.trace.span({ hop: 'client→server', operation: `${req.method} ${req.route?.path ?? '(unmatched)'}`, duration_ms: Math.round(performance.now() - started), mode: o.mode })); // route pattern, never ids or text
@@ -87,10 +87,10 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
 
   app.all('/mcp', ...mcpHandlers({ useCases: o.useCases, trace: o.trace, mode: o.mode, log: o.log, allowedHosts: o.mcpAllowedHosts, allowedOrigins: o.mcpAllowedOrigins, authorize: allow('agent'), idleMs: o.mcpIdleMs })); // MCP: Host, Origin and the agent token; no Host check on the TV's routes (the emulator calls the host 10.0.2.2)
 
-  app.use('/v1/trace', (req, res, next) => (allowedOrigin(req.get('origin')) ? next() : problem(res, 403, 'Origin not allowed'))); // plan §6.1: another site's page must not read the trace
+  app.use('/v1/trace', (req, res, next) => (allowedOrigin(req.get('origin')) ? next() : problem(res, 403, 'Origin not allowed'))); // another site's page must not read the trace
   app.use(allow('device')); // the device token on every call below; the agent token gets 403
 
-  app.use(express.json({ limit: '32kb' })); // plan §6.2: 32 KB JSON limit; parsed only after authentication
+  app.use(express.json({ limit: '32kb' })); // 32 KB JSON limit; parsed only after authentication
 
   app.post('/v1/questions', async (req, res) => { // ask a question (dev endpoint)
     const body = questionBody.safeParse(req.body); // validate
@@ -108,7 +108,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     res.status(created ? 201 : 200).json({ ...utterance, audio_url: hasAudio ? `/v1/utterances/${utterance.id}/audio` : null }); // a replay is 200
   }); // end of POST /v1/utterances
 
-  app.post('/v1/alerts', (req, res) => { // Sam asks for help (plan Table 13: raise a help alert); the request has no body
+  app.post('/v1/alerts', (req, res) => { // Sam asks for help; the request has no body
     const key = req.get('idempotency-key'); // retries reuse it
     if (!key || key.length > 128) return problem(res, 400, 'Idempotency-Key header required (1 to 128 characters)'); // refuse
     const { help, created } = o.useCases.requestHelp(key); // store, trace, log
@@ -127,7 +127,7 @@ export function createServer(o: HttpOptions): Server { // build, do not listen
     sendAudio(res, audio); // WAV or MP3
   }); // end of GET /v1/questions/{id}/announcement
 
-  app.get('/v1/trace', (_req, res) => { // live spans (plan Table 13)
+  app.get('/v1/trace', (_req, res) => { // live spans
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }); // SSE
     res.flushHeaders(); // send the headers now: Node holds them back until the first write, and there may be no span yet
     const send = (span: Span) => { res.write(`data: ${JSON.stringify(span)}\n\n`); }; // one event per span

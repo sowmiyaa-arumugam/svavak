@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// MockLlm (plan §4.3): deterministic candidates from the question text and profile facts, in the §4.6 tool-output shape, without AWS.
+// MockLlm: deterministic candidates from the question text and profile facts, in the live model's tool-output shape, without AWS.
 
 import { choiceOptions, questionKind, type Draft } from '../domain/candidates.ts'; // candidate shape, which questions Yes or No can answer, and a choice's options
 import { promptFacts, type ProfileFact } from '../domain/facts.ts'; // profile facts
@@ -9,7 +9,7 @@ import type { LlmPort, SuggestRequest } from '../ports/index.ts'; // the port
 
 type Row = [text: string, intent: Draft['intent'], score: number]; // a compact candidate
 
-/** Replies that use a fact (plan FR-03): [question pattern, pattern for a "likes" fact, reply]. The first match wins. */
+/** Replies that use a fact: [question pattern, pattern for a "likes" fact, reply]. The first match wins. */
 const FACT_REPLIES: readonly [question: RegExp, fact: RegExp, reply: string][] = [ // one small table, in one place
   [/\bwatch\b/i, /\bcricket\b/i, 'The cricket, please'], // "What shall we watch tonight?" and "Sam follows cricket"
   [/\btea\b/i, /\bprefers tea\b/i, 'Tea, please'], // "Would you like coffee or tea?" and "Sam prefers tea to coffee"
@@ -43,7 +43,7 @@ function ruleReplies(question: string): Draft[] { // question text to drafts
 /** The mock adapter: answers at once, in the same envelope as the Bedrock tool call. */
 export class MockLlm implements LlmPort { // the mock reply model
   async suggest(request: SuggestRequest, _signal: AbortSignal): Promise<unknown> { // the budget never matters here
-    return { candidates: mockReplies(request.question, promptFacts(request.facts)) }; // the §4.6 tool input shape, same fact limits as live
+    return { candidates: mockReplies(request.question, promptFacts(request.facts)) }; // the live tool input shape, same fact limits as live
   } // end of suggest
 } // end of MockLlm
 

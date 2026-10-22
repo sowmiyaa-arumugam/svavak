@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The single switch (plan §4.2): Select, that is Enter on a keyboard or the centre button on a remote.
+// The single switch: Select, that is Enter on a keyboard or the centre button on a remote.
 
 /** Android key codes that act as the switch: KEYCODE_DPAD_CENTER (remote) and KEYCODE_ENTER (keyboard). */
 const SWITCH_KEY_CODES: ReadonlySet<number> = new Set([23, 66]); // centre button, Enter

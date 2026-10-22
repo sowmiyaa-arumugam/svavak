@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// MCP conformance (plan §7.3, gate K4): the official SDK client over Streamable HTTP against a real listening server,
+// MCP conformance (gate K4): the official SDK client over Streamable HTTP against a real listening server,
 // plus raw HTTP for what a well-behaved client never sends (foreign Origin or Host, wrong tokens, bad protocol header).
 
 import { randomUUID } from 'node:crypto'; // ids
@@ -116,7 +116,7 @@ async function refusal(url: string, token: string): Promise<number | undefined> 
   return error instanceof StreamableHTTPError ? error.code : undefined; // the HTTP status
 } // end of refusal
 
-describe('sessions and protocol (Streamable HTTP, spec 2025-11-25)', () => { // Table 15
+describe('sessions and protocol (Streamable HTTP, spec 2025-11-25)', () => { // Streamable HTTP rules
   it('initialises a session with a random UUID and negotiates protocol 2025-11-25', async () => { // initialise
     const { mcp } = await start(); // server
     const a = await connect(mcp); // one session
@@ -168,7 +168,7 @@ describe('sessions and protocol (Streamable HTTP, spec 2025-11-25)', () => { // 
   }); // end of the case
 }); // end of sessions and protocol
 
-describe('access (plan §6.1: tampering, DNS rebinding)', () => { // tokens, Origin and Host
+describe('access (tampering, DNS rebinding)', () => { // tokens, Origin and Host
   it('accepts only the agent token on /mcp: none is 401, the TV token 403', async () => { // authentication
     const { port, mcp } = await start(); // server
     expect(await refusal(mcp, 'wrong'.repeat(4))).toBe(401); // a wrong token
@@ -204,8 +204,8 @@ describe('access (plan §6.1: tampering, DNS rebinding)', () => { // tokens, Ori
   }); // end of the case
 }); // end of access
 
-describe('tools (plan Table 16)', () => { // tools/list and tools/call
-  it('lists the four tools with input schemas and the hints of Table 16', async () => { // tools/list
+describe('tools', () => { // tools/list and tools/call
+  it('lists the four tools with input schemas and their hints', async () => { // tools/list
     const { mcp } = await start(); // server
     const { client } = await connect(mcp); // a session
     const { tools } = await client.listTools(); // the list
@@ -215,7 +215,7 @@ describe('tools (plan Table 16)', () => { // tools/list and tools/call
     expect(byName.get_answer!.inputSchema).toMatchObject({ required: ['question_id'], properties: { wait_seconds: { type: 'integer', minimum: 0, maximum: 25 } } }); // long-poll up to 25 whole seconds
     expect(byName.get_recent_messages!.inputSchema).toMatchObject({ properties: { since: { type: 'string', format: 'date-time' }, limit: { type: 'integer', minimum: 1, maximum: 20 } } }); // optional filters
     expect(byName.add_profile_fact!.inputSchema).toMatchObject({ required: ['fact', 'category'], properties: { fact: { maxLength: 120, pattern: '^[^<>]*$' }, category: { enum: ['likes', 'dislikes', 'people', 'routines', 'other'] } } }); // fact limits
-    expect([byName.ask_question!.annotations, byName.get_answer!.annotations, byName.get_recent_messages!.annotations, byName.add_profile_fact!.annotations]).toEqual([{ readOnlyHint: false, idempotentHint: false }, { readOnlyHint: true }, { readOnlyHint: true }, undefined]); // Table 16's hints
+    expect([byName.ask_question!.annotations, byName.get_answer!.annotations, byName.get_recent_messages!.annotations, byName.add_profile_fact!.annotations]).toEqual([{ readOnlyHint: false, idempotentHint: false }, { readOnlyHint: true }, { readOnlyHint: true }, undefined]); // the tools' declared hints
     for (const name of ['ask_question', 'add_profile_fact']) expect(byName[name]!.description).toContain('passwords, health records or financial data'); // the safety rule
   }); // end of the case
 
@@ -304,7 +304,7 @@ describe('tools (plan Table 16)', () => { // tools/list and tools/call
     expect(await call(client, 'ask_question', { question: 'Still there?', asked_by: 'Alex' })).toMatchObject({ delivered: false }); // still serving
   }); // end of the case
 
-  it('lets an added fact change the mock ranking for a related question', async () => { // FR-13
+  it('lets an added fact change the mock ranking for a related question', async () => { // facts shape the replies
     const { port, mcp } = await start(); // server, no facts
     const { client } = await connect(mcp); // a session
     const events = await tv(port); // a TV, to see the candidates

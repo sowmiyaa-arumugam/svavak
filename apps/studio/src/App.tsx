@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The studio page (plan §4.7, §5.5), laid out on a 1920 x 1080 stage that main.tsx scales to the window: the header
+// The studio page, laid out on a 1920 x 1080 stage that main.tsx scales to the window: the header
 // with the Drive mode switch, the caregiver panel (alone and centred with Drive mode off; on the left with the virtual
 // TV and the engine view under it on the right with Drive mode on), and the system trace along the bottom. The credits
 // are in NOTICE and the README, not on the page.

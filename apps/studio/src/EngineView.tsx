@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The engine view (plan §4.7): the virtual TV's switchclock posterior, one bar per option, after every press, with the
+// The engine view: the virtual TV's switchclock posterior, one bar per option, after every press, with the
 // commit threshold θ drawn across the bars.
 
 import type { EngineState } from './VirtualTv'; // what the virtual TV reports

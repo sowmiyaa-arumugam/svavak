@@ -26,7 +26,7 @@ def test_live_mode_refuses_the_public_demo_tokens(name):  # public, mock mode on
 def test_defaults_are_mock_mode_and_the_eu_model():  # only the token is required
     c = config.load_config({"SVAVAK_AGENT_TOKEN": TOKEN})  # nothing else set
     assert (c.mode, c.agent_token, c.aws_profile) == ("mock", TOKEN, None)  # mock by default, no profile needed
-    assert (c.aws_region, c.model_id) == ("eu-central-1", "eu.amazon.nova-2-lite-v1:0")  # plan §8.1 defaults
+    assert (c.aws_region, c.model_id) == ("eu-central-1", "eu.amazon.nova-2-lite-v1:0")  # the EU defaults
 
 
 def test_live_mode_reads_the_aws_settings():  # live mode takes the profile, region and model from the environment

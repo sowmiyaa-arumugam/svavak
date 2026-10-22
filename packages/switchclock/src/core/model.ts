@@ -1,6 +1,6 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// Clock and click model of plan §4.1. All times are in milliseconds.
+// Clock and click model of clock mode. All times are in milliseconds.
 
 /** The parameters the click likelihood depends on. */
 export interface ClickModel { // subset of the engine configuration
