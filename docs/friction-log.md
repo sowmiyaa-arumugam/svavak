@@ -10,15 +10,15 @@ Severity: **Blocker** stops the work with no way round; **High** stops a main ta
 
 ## Summary
 
-Sorted by severity, then date. "Not recorded" dates come last within a severity.
+Sorted by severity, then date.
 
 | Date | Tool | Title | Severity |
 | --- | --- | --- | --- |
 | 2026-10-18 | Gradle 8.14.3 | "Could not move temporary workspace" with Sophos Home | High |
 | 2026-10-20 | Amazon Bedrock | Every call refused while the new AWS account is being verified | High |
+| 2026-10-20 | Amazon Polly | AccessDenied in eu-central-1; the only allowed Region has no neural voices | High |
 | 2026-10-21 | AWS account (`aws login`) | No IAM users; the sign-in lasts about an hour, then refresh fails | High |
 | 2026-10-22 | expo-audio (Android) | `remove()` neither stops nor frees a player, so audio keeps playing | High |
-| not recorded | Amazon Polly | AccessDenied in eu-central-1; the only allowed Region has no neural voices | High |
 | 2026-10-18 | typescript-eslint with TypeScript 7 | typescript-eslint does not support TypeScript 7 | Medium |
 | 2026-10-18 | Prettier with eslint-plugin-prettier | Prettier moves trailing comments off block-opening lines | Medium |
 | 2026-10-18 | React Native debug build, Expo CLI | A second Expo app on the emulator loads the first app's bundle | Medium |
@@ -29,12 +29,12 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 | 2026-10-19 | boto3 / botocore | A Bedrock API key from the environment beats a named SSO profile | Medium |
 | 2026-10-20 | Android TV emulator console | `event send` answers OK but no key reaches the guest | Medium |
 | 2026-10-20 | Android TV emulator | Holding a PC key arrives as about 57 press/release pairs | Medium |
+| 2026-10-20 | Expo development builds | The app opens in Expo Go instead of the development build | Medium |
 | 2026-10-21 | Claude Code background tasks | Stopping a background shell leaves its server running | Medium |
 | 2026-10-21 | React Native (Android) | The Android WebSocket sends an Origin header | Medium |
 | 2026-10-21 | Amazon Nova 2 Lite | Nova 2 Lite made up options the agent policy forbids | Medium |
 | 2026-10-21 | Amazon Nova 2 Lite | Nova 2 Lite repeats earlier answers to an unrelated question | Medium |
-| not recorded | Expo development builds | The app opens in Expo Go instead of the development build | Medium |
-| not recorded | Chrome | Speech synthesis is blocked until the page has been clicked | Medium |
+| 2026-10-21 | Chrome | Speech synthesis is blocked until the page has been clicked | Medium |
 | 2026-10-18 | Android Studio | First-run wizard offered no SDK components | Low |
 | 2026-10-18 | Amazon's React Native multi-TV sample | Legacy Architecture warning and StrictMode error on first run | Low |
 | 2026-10-18 | Yarn 4.5.0 with TypeScript 7.0.2 | Yarn cannot apply its built-in TypeScript patch | Low |
@@ -397,7 +397,8 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
   and a raw `adb exec-out screencap` took 800 to 1,000 ms. Presses aimed at the first card arrived at the end of its
   2 s window, so the engine scanned the top two again instead of committing; four presses committed nothing.
 - **Severity:** Medium. Timed presses from the host select the wrong moment.
-- **Workaround:** a short shell script on the device takes screenshots with `screencap`, reads the card's pixel with
+- **Workaround:** manual timing tests used the PC keyboard; scripted replays used the emulator's gRPC input. Earlier, a
+  short shell script on the device took screenshots with `screencap`, reads the card's pixel with
   `dd` and `od`, and runs `input keyevent 66` there as soon as the card lights up; it arrived about 0.75 s into the
   2 s window and committed with one press. (`sendevent` is still refused, as in the 2026-10-18 entry.) Met again the
   same day: in one of three runs, the press from the same script landed at the end of Tea's window, and the TV asked to
@@ -552,6 +553,23 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 - **Suggestion:** give account verification its own error code, so it is not read as an IAM denial. Show the
   verification state and its expected end on the Bedrock console's model access page.
 
+## 2026-10-20: Amazon Polly in eu-central-1 is refused; the allowed Region has no neural voices
+
+- **Date:** 2026-10-20
+- **Tool:** Amazon Polly (SynthesizeSpeech), with an AWS-managed service control policy
+- **Task attempted:** synthesise speech with a neural voice (default `Brian`) from the server, in eu-central-1 beside
+  Bedrock.
+- **Steps taken:** called Polly in eu-central-1 with the project role's credentials. Other steps are not recorded.
+- **Expected:** SynthesizeSpeech works in eu-central-1, alongside Bedrock.
+- **Actual:** `AccessDenied`: an explicit deny from an AWS-managed service control policy that allows Polly only in
+  eu-north-1, which has no neural voices. The console's "Enable advanced features" option cannot be undone and needs
+  a paid plan, so it was not used.
+- **Severity:** High. Speech could not be produced in the chosen Region until a workaround was found.
+- **Workaround:** the standard voices Brian and Amy in eu-north-1 (`SVAVAK_POLLY_REGION`, `SVAVAK_POLLY_ENGINE`).
+- **Suggestion:** state the Region limit of the managed policy in its description, and in the error message name the
+  policy that denies the call. Say on "Enable advanced features" that it cannot be undone, and what it costs, before
+  the user chooses it.
+
 ## 2026-10-20: The emulator console's `event send` answers OK but no key reaches the guest
 
 - **Date:** 2026-10-20
@@ -622,6 +640,20 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 - **Workaround:** kept temperature 0 and maxTokens 1000 until real responses can be measured (the server logs output
   tokens and stop reason per call).
 - **Suggestion:** one recommended setting for tool use with Nova 2, and one documented output limit.
+
+## 2026-10-20: The app opens in Expo Go instead of the development build
+
+- **Date:** 2026-10-20 (met again 2026-10-22)
+- **Tool:** Expo development builds (Expo CLI and Metro, SDK 54) on the Android TV emulator
+- **Task attempted:** open the SvaVāk development build on the Android TV emulator from the running Metro server.
+- **Steps taken:** ran `yarn workspace tv start`. Metro said it was using Expo Go. Pressing `a` opened the app inside
+  Expo Go; pressing `s`, then `a`, opened the development build.
+- **Expected:** pressing `a` in Metro opens the SvaVāk development build in landscape.
+- **Actual:** it opened inside Expo Go, portrait and cropped, where the switch did nothing.
+- **Severity:** Medium. Nothing says that the wrong host app is showing the project.
+- **Workaround:** press `s` in Metro to switch to the development build, then `a` to open it on Android.
+- **Suggestion:** when a development build is installed for the project, Metro should open it by default, or say
+  which host app it opened.
 
 ## 2026-10-21: `git mv` of a folder fails with "Permission denied" on Windows
 
@@ -906,6 +938,20 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 - **Suggestion:** say in the Nova prompting guidance where the question should go when earlier turns come as context,
   and whether temperature 0 is meant to repeat.
 
+## 2026-10-21: Chrome blocks speech synthesis until the page has been clicked
+
+- **Date:** 2026-10-21
+- **Tool:** Chrome (Web Speech API, `speechSynthesis`), in the caregiver studio
+- **Task attempted:** speak the TV's alerts (for example a help request) aloud in the studio as soon as they arrive.
+- **Steps taken:** an alert arrived before any click on the studio page; `speechSynthesis.speak` did nothing.
+- **Expected:** a help alert is spoken as soon as it arrives.
+- **Actual:** it stayed silent until the page had been clicked or typed into, because Chrome needs a user gesture
+  before speech.
+- **Severity:** Medium. A help request could go unheard without any sign of failure.
+- **Workaround:** queue alerts until the first click or key, then speak them; queued speech now plays then.
+- **Suggestion:** reject the `speak()` call or fire an `error` event on the utterance with a named reason (such as
+  "not-allowed") when user activation is missing, and say so in the Web Speech documentation.
+
 ## 2026-10-22: Fast Refresh ran new code against an object the old code had made
 
 - **Date:** 2026-10-22
@@ -945,8 +991,9 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 - **Date:** 2026-10-22
 - **Tool:** expo-audio 1.1.1 (Expo SDK 54) on Android, in the TV app on the Android TV emulator
 - **Task attempted:** stop the previous spoken reply when a new reply starts, so two voices never overlap.
-- **Steps taken:** created a player with `createAudioPlayer`, and called `player.remove()` when the next reply began.
-  The exact calls and the player's source are not recorded.
+- **Steps taken:** before the fix, `apps/tv/src/speech.ts` created each reply's player with `createAudioPlayer` and
+  stopped the previous one with `player?.remove()` alone.
+  After the fix (22 Oct), every end or stop calls `pause()`, then `remove()`, then `release()`.
 - **Expected:** `remove()` stops the playback and frees the player.
 - **Actual:** the audio kept playing after `remove()`: it neither stopped nor freed the player, so the old reply
   talked on under the new one.
@@ -954,49 +1001,3 @@ Sorted by severity, then date. "Not recorded" dates come last within a severity.
 - **Workaround:** (22 Oct) pause the player, then `remove()` it, then release it.
 - **Suggestion:** make `remove()` stop playback and release the native player, or document that it only detaches the
   player from the module's registry and that `pause()` and `release()` must be called first.
-
-## Date not recorded: Amazon Polly in eu-central-1 is refused; the allowed Region has no neural voices
-
-- **Date:** not recorded (the first live run, on 2026-10-21, already used the workaround)
-- **Tool:** Amazon Polly, with an AWS-managed policy on the project role
-- **Task attempted:** synthesise speech with a neural voice (default `Brian`) from the server, in eu-central-1 beside
-  Bedrock.
-- **Steps taken:** called Polly in eu-central-1 with the project role's credentials. Other steps are not recorded.
-- **Expected:** the call succeeds, as the same role could call Bedrock in eu-central-1.
-- **Actual:** `AccessDenied` in eu-central-1. An AWS-managed policy on the role allows Polly only in eu-north-1, which
-  has no neural voices. The console's "Enable advanced features" option cannot be undone and needs a paid plan, so it
-  was not used.
-- **Severity:** High. Speech could not be produced in the chosen Region until a workaround was found.
-- **Workaround:** the standard voices Brian and Amy in eu-north-1 (`SVAVAK_POLLY_REGION`, `SVAVAK_POLLY_ENGINE`).
-- **Suggestion:** state the Region limit of the managed policy in its description, and in the error message name the
-  policy that denies the call. Say on "Enable advanced features" that it cannot be undone, and what it costs, before
-  the user chooses it.
-
-## Date not recorded: The app opens in Expo Go instead of the development build
-
-- **Date:** not recorded
-- **Tool:** Expo development builds (Expo CLI and Metro, SDK 54) on the Android TV emulator
-- **Task attempted:** open the TV app's development build from the running Metro server.
-- **Steps taken:** started Metro and opened the project on the emulator. Exact commands are not recorded.
-- **Expected:** the project opens in the development build (`dev.svavak.tv`), landscape, full screen.
-- **Actual:** the app opened in Expo Go instead, in portrait and cropped. Expo Go has no switch input, so the checks on the
-  emulator were meaningless.
-- **Severity:** Medium. Nothing says that the wrong host app is showing the project.
-- **Workaround:** press `s` in Metro to switch to the development build, then `a` to open it on Android.
-- **Suggestion:** when a development build is installed for the project, Metro should open it by default, or say
-  which host app it opened.
-
-## Date not recorded: Chrome blocks speech synthesis until the page has been clicked
-
-- **Date:** not recorded
-- **Tool:** Chrome (Web Speech API, `speechSynthesis`), in the caregiver studio
-- **Task attempted:** speak the TV's alerts (for example a help request) aloud in the studio as soon as they arrive.
-- **Steps taken:** called `speechSynthesis.speak()` for an alert on a page that had not yet been clicked. Other steps
-  are not recorded.
-- **Expected:** the alert is spoken.
-- **Actual:** nothing was spoken. Chrome allows speech synthesis only after the page has had user activation (a click
-  or a key press), and the log does not record any error from `speak()`.
-- **Severity:** Medium. A help request could go unheard without any sign of failure.
-- **Workaround:** queue alerts until the first click, then speak them.
-- **Suggestion:** reject the `speak()` call or fire an `error` event on the utterance with a named reason (such as
-  "not-allowed") when user activation is missing, and say so in the Web Speech documentation.
