@@ -75,6 +75,7 @@ Sorted by severity, then date.
 | 2026-10-22 | Android Emulator | The emulator shut itself down right after loading its snapshot | Low |
 | 2026-10-22 | Claude desktop app (Browser pane) | A page in the hidden Browser pane gets no animation frames | Low |
 | 2026-10-22 | pip with git-filter-repo, Git for Windows | pip installs git-filter-repo where Git cannot find it | Low |
+| 2026-10-22 | apksigner (build-tools 36.0.0) | One password file for keystore and key fails with "end of file reached" | Low |
 
 ## Entries
 
@@ -1075,3 +1076,19 @@ Sorted by severity, then date.
 - **Severity:** Low. The command works once the folder is on `PATH`.
 - **Workaround:** added the folder to `PATH` for the shell, and read the options with `python -m git_filter_repo -h`.
 - **Suggestion:** the install notes could name the Scripts folder on Windows and the `-h` route for help.
+
+## 2026-10-22: apksigner: one password file for keystore and key fails with "end of file reached"
+
+- **Date:** 2026-10-22
+- **Tool:** apksigner (Android SDK build-tools 36.0.0)
+- **Task attempted:** sign the rebuilt demo APK (B12) with the keystore kept outside the repository, reading its
+  password from a file so it is never typed or printed.
+- **Steps taken:** `apksigner sign --ks <keystore> --ks-pass file:<password file> --key-pass file:<password file> ...`,
+  with a one-line password file and a keystore whose key has the same password.
+- **Expected:** both passwords read from the file's one line.
+- **Actual:** "Failed to load signer", caused by "Failed to read Key ... password for signer #1 : end of file reached":
+  when both options name the same file, apksigner reads the key password from the next line. `apksigner sign --help`
+  documents this ("passwords are read from the file one line at a time"); the error message does not.
+- **Severity:** Low. The message names the file and the key.
+- **Workaround:** left out `--key-pass`; apksigner then tries the keystore password for the key first.
+- **Suggestion:** when the shared file runs out of lines, say so in the error and point to the help text.
