@@ -854,6 +854,10 @@ Sorted by severity, then date.
 - **Severity:** Low. A restart fixes it.
 - **Workaround:** restarted Metro with `--clear`, then the app.
 - **Suggestion:** Metro could notice that `node_modules` was relinked and rebuild its file map, or say so in its log.
+- **Seen again:** 2026-10-22 (B12). After `yarn workspace switchclock add` installed `@stdlib/math-base-special-erfc`
+  and 136 other packages, the Metro already running on 8081 answered the Android bundle request with HTTP 500,
+  `UnableToResolveError` for `@stdlib/constants-float64-high-word-sign-mask`, although the package was on disk and Node
+  resolved it. A separate `expo export --platform android` (a fresh Metro) bundled the app without errors.
 
 ## 2026-10-21: Nova 2 Lite made up options the agent policy forbids
 
