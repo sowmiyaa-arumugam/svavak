@@ -1,15 +1,14 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
 // The studio's look (B6), in mock mode: the darkened photo of leaves and Montserrat, both served from localhost, the
-// credits line and the labels that must stay, WCAG AA contrast for the main text over what is really drawn behind it,
-// and no motion under prefers-reduced-motion.
+// labels that must stay, WCAG AA contrast for the main text over what is really drawn behind it, and no motion under
+// prefers-reduced-motion.
 
 import { expect, test, type Page } from '@playwright/test'; // Playwright Test
 import { sendHelp } from './sendHelp'; // a help request, as the TV sends it
 
-const CREDITS = 'Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash'; // the footer line
 const LOCAL = ['localhost:5173', '127.0.0.1:8787', '127.0.0.1:8790']; // the studio, the server and the agent: no other host, so no font or image CDN
-const TEXT = ['h2', '.mirror', '.mode-line', '.drive', '.banner', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.credits', '.alert']; // the main text, on the photo and on the panels, a help alert's too
+const TEXT = ['h2', '.mirror', '.mode-line', '.drive', '.banner', '.bubble', '.chip', '.speech', '.engine .muted', '.badge', '.hop-label', '.hop-op', '.hop-ms', '.alert']; // the main text, on the photo and on the panels, a help alert's too
 
 /** One caregiver turn in mock mode, so the bubble, the chips and the speech are on screen too. */
 async function remember(page: Page): Promise<void> { // "Noted: ..."
@@ -18,12 +17,11 @@ async function remember(page: Page): Promise<void> { // "Noted: ..."
   await expect(page.getByTestId('speech')).toHaveText('Noted: Sam loves gardening.'); // the turn is over
 } // end of remember
 
-test('draws the darkened photo of leaves in Montserrat, all from localhost, with the credits and the labels that stay', async ({ page }) => { // the look and its sources
+test('draws the darkened photo of leaves in Montserrat, all from localhost, with the labels that stay', async ({ page }) => { // the look and its sources
   const hosts = new Set<string>(); // every host the page asks for anything
   page.on('request', (request) => hosts.add(new URL(request.url()).host)); // from the first request on
   await page.goto('/'); // the studio
   await remember(page); // a turn: the agent's and the server's hosts too
-  await expect(page.getByTestId('credits')).toHaveText(CREDITS); // the credits line
   await expect(page.getByTestId('sim-banner')).toHaveText('Simulated Alexa+ experience'); // kept
   await page.getByTestId('drive-mode').check(); // the virtual TV and its label are shown only in drive mode
   await expect(page.locator('.mirror')).toHaveText('Web version of the TV app: the real app runs on Fire OS'); // kept, renamed in B7.2

@@ -49,7 +49,6 @@ stage that is scaled to fit the window (see Look).
     Polly hop.
   - A help request lights TV ("help request"), server (`POST /v1/alerts`) and caregiver (`help.requested`).
   - Spans from before the page opened are not drawn.
-- **Credits** (along the bottom): "Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash".
 
 ## Look
 
@@ -72,6 +71,8 @@ Dark and calm, in the spirit of [Hamish Williams' portfolio](https://hamishw.com
   No font or image CDN is called at runtime. The virtual TV keeps the TV's own look and its system type.
 - **Motion:** the page rises into place on load, and each part of a caregiver turn, and each help alert, as it
   arrives. Under `prefers-reduced-motion: reduce` nothing animates or transitions.
+- **Credits:** "Design inspired by Hamish Williams · Background photo: Aaron Vasquez / Unsplash". They are here and
+  in [NOTICE](../../NOTICE); the page itself shows no credits line.
 
 ## Run a demo
 
@@ -146,8 +147,8 @@ of played where they count it:
 
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
-- The page draws the darkened photo in Montserrat, with the credits line, the banner, the virtual TV's label and the
-  mode badge, and shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
+- The page draws the darkened photo in Montserrat, with the banner, the virtual TV's label and the mode badge, and
+  shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
 - Every request goes to the studio, the server or the agent.
 - Every line of the main text, a help alert's included, has WCAG AA contrast (4.5:1, or 3:1 for large text) against
   the pixels drawn behind it, with Drive mode off and on. They are measured in a 1080p screenshot taken with the text
@@ -160,8 +161,8 @@ At each size they check four things:
 
 - The stage's scale is the smaller of the two ratios (within 1 %, and exactly 1 at 1920 × 1080), and the stage is
   centred.
-- There are no scrollbars, no two panels overlap, and every heading and line of text is visible: the element on top
-  at its middle (`elementFromPoint`) is the one that draws it.
+- There are no scrollbars, no two panels overlap, the system trace is drawn, and every heading and line of text is
+  visible: the element on top at its middle (`elementFromPoint`) is the one that draws it.
 - With Drive mode off, only the caregiver panel shows, centred. With it on, the engine's bars show in full. The
   header line and the virtual TV's label match the mode.
 - The latest reply is 32 px on the stage and sits just above the text box.
@@ -177,7 +178,7 @@ Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 
 
 | Path | Contents |
 | --- | --- |
-| `src/App.tsx` | The page layout, the Drive mode switch and the credits |
+| `src/App.tsx` | The page layout and the Drive mode switch |
 | `src/styles.css` | The look |
 | `src/assets/` | The background photo (Unsplash License, see NOTICE) |
 | `src/CaregiverPanel.tsx` | The simulated Alexa+: text, tool chips, speech, help alerts |

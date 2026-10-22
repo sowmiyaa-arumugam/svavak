@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'; // a path for the screenshots
 const SHOTS = fileURLToPath(new URL('../../../test-results/b7_2/', import.meta.url)); // the repository's git-ignored results
 const SIZES: [number, number][] = [[1920, 1080], [1920, 960], [1366, 768], [1280, 800], [2560, 1440]]; // 1080p, a browser window on a 1080p screen, two laptops, 1440p
 const SHOT = ['1920x1080', '1366x768']; // the sizes saved as screenshots
-const PANELS = ['.studio-head', '.caregiver', '.tv-head', '.tv-frame', '.engine', '.trace', '.credits']; // the boxes that must never overlap
+const PANELS = ['.studio-head', '.caregiver', '.tv-head', '.tv-frame', '.engine', '.trace']; // the boxes that must never overlap
 const OFF_LINE = 'The SvaVāk app on the Fire TV emulator answers the questions.'; // the header line with Drive mode off
 const ON_LINE = 'Answer on the virtual TV with the space bar.'; // and with it on
 const LABEL = 'Web version of the TV app: the real app runs on Fire OS'; // the virtual TV's label
@@ -73,6 +73,7 @@ function expectStage(m: Awaited<ReturnType<typeof measure>>, w: number, h: numbe
   expect(m.photo[0]).toMatch(/url\(.*leaves[^/]*\.jpg/); // the leaves behind the whole window
   expect(m.photo.slice(1)).toEqual(['rgba(0, 0, 0, 0) none', 'rgba(0, 0, 0, 0) none']); // nothing painted over them but the panels, so they fill the spare space too
   expect(m.overlaps).toEqual([]); // no panel covers another
+  expect(m.boxes['.trace']?.h ?? 0).toBeGreaterThan(0); // the system trace is drawn (its text is checked with the rest, next)
   expect(m.hidden).toEqual([]); // every heading and line of text is visible
   expect(m.head.every((x) => x !== null && x > m.stage.x + m.stage.w / 2)).toBe(true); // the header line and the switch: in the header row, on the right
   expect(m.speechPx).toBe(32); // the latest reply at 32 px on the stage

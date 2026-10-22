@@ -24,7 +24,7 @@ h2 { display: flex; align-items: center; gap: 14px; font-size: 15px; font-weight
 h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(--ring); } /* a short teal rule before each title */
 .muted { color: var(--text2); } /* secondary text */
 
-.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto auto; gap: 16px 32px; width: 1920px; height: 1080px; padding: 20px 32px 12px; zoom: var(--scale, 1); } /* the stage: head, panels, trace, credits, laid out at 1080p and zoomed to the window (main.tsx), so text is drawn at its final size and stays sharp */
+.studio { display: grid; grid-template-columns: minmax(0, 1fr) 960px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 16px 32px; width: 1920px; height: 1080px; padding: 20px 32px 12px; zoom: var(--scale, 1); } /* the stage: head, panels, trace, laid out at 1080p and zoomed to the window (main.tsx), so text is drawn at its final size and stays sharp */
 .studio-head { grid-column: 1 / -1; display: flex; align-items: center; gap: 28px; } /* the logo across the top, the mode line and the drive switch on the right */
 .mode-line { margin: 0 0 0 auto; } /* what answers the questions, pushed to the right */
 .logo { display: block; height: 32px; } /* the wordmark's 478 units at the whole logo's old scale (54 px for 806), so its capitals stay as tall as the 42 px text title's were; the width follows the file's own */
@@ -108,13 +108,10 @@ h2::before { content: ""; flex: none; width: 32px; height: 2px; background: var(
 .hop-op { color: var(--text2); font-size: 14px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* what ran last */
 .hop-ms { color: var(--ring); font-variant-numeric: tabular-nums; font-size: 16px; min-height: 1.2em; } /* how long it took */
 
-.credits { grid-column: 1 / -1; grid-row: 4; margin: 0; color: var(--text2); font-size: 15px; letter-spacing: 0.06em; text-align: center; } /* the credits line */
-
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } } /* fade up into place */
-.studio-head, .caregiver, .tv-column, .trace, .credits { animation: rise 900ms var(--ease) both; } /* the page settles in on load */
+.studio-head, .caregiver, .tv-column, .trace { animation: rise 900ms var(--ease) both; } /* the page settles in on load */
 .caregiver { animation-delay: 90ms; } /* then the caregiver panel */
 .tv-column { animation-delay: 180ms; } /* then the virtual TV */
-.trace { animation-delay: 270ms; } /* then the trace */
-.credits { animation-delay: 360ms; } /* and the credits last */
+.trace { animation-delay: 270ms; } /* and the trace last */
 .bubble, .chips, .speech, .error, .alert { animation: rise 500ms var(--ease) both; } /* each part of a turn, and each alert, rises in as it arrives */
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } } /* no motion when the viewer asks for less */
