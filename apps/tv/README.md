@@ -12,8 +12,10 @@ else, then Help: 1 s each, 2 s for the first, and then the scan repeats.
 
 Questions come from the [server](../../services/server). While the app is connected to it, a calm idle screen waits
 between the caregiver's questions: the name, "Waiting for a question" and the last reply ("You said: …"), with nothing
-lit or moving; a press of the switch opens Help. Only while the server can't be reached does the app ask practice
-questions from mock fixtures ([src/questions.ts](src/questions.ts)), listed best guess first with the question's basic
+lit or moving. A short press there sends nothing: it shows "Hold the button for help." for 3 s (a press meanwhile
+starts the 3 s again), so one accidental press alerts nobody; holding the switch for 2 s opens Help, with its help
+request. Only while the server can't be reached does the app ask practice questions from mock fixtures
+([src/questions.ts](src/questions.ts)), listed best guess first with the question's basic
 answers in the first four, as the server lists them (a test names them for each question), and labelled "Practice"
 instead of "Alex asks". A build with a server starts on the idle screen and turns to practice if its first connection
 attempt fails.
@@ -55,8 +57,8 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
   can't be reached, as in offline practice). Help that is already open sends nothing more, so a hold sends one request,
   even under the emulator's key chatter. A press dismisses it and the scan starts again (a server question still
   within its budget waits for its replies first); an answer that comes after that changes nothing. On the idle screen
-  a short press opens Help too, with its request, and dismissing it returns to the idle screen (or to a server
-  question that arrived meanwhile).
+  only the 2 s hold opens Help (a short press there shows the hint above and sends nothing), and dismissing it
+  returns to the idle screen (or to a server question that arrived meanwhile).
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
 delay of about 150 ms (the engine's window model). Every reply card and both pills carry an accessibility label and

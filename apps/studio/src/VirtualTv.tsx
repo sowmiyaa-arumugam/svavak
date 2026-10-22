@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { now } from '../../tv/src/clock'; // the TV's shared clock
-import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules, grid and Help screen's words
+import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, IDLE_HINT, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules, grid, and Help and idle screens' words
 import { QUESTIONS } from '../../tv/src/questions'; // the TV's practice questions
 import { StreamClient, type SocketLike } from '../../tv/src/stream'; // the TV's stream client: parsing and reconnects
 import { RELEASE_DEBOUNCE_MS, SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
@@ -132,6 +132,7 @@ function Screen({ conversation, snap }: { conversation: Conversation; snap: Retu
       <p className="tv-name">SvaVāk</p>{/* the product */}
       <p className="tv-waiting">Waiting for a question</p>{/* what the screen is doing */}
       {snap.reply !== null && <p className="tv-said">You said: {snap.reply}</p>}{/* the last reply to a caregiver question */}
+      {snap.hint && <p className="tv-said" data-testid="tv-idle-hint">{IDLE_HINT}</p>}{/* for a few seconds after a short press, which sends nothing; in the reply's type, as on the TV */}
     </div> // end of the screen
   ); // end of idle
   const scanning = snap.mode === 'asking'; // while waiting the engine still holds the previous scan

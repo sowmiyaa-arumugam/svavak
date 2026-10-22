@@ -3,7 +3,7 @@
 // The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2; Idle.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
-import { BUDGET_MS, cardsOf, CONFIG, Conversation, HELP_TEXT, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
+import { BUDGET_MS, cardsOf, CONFIG, Conversation, HELP_TEXT, IDLE_HINT, IDLE_HINT_MS, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
 import { HOLD_MS, RELEASE_DEBOUNCE_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
@@ -629,23 +629,52 @@ describe('Conversation online and offline', () => { // the idle screen while con
     expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[1], reply: null }); // idle, no reply
   }); // end of the case
 
-  it('opens Help on a press or a hold while idle, and a press dismisses it back to the idle screen', () => { // Help from idle
+  it('opens Help on a hold while idle, and a press dismisses it back to the idle screen', () => { // Help from idle
+    connected(); // a build with a server
+    answerLive(); // idle, with a reply
+    const idle = conversation.snapshot(); // the idle screen
+    conversation.help((time += 1000)); // a hold
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // Help
+    conversation.press((time += 3000)); // dismissed
+    expect(conversation.snapshot()).toEqual(idle); // idle again, with the reply
+  }); // end of the case
+
+  it('shows "Hold the button for help." for 3 s on a press while idle, keeping the reply; a second press starts the 3 s again', () => { // no Help, so no alert
     connected(); // a build with a server
     answerLive(); // idle, with a reply
     const idle = conversation.snapshot(); // the idle screen
     conversation.press((time += 1000)); // a short press
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // Help
-    conversation.press((time += 1000)); // dismissed
-    expect(conversation.snapshot()).toEqual(idle); // idle again, with the reply
-    conversation.help((time += 1000)); // a hold
-    expect(conversation.snapshot()).toEqual({ mode: 'help', question: LIVE, reply: null, help: 'sending' }); // Help
-    conversation.press((time += 3000)); // dismissed
-    expect(conversation.snapshot()).toEqual(idle); // idle again
+    expect(conversation.snapshot()).toEqual({ ...idle, hint: true }); // the same idle screen, with the hint
+    expect(IDLE_HINT).toBe('Hold the button for help.'); // what the screen shows then
+    expect(IDLE_HINT_MS).toBe(3000); // for a few seconds
+    time += 1000; // 1 s later
+    jest.advanceTimersByTime(1000); // the hint still shows
+    conversation.press(time); // a second press
+    time += IDLE_HINT_MS - 1; // 1 ms before its 3 s end, 4 s after the first press
+    jest.advanceTimersByTime(IDLE_HINT_MS - 1); // passed
+    expect(conversation.snapshot()).toEqual({ ...idle, hint: true }); // still shown
+    time += 1; // its 3 s are over
+    jest.advanceTimersByTime(1); // passed
+    expect(conversation.snapshot()).toEqual(idle); // the idle screen as it was
+    expect(helps).toEqual([]); // no help request at any point
+    expect(selections).toHaveLength(1); // and nothing logged for K2 beyond the answer
+  }); // end of the case
+
+  it("shows a server question that arrives while the hint shows at once, and the hint's end changes nothing", () => { // the hint never holds a question back
+    connected(); // a build with a server
+    conversation.press((time = 1000)); // the hint
+    conversation.receive(LIVE); // a question
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // shown at once, without the hint
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts
+    const asking = conversation.snapshot(); // scanning
+    time += IDLE_HINT_MS; // past the hint's end
+    jest.advanceTimersByTime(IDLE_HINT_MS); // passed
+    expect(conversation.snapshot()).toBe(asking); // still scanning
   }); // end of the case
 
   it('shows a server question asked during Help, opened while idle, first when Help is dismissed', () => { // queued over idle
     connected(); // a build with a server
-    conversation.press((time = 1000)); // Help from the idle screen
+    conversation.help((time = 1000)); // a hold: Help from the idle screen
     conversation.receive(LIVE); // queued
     expect(conversation.snapshot().mode).toBe('help'); // Help stays
     conversation.press((time += 1000)); // dismissed 1 s into its budget
@@ -677,7 +706,7 @@ describe('Conversation online and offline', () => { // the idle screen while con
 
   it('asks the next fixture when Help, opened while idle, is dismissed after the connection dropped', () => { // no idle screen offline
     connected(); // a build with a server
-    conversation.press((time = 1000)); // Help from the idle screen
+    conversation.help((time = 1000)); // a hold: Help from the idle screen
     conversation.setOnline(false); // the connection drops
     expect(conversation.snapshot().mode).toBe('help'); // Help stays
     conversation.press((time += 1000)); // dismissed
@@ -837,11 +866,57 @@ describe('Help requests', () => { // B8: Help sends one help request, and the sc
     expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // Help, sending
   }); // end of the case
 
-  it('sends one help request when a press on the idle screen opens Help', () => { // a server build between questions
+  it('sends nothing on a short press on the idle screen, which shows the hint for 3 s instead', () => { // one accidental press alerts nobody
     connected(); // a build with a server: idle
-    conversation.press((time = 1000)); // a press opens Help
+    input.keyDown(ENTER); // a short press of the switch
+    wait(100); // for 100 ms
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS); // stayed up: handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null, hint: true }); // the hint
+    wait(IDLE_HINT_MS); // its 3 s
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // the idle screen as it was
+    expect(helps).toEqual([]); // no help request
+  }); // end of the case
+
+  it('sends one help request on a 2 s hold on the idle screen, and its release sends nothing more', () => { // the hold still asks
+    connected(); // a build with a server: idle
+    input.keyDown(ENTER); // the hold starts
+    wait(HOLD_MS - 1); // 1999 ms
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // nothing yet, no hint either
+    wait(1); // 2 s held
+    expect(helps).toHaveLength(1); // one request, while the key is still down
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // Help
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS); // the hold's final release does nothing
+    expect(helps).toHaveLength(1); // still one
+    expect(conversation.snapshot().mode).toBe('help'); // and still Help
+  }); // end of the case
+
+  it('takes the K3 key chatter on the idle screen as one hold: one request, Help at 2 s, and no hint', () => { // the emulator's held key, between questions
+    connected(); // a build with a server: idle
+    chatter(43); // 1978 ms of chatter
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null }); // no press handed over, so no hint
+    chatter(1); // to 2024 ms: the 2 s mark fell in this pair, with the key down
+    expect(helps).toHaveLength(1); // the request went at 2 s
+    chatter(13); // the rest of the 57 pairs
+    wait(RELEASE_DEBOUNCE_MS); // the final release, then nothing
     expect(helps).toHaveLength(1); // one request
-    expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sending' }); // Help, sending
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // Help, without the hint
+  }); // end of the case
+
+  it('opens Help without the hint on a 2 s hold while the hint shows, with one request', () => { // a press, then the hold it hinted at
+    connected(); // a build with a server: idle
+    input.keyDown(ENTER); // a short press
+    wait(100); // for 100 ms
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS + 500); // handed over
+    expect(conversation.snapshot()).toEqual({ mode: 'idle', question: QUESTIONS[0], reply: null, hint: true }); // the hint shows
+    input.keyDown(ENTER); // the hold starts
+    wait(HOLD_MS); // 2 s held
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: QUESTIONS[0], reply: null, help: 'sending' }); // Help, without the hint
+    wait(IDLE_HINT_MS); // past the hint's end
+    expect(conversation.snapshot().mode).toBe('help'); // still Help
   }); // end of the case
 
   it('closes Help on a short press whatever its request did, and an answer that comes later changes nothing', async () => { // a press still closes Help

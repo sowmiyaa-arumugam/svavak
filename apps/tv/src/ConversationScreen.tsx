@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // h
 import { StyleSheet, Text, View } from 'react-native'; // primitives
 import KeyEvent from 'react-native-keyevent'; // Android key events, forwarded by plugins/withKeyEvent.js
 import { now } from './clock'; // the shared clock
-import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, type Reply } from './conversation'; // the state machine, the grid's cards and the Help screen's words
+import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, IDLE_HINT, type Reply } from './conversation'; // the state machine, the grid's cards, and the Help and idle screens' words
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
 import { postHelp, postUtterance, SERVER } from './server'; // the server, if this build has one
@@ -106,8 +106,9 @@ export function ConversationScreen() { // the screen
   if (snap.mode === 'idle') return ( // Idle: connected, between the server's questions; nothing lit or moving
     <View style={[styles.screen, styles.idle]}>{/* background, content centred */}
       <Text style={styles.name}>SvaVāk</Text>{/* the app's name */}
-      <Text style={styles.waiting}>Waiting for a question</Text>{/* the state; no hint, though a press opens Help */}
+      <Text style={styles.waiting}>Waiting for a question</Text>{/* the state */}
       {snap.reply !== null && <Text style={styles.said}>You said: {snap.reply}</Text>}{/* the last reply that stood, if any */}
+      {snap.hint && <Text style={styles.said}>{IDLE_HINT}</Text>}{/* for a few seconds after a short press, which sends nothing; in the reply's type */}
     </View> // end of the screen
   ); // end of Idle
 

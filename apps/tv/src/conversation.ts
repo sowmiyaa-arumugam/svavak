@@ -1,7 +1,7 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
 // The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), Help (with
-// its help request), and Idle.
+// its help request), and Idle (where a short press only shows how to ask for help).
 
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
@@ -29,12 +29,17 @@ export const HELP_TEXT: Record<HelpStatus, string> = { // what really happened, 
   failed: "Couldn't send the help request.", // no server, or it could not be reached (offline practice)
 }; // end of HELP_TEXT
 
+/** What the idle screen shows after a short press, which sends nothing (both the TV and the studio's virtual TV show it). */
+export const IDLE_HINT = 'Hold the button for help.'; // only a 2 s hold or the Help card asks for help, so one accidental press alerts nobody
+export const IDLE_HINT_MS = 3000; // how long the hint shows after the press
+
 /** What the screen shows. Replaced as a whole on every change. */
 export interface Snapshot { // the screen state
   mode: 'asking' | 'waiting' | 'saying' | 'help' | 'idle'; // scanning; a server question before its scan starts; the reply and its cancel window; Help; connected, between server questions
   question: Question; // the current question; when idle, the one last on screen (not shown)
   reply: string | null; // the committed reply, while it is being said; when idle, the last reply to a server question that stood, if any
   help?: HelpStatus; // in Help only: what happened to its help request
+  hint?: boolean; // when idle only, for IDLE_HINT_MS after a short press: IDLE_HINT shows
 } // end of Snapshot
 
 /** A reply that stood through its cancel window, with its selection statistics, for POST /v1/utterances. */
@@ -100,7 +105,7 @@ export class Conversation { // one per screen
   private askedAt = 0; // when the current selection's scan started
   private lastPress = -Infinity; // key-down time of the last press that was not debounced, in any state
   private presses: (number | null)[][] = []; // accepted presses of this selection: offsets from each option's onset
-  private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, or of a budget
+  private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, of a budget, or of the idle screen's hint
   private snap: Snapshot; // what the screen shows now
 
   constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, onHelp: () => Promise<unknown>, held: () => boolean, online = false) { // start
@@ -137,7 +142,7 @@ export class Conversation { // one per screen
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
     if (this.snap.mode === 'waiting') return; // nothing is lit yet
-    if (this.snap.mode === 'idle') return this.help(t); // nothing to answer: a press opens Help
+    if (this.snap.mode === 'idle') return this.hint(); // nothing to answer: say how to ask for help, and send nothing
     if (this.snap.mode === 'help' && (this.pending || this.idleHelp)) return this.set(this.next()); // closes Help: a server question asked meanwhile comes first, then the idle screen
     if (this.snap.mode !== 'asking') return this.set(this.show(this.snap.question)); // cancels "Saying it" or closes Help: the same question
     if (t < this.askedAt) return; // a key-down before this scan started: the press meant nothing here
@@ -163,7 +168,7 @@ export class Conversation { // one per screen
     clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
     this.idleHelp = this.snap.mode === 'idle'; // where dismissing it goes back to
     const opening = ++this.helps; // this opening of Help
-    this.set({ ...this.snap, mode: 'help', reply: null, help: 'sending' }); // "Asking for help…"
+    this.set({ mode: 'help', question: this.snap.question, reply: null, help: 'sending' }); // "Asking for help…"; the idle screen's hint, if shown, goes
     this.onHelp().then(() => this.helped(opening, 'sent'), () => this.helped(opening, 'failed')); // the one request, and what happened to it
   } // end of help
 
@@ -266,9 +271,14 @@ export class Conversation { // one per screen
   } // end of ask
 
   private idle(): Snapshot { // connected, between server questions: nothing lit or moving
-    clearTimeout(this.timer); // a cancelled reply's "Saying it" window is over
+    clearTimeout(this.timer); // a cancelled reply's "Saying it" window is over, and so is a hint's time
     return { mode: 'idle', question: this.snap.question, reply: this.last }; // the last reply that stood, if any
   } // end of idle
+
+  private hint(): void { // a short press on the idle screen: IDLE_HINT for IDLE_HINT_MS, counted from the latest press
+    this.set({ ...this.idle(), hint: true }); // the idle screen with the hint
+    this.timer = setTimeout(() => this.set(this.idle()), IDLE_HINT_MS); // then the idle screen as it was; anything else that comes first clears this timer
+  } // end of hint
 
   private set(next: Snapshot): void { // replace the snapshot and notify
     this.snap = next; // the new state

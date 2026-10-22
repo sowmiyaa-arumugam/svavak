@@ -3,7 +3,8 @@
 // Help (B8), in mock mode. A help request from the TV (POST /v1/alerts) shows "Sam is asking for help." with its time in
 // the caregiver panel, is spoken once, lights TV, Server and Caregiver on the trace, and "What did Sam say?" mentions
 // it. On the virtual TV, holding the space bar for 2 s sends one, and the screen says what really happened to it, as
-// the TV's does; a short press still closes Help.
+// the TV's does; a short press still closes Help. On the idle screen a short press sends nothing: it shows "Hold the
+// button for help." for a few seconds.
 
 import { expect, test, type Page } from '@playwright/test'; // Playwright Test
 import { sendHelp } from './sendHelp'; // a help request, as the TV sends it
@@ -102,6 +103,25 @@ test('shows "Asking for help…" while the request is on its way, and "Couldn\'t
   await press(page); // a short press
   await expect(tv).toHaveAttribute('data-mode', 'idle'); // closes Help
   await expect(page.getByTestId('help-alert')).toHaveCount(0); // nothing reached the server, so no alert
+}); // end of the test
+
+test('in Drive mode, a short press on the idle screen shows "Hold the button for help." for a few seconds and sends nothing; the K3 key chatter then sends one', async ({ page }) => { // one accidental press alerts nobody
+  const { tv, sent } = await drive(page); // idle
+  const hint = page.getByTestId('tv-idle-hint'); // the idle screen's hint
+  await press(page); // a short press
+  await expect(hint).toHaveText('Hold the button for help.'); // the hint
+  await expect(tv).toHaveAttribute('data-mode', 'idle'); // still the idle screen, not Help
+  await page.waitForTimeout(2000); // 2 s on
+  await expect(hint).toBeVisible(); // still shown
+  await expect(hint).toHaveCount(0, { timeout: 3000 }); // gone a few seconds after the press
+  expect(sent).toHaveLength(0); // no help request
+  await expect(page.getByTestId('help-alert')).toHaveCount(0); // so no alert
+  for (let pair = 0; pair < 57; pair++) { await page.keyboard.down('Space'); await page.waitForTimeout(45); await page.keyboard.up('Space'); } // K3: a held key as 57 press/release pairs about 46 ms apart
+  await expect(tv).toHaveAttribute('data-mode', 'help'); // one hold: Help
+  await expect(page.getByTestId('tv-help')).toHaveText('Help request sent.'); // the server confirmed it
+  await page.waitForTimeout(500); // a second request would have gone by now
+  expect(sent).toHaveLength(1); // one request for the chatter
+  await expect(hint).toHaveCount(0); // and no hint
 }); // end of the test
 
 test('speaks a help alert that came before any click or key once the page gets one, as Chrome allows', async ({ page }) => { // Chrome refuses speech before (error "not-allowed")

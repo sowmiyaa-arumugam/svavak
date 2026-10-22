@@ -30,7 +30,8 @@ stage that is scaled to fit the window (see Look).
   - Drive mode runs the TV's own conversation state machine, switchclock scan engine, switch handling and stream
     client ([apps/tv/src](../tv/src)), drawn on the TV's 1920 × 1080 layout and scaled into a 16:9 frame.
   - It connects to the [server](../../services/server) as the household's TV. It shows the idle screen between
-    questions, practice questions when the server can't be reached, "Finding replies…" while a question waits for the
+    questions (where a short press only shows "Hold the button for help." for 3 s and sends nothing, as on the TV),
+    practice questions when the server can't be reached, "Finding replies…" while a question waits for the
     model's replies (with dimmed empty cards up to eight, as on the TV), and Help. Help sends one help request to
     `POST /v1/alerts`, as the TV does (without its 4 s timeout and retry), and shows the TV's lines: "Asking for
     help…", then "Help request sent." or "Couldn't send the help request.".
@@ -123,7 +124,7 @@ tokens and no AWS profile. Ports 8787, 8790 and 5173 must be free. The end-to-en
 It drives the page through stable `data-testid` attributes, with `data-mode`, `data-label`, `data-lit`, `data-state`,
 `data-hop` and `data-seen` for state. It saves 1080p screenshots to `test-results/b5/` (git-ignored).
 
-The Help tests ([e2e/help.spec.ts](e2e/help.spec.ts)) check six things, with the browser's speech recorded instead
+The Help tests ([e2e/help.spec.ts](e2e/help.spec.ts)) check seven things, with the browser's speech recorded instead
 of played where they count it:
 
 - A help request sent from the page as the TV sends it (and its retry, with the same key) shows one alert, "Sam is
@@ -133,6 +134,9 @@ of played where they count it:
   `POST /v1/alerts`, shows "Help request sent." and the same alert, spoken once; a short press closes Help.
 - With that request held back for 2 s and then refused, the virtual TV shows "Asking for help…", then "Couldn't send
   the help request.", and no alert appears.
+- A short press on the idle screen in Drive mode shows "Hold the button for help." for a few seconds and sends
+  nothing, so no alert appears; the K3 key chatter after it (57 press/release pairs about 46 ms apart) is one hold
+  and sends one request.
 - An alert that arrives before any click or key on the page is shown at once and spoken at the first click, not at a
   Shift: Chrome refuses speech ("not-allowed") until a click or a key other than a modifier or Esc. The test
   reproduces that rule, which `page.evaluate` would lift.

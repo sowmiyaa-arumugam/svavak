@@ -11,8 +11,8 @@ Amazon Developer Hackathon 2026.
   (gate K1: 1.19% error) and Smart Scan mode (gate K1-scan: 0.48% and 1.19% error), and a seeded simulator.
 - **TV app** ([apps/tv](apps/tv)): the conversation screen in Smart Scan mode.
   - Questions come from the server's WebSocket stream. While it is connected, the TV shows a calm idle screen between
-    questions (the last reply, and a press opens Help). Local practice questions, labelled "Practice", run only when
-    the server can't be reached.
+    questions (the last reply; a short press only shows "Hold the button for help.", and a 2 s hold opens Help).
+    Local practice questions, labelled "Practice", run only when the server can't be reached.
   - It has a 2 s cancel window, after which the reply is posted and its speech played, a 2 s hold for Help, which
     sends one help request to the server and says whether it got there, and K2 instrumentation.
   - It runs on the Android TV emulator; gate K2 on a device is still open.
