@@ -109,7 +109,8 @@ please"), taking the weakest other reply's place if the list is full. A basic an
 the place of the lowest-ranked of them, which moves down one place. Questions asked with options are left as they are.
 
 **Reply pipeline** (plan §4.3, §4.6). Asking without options stores the question and pushes `question.created` as
-soon as its announcement is made, with the default replies that fit it. It then calls the model within a 3.5 s budget, with
+soon as its announcement is made, with the default replies that fit it. It calls the model at the same moment as the
+announcement (B9.1), so a slow or stalled Polly call never delays it, within a 3.5 s budget, with
 the six latest turns (each the question it answered, if any, then the reply), the local time and the household's
 profile facts. The question, the turns and the facts are quoted as data, never as instructions: each text is a JSON
 string with `<` and `>` escaped, between `<question>`, `<conversation>` and `<facts>` tags. The question comes last,
@@ -130,7 +131,8 @@ now (or, for a yes/no question, Ask me later if Not now is already there). The
 list is ordered best guess first, but a fallback never leads: every reply with the intent `later` or `clarify` ("I
 don't know yet", Not sure, Not now) comes after every other reply, unless they are all there is; and the basic answers
 are in the first four. Priors are computed from the scores with switchclock's `priors()`, and the result is pushed as
-`question.candidates`. On a timeout, an error or unusable output, the defaults stay. Profile facts with `<` or `>`
+`question.candidates` once `question.created` has gone out (never before it, and never for a question replaced while
+its announcement was made). On a timeout, an error or unusable output, the defaults stay. Profile facts with `<` or `>`
 are left out, so no fact can close the `<facts>` block.
 
 **Asking with options.** The replies are the options (trimmed, without a closing full stop), in their order and
@@ -157,8 +159,9 @@ or without options, gets a spoken announcement before `question.created` is push
 - **Cost, logs and trace.** Its characters count against the daily Polly cap, in live mode. The log line
   `question.created` says `announced: true` or `false`, a failure logs `announce.failed` with the question id and the
   outcome, and the cap logs `cap.reached`; never the words. Each synthesis adds a `server→tts` span, `announce`,
-  `announce.error` or `announce.timeout`. The model is called once the question is pushed, and the
-  `question.candidates` span still counts from the ask, so gate K3's time includes the announcement.
+  `announce.error` or `announce.timeout`. The model is asked at the same moment as the announcement; its candidates
+  follow the question, so a stalled Polly call holds them back until its 2 s limit at most. The `question.candidates`
+  span counts from the ask (gate K3); the `server→llm` span times the model call alone.
 
 **Cost guard.** At most 1,000 model calls and 100,000 Polly characters per UTC day; beyond that, mock output for
 replies and no announcement for questions.

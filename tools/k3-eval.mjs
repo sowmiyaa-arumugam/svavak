@@ -31,14 +31,14 @@ readSpans(trace.body); // in the background
 
 const rows = []; // one per question
 for (const [i, q] of EVAL_SET.entries()) { // one at a time, as a caregiver would ask
-  const from = spans.length; // the previous question's spans are all in by now: its server→llm span is its last
+  const from = spans.length; // where this question's spans may start; mine() also drops any span that ended before the ask
   const asked = Date.now(); // spans that ended before this, the trace's replay of its buffer included, are not this question's
   const res = await fetch(`${BASE}/v1/questions`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: q.text, asked_by: 'Alex' }) }); // ask
   if (res.status !== 201) fail(`POST /v1/questions answered ${res.status}`); // not created
   const { id } = await res.json(); // its id
   const mine = () => spans.slice(from).filter((s) => Date.parse(s.at) >= asked); // this question's spans: after the previous question's in the stream, and (same machine, same clock) not from before the ask
-  const llm = await until(() => mine().find((s) => s.hop === 'server→llm'), WAIT_MS); // the model call's span ends SuggestReplies
-  const pushed = mine().find((s) => s.hop === 'server→tv' && s.operation === 'question.candidates'); // the push, timed since the ask
+  const llm = await until(() => mine().find((s) => s.hop === 'server→llm'), WAIT_MS); // the model call's span
+  const pushed = llm?.operation === 'suggest' ? await until(() => mine().find((s) => s.hop === 'server→tv' && s.operation === 'question.candidates'), WAIT_MS) : undefined; // the push, timed since the ask; since B9.1 the model's span always comes first, and the push may wait for the question to go out
   const update = events.find((e) => e.type === 'question.candidates' && e.question_id === id); // what the TV got
   const candidates = update?.candidates ?? []; // none when the defaults stayed
   const top4 = candidates.slice(0, 4); // the first four cards

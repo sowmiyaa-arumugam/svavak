@@ -5,7 +5,7 @@
 // RequestHelp for flow S3.
 
 import { EventEmitter, once } from 'node:events'; // wakes a waiting get_answer
-import { cleanDrafts, defaultCandidates, defaultsFor, dropBanned, optionCandidates, toCandidates } from '../domain/candidates.ts'; // reply pipeline
+import { cleanDrafts, defaultCandidates, defaultsFor, dropBanned, optionCandidates, toCandidates, type Draft } from '../domain/candidates.ts'; // reply pipeline
 import type { DailyCap } from '../domain/dailyCap.ts'; // cost guard
 import { DEMO_HOUSEHOLD, FACTS_MAX, type ProfileFact } from '../domain/facts.ts'; // the one household for now, and its fact limit
 import type { HelpRequest, Question, Utterance } from '../domain/model.ts'; // the model
@@ -76,8 +76,9 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
   /**
    * AskQuestion: expire the open question, store the new one, make its spoken announcement and then push it. With
    * options, its replies are final and question.candidates follows at once; without, the defaults that fit it go first
-   * and SuggestReplies pushes the model's candidates. `delivered` says whether a TV was connected to receive it; a
-   * question replaced by a newer one while its announcement was made is never pushed.
+   * and SuggestReplies, asked at the same moment as the announcement (B9.1), pushes the model's candidates once the
+   * question has gone out. `delivered` says whether a TV was connected to receive it; a question replaced by a newer one
+   * while its announcement was made is never pushed, nor are its candidates.
    */
   async function askQuestion(text: string, askedBy: string, extra: { options?: readonly string[]; urgency?: Question['urgency'] } = {}): Promise<{ question: Question; delivered: boolean; suggested: Promise<void> }> { // S1 steps 1-5
     const askedAt = deps.clock(); // the ask, for the question.candidates span
@@ -100,23 +101,31 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     }; // end of the question
     deps.store.saveQuestion(asked); // persist: a newer question expires it from now on
     announcing.add(asked.id); // not on any TV yet, so not replayed to one
+    let sent: (pushed: boolean) => void = () => {}; // says whether question.created went out
+    const created = new Promise<boolean>((resolve) => { sent = resolve; }); // the model's candidates wait for it, so they never reach the TV first
+    const suggested = extra.options ? Promise.resolve() : suggestReplies(asked, turns, askedAt, created); // the model is asked now, while the announcement is made: a slow Polly never delays it
     const announcement = await announceQuestion(asked); // its path, or null
     announcing.delete(asked.id); // pushed below, or replaced meanwhile
     const current = deps.store.getQuestion(asked.id)!; // as stored now
-    if (current.status !== 'pending') return { question: current, delivered: false, suggested: Promise.resolve() }; // replaced meanwhile: the TV shows the newer one
+    if (current.status !== 'pending') { sent(false); return { question: current, delivered: false, suggested }; } // replaced meanwhile: the TV shows the newer one, and never gets this one's candidates
     const question = { ...current, announcement_url: announcement }; // with its announcement
     deps.store.saveQuestion(question); // persist
-    const delivered = deps.notifier.publish({ type: 'question.created', question }) > 0; // to the TV, before any model call
+    const delivered = deps.notifier.publish({ type: 'question.created', question }) > 0; // to the TV, before the model's candidates
     deps.trace.span({ hop: 'server→tv', operation: 'question.created', duration_ms: 0, mode: deps.mode }); // pushed now
     deps.log('question.created', { question_id: question.id, options: extra.options?.length ?? 0, announced: announcement !== null }); // no text in logs
-    if (!extra.options) return { question, delivered, suggested: suggestReplies(question, turns, askedAt) }; // the caller does not wait for the model
+    sent(true); // the model's candidates may follow now
+    if (!extra.options) return { question, delivered, suggested }; // the caller does not wait for the model
     deps.notifier.publish({ type: 'question.candidates', question_id: question.id, candidates: question.candidates }); // the final list now, so the TV starts its scan without waiting out the budget
     deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 0, mode: deps.mode }); // pushed now
     return { question, delivered, suggested: Promise.resolve() }; // no model call
   } // end of askQuestion
 
-  /** SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. `askedAt` times their push from the ask. */
-  async function suggestReplies(question: Question, recentTurns: SuggestRequest['recentTurns'], askedAt: number): Promise<void> { // steps 2-5
+  /**
+   * SuggestReplies: the model's candidates within the budget; on timeout, error or invalid output the defaults stay. They
+   * are pushed once `created` says question.created went out, and not at all if it never did. `askedAt` times their push
+   * from the ask.
+   */
+  async function suggestReplies(question: Question, recentTurns: SuggestRequest['recentTurns'], askedAt: number, created: Promise<boolean>): Promise<void> { // steps 2-5
     const live = deps.llm.live !== null && deps.llm.cap.take(1); // live model, unless mock mode or today's cap is used up
     if (deps.llm.live !== null && !live) deps.log('cap.reached', { cap: 'llm_calls' }); // fell back to mock
     const llm = live ? deps.llm.live! : deps.llm.mock; // the adapter for this call
@@ -125,24 +134,25 @@ export function createUseCases(deps: Deps) { // a closure, so CommitUtterance ca
     const request = { question: question.text, askedBy: question.asked_by, recentTurns, localTime: hhmm(started), facts: deps.store.profileFacts(DEMO_HOUSEHOLD) }; // §4.6 inputs
     let outcome = 'suggest'; // span operation; a suffix marks failures
     let dropped = 0; // candidates the banned-term filter removed
+    let drafts: Draft[] = []; // what may reach the TV
     try { // the model call
       const raw = await Promise.race([llm.suggest(request, signal), rejectOnAbort(signal)]); // whichever comes first
       const filtered = dropBanned(cleanDrafts(raw)); // validate, trim, cap, de-duplicate, then drop banned terms
-      const drafts = filtered.kept; // what may reach the TV
+      drafts = filtered.kept; // the usable candidates
       dropped = filtered.dropped; // for the span; never the text
-      const current = deps.store.getQuestion(question.id); // it may have been answered meanwhile
       if (drafts.length === 0) outcome = 'suggest.invalid'; // nothing usable: defaults stay
-      else if (current?.status === 'pending') { // still on the TV
-        const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text), 'llm', current.text) }; // merged with the defaults that fit, the basic answers in the first four, priors computed
-        deps.store.saveQuestion(updated); // persist
-        deps.notifier.publish({ type: 'question.candidates', question_id: updated.id, candidates: updated.candidates }); // to the TV
-        deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - askedAt, mode: deps.mode }); // since asked, the announcement included (gate K3)
-      } // end of the push
     } catch (error) { // timeout or adapter failure
       outcome = signal.aborted ? 'suggest.timeout' : 'suggest.error'; // which one
       deps.log('suggest.failed', { question_id: question.id, outcome, error: String(error) }); // defaults stay on the TV
     } // end of the model call
-    deps.trace.span({ hop: 'server→llm', operation: outcome, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock', dropped }); // hop
+    deps.trace.span({ hop: 'server→llm', operation: outcome, duration_ms: deps.clock() - started, mode: live ? 'live' : 'mock', dropped }); // the model call alone
+    if (drafts.length === 0 || !(await created)) return; // nothing usable, or the question never reached a TV
+    const current = deps.store.getQuestion(question.id); // it may have been answered meanwhile
+    if (current?.status !== 'pending') return; // answered or replaced: nothing to update on the TV
+    const updated = { ...current, candidates: toCandidates(drafts, defaultsFor(current.text), 'llm', current.text) }; // merged with the defaults that fit, the basic answers in the first four, priors computed
+    deps.store.saveQuestion(updated); // persist
+    deps.notifier.publish({ type: 'question.candidates', question_id: updated.id, candidates: updated.candidates }); // to the TV, after question.created
+    deps.trace.span({ hop: 'server→tv', operation: 'question.candidates', duration_ms: deps.clock() - askedAt, mode: deps.mode }); // since asked (gate K3)
   } // end of suggestReplies
 
   /** SynthesizeSpeech: MP3 from the live voice, or the mock's WAV tone in mock mode or past today's cap; null on failure. Never throws. */

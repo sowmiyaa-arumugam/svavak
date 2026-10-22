@@ -50,7 +50,7 @@ describe('askQuestion and suggestReplies', () => { // S1 steps 1 to 5
   it('pushes the question with the defaults at once, then the model candidates', async () => { // defaults first
     const { uc, events, store, spans } = setup(); // mock model
     const { question, suggested } = await uc.askQuestion('Would you like tea or coffee?', 'Alex'); // ask
-    expect(events).toEqual([{ type: 'question.created', question }]); // before the model has answered
+    expect(events[0]).toEqual({ type: 'question.created', question }); // first, with the defaults: the model's candidates never come before it
     expect(question.candidates.map((c) => c.text)).toEqual(['Tea, please', 'Coffee, please', 'You decide', 'Not sure', 'Tell me more', 'Not now']); // a choice question's options, then its four defaults, fallbacks last
     await suggested; // the model's turn
     const pushed = events[1]; // the second event
@@ -242,6 +242,9 @@ describe('synthesizeSpeech (through commitUtterance)', () => { // speech pipelin
   }); // end of the case
 }); // end of synthesizeSpeech
 
+/** Lets the promise callbacks run. */
+const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); }; // a few microtask turns
+
 /** A voice that records what it is asked to say and answers with `audio` at once. */
 function fakeVoice(said: string[], audio = new Uint8Array([7])): TtsPort { // a fake Polly voice
   return { synthesize: async (text) => { said.push(text); return audio; } }; // immediate answer
@@ -268,16 +271,69 @@ describe('announceQuestion (through askQuestion)', () => { // B9: each new quest
     expect([cap.take(1000 - SPOKEN.length), cap.take(1)]).toEqual([true, false]); // exactly its characters were counted
   }); // end of the case
 
-  it("times question.candidates from the ask, the announcement's time included, and the model call on its own", async () => { // gate K3 measures ask to candidates
-    const clock = { advance: (_ms: number) => {} }; // moves the fake clock; set below
-    const announcer: TtsPort = { synthesize: async () => { clock.advance(400); return new Uint8Array([7]); } }; // Amy takes 400 ms
-    const model: LlmPort = { suggest: async () => { clock.advance(1000); return TEA; } }; // the model takes 1 s
-    const { uc, spans, advance } = setup({ tts: { live: fakeVoice([]), announcer }, llm: { mock: model } }); // live voices
-    clock.advance = advance; // the fake clock
-    await (await uc.askQuestion(ASKED, 'Alex')).suggested; // ask, and wait for the replies
+  it('asks the model at the same moment as the announcement, and times question.candidates from the ask (gate K3)', async () => { // B9.1: replies in parallel
+    let announced: (audio: Uint8Array) => void = () => {}; // makes the announcement ready
+    let answered: (output: unknown) => void = () => {}; // makes the model answer
+    const calls: SuggestRequest[] = []; // the model's requests
+    const announcer: TtsPort = { synthesize: () => new Promise((r) => { announced = r; }) }; // Amy, until the test says so
+    const model: LlmPort = { suggest: (request) => { calls.push(request); return new Promise((r) => { answered = r; }); } }; // the model, likewise
+    const { uc, spans, events, advance } = setup({ tts: { live: fakeVoice([]), announcer, announceMs: 5000 }, llm: { mock: model, budgetMs: 5000 } }); // live voices, generous limits
+    const asking = uc.askQuestion(ASKED, 'Alex'); // asked at 0
+    await flush(); // the calls start
+    expect(calls).toHaveLength(1); // the model is asked at once, while the announcement is made
+    advance(400); // 400 ms later
+    announced(new Uint8Array([7])); // the announcement is ready
+    const { suggested } = await asking; // the question goes out
+    expect(events.map((e) => e.type)).toEqual(['question.created']); // no replies yet
+    advance(600); // at 1000 ms
+    answered(TEA); // the model answers
+    await suggested; // its replies go out
+    expect(events.map((e) => e.type)).toEqual(['question.created', 'question.candidates']); // the question first, then its replies
     expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: 'announce', duration_ms: 400 })); // the announcement
-    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest', duration_ms: 1000 })); // the model call alone
-    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 1400 })); // since the ask
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest', duration_ms: 1000 })); // the model call, from the ask: not after the announcement
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 1000 })); // since the ask
+  }); // end of the case
+
+  it('holds the replies until the question has gone out when the model answers before the announcement is ready', async () => { // the question first, always
+    let announced: (audio: Uint8Array) => void = () => {}; // makes the announcement ready
+    const { uc, events } = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: () => new Promise((r) => { announced = r; }) } }, llm: { mock: fakeLlm(TEA) } }); // a quick model, a slow announcer
+    const asking = uc.askQuestion(ASKED, 'Alex'); // asked
+    await flush(); // the model has answered
+    expect(events).toEqual([]); // nothing reaches the TV before the question
+    announced(new Uint8Array([7])); // the announcement is ready
+    const { question, suggested } = await asking; // the question goes out
+    await suggested; // and its replies
+    expect(events.map((e) => e.type)).toEqual(['question.created', 'question.candidates']); // in this order
+    expect(question.candidates.every((c) => c.source === 'default')).toBe(true); // question.created still carries the defaults, not the model's candidates
+  }); // end of the case
+
+  it('times the model call alone, and question.candidates from the ask, when the model answers before the announcement is ready', async () => { // the case B9.1 makes possible
+    let announced: (audio: Uint8Array) => void = () => {}; // makes the announcement ready
+    let answered: (output: unknown) => void = () => {}; // makes the model answer
+    const model: LlmPort = { suggest: () => new Promise((r) => { answered = r; }) }; // the model, until the test says so
+    const { uc, spans, advance } = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: () => new Promise((r) => { announced = r; }) }, announceMs: 5000 }, llm: { mock: model, budgetMs: 5000 } }); // both held
+    const asking = uc.askQuestion(ASKED, 'Alex'); // asked at 0
+    await flush(); // the calls start
+    advance(100); // at 100 ms
+    answered(TEA); // the model answers first
+    await flush(); // its span is out; its replies wait for the question
+    advance(300); // at 400 ms
+    announced(new Uint8Array([7])); // the announcement is ready
+    await (await asking).suggested; // the question goes out, then its replies
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→llm', operation: 'suggest', duration_ms: 100 })); // the model call alone, not the wait for Amy
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tv', operation: 'question.candidates', duration_ms: 400 })); // since the ask, the wait for the question included (gate K3)
+  }); // end of the case
+
+  it('asks the model at once when Polly stalls, and pushes its replies right after the question goes out at the limit', async () => { // a stalled announcement delays the replies by the limit at most
+    const calls: SuggestRequest[] = []; // the model's requests
+    const { uc, events, spans } = setup({ tts: { live: fakeVoice([]), announcer: { synthesize: () => new Promise(() => {}) }, announceMs: 30 }, llm: { mock: fakeLlm(TEA, calls) } }); // Polly never answers
+    const asking = uc.askQuestion(ASKED, 'Alex'); // asked
+    await flush(); // the calls start
+    expect([calls.length, events.length]).toEqual([1, 0]); // the model is asked; the question waits for the limit
+    const { question, suggested } = await asking; // 30 ms: out without an announcement
+    await suggested; // the replies follow at once
+    expect([question.announcement_url, events.map((e) => e.type)]).toEqual([null, ['question.created', 'question.candidates']]); // both pushed
+    expect(spans).toContainEqual(expect.objectContaining({ hop: 'server→tts', operation: 'announce.timeout' })); // traced
   }); // end of the case
 
   it('replays no question whose announcement is still being made, and replays it with its announcement once pushed', async () => { // a TV that connects meanwhile gets the push itself
@@ -287,7 +343,7 @@ describe('announceQuestion (through askQuestion)', () => { // B9: each new quest
     expect(uc.openQuestion()).toBeUndefined(); // not on any TV yet: nothing to replay
     release(new Uint8Array([7])); // ready
     const { question } = await asking; // pushed
-    expect(uc.openQuestion()).toEqual(question); // replayed from now on, with its announcement
+    expect(uc.openQuestion()).toMatchObject({ id: question.id, announcement_url: question.announcement_url }); // replayed from now on, with its announcement (and the model's candidates by now)
     expect(question.announcement_url).not.toBeNull(); // which it has
   }); // end of the case
 
