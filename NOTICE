@@ -12,6 +12,17 @@ which is the studio's title, are set in the typeface Source Serif 4, Copyright 2
 (https://openfontlicense.org). The logo files hold its glyphs as outlines; no font file is committed. The licence text
 is kept next to the logo: assets/brand/SourceSerif4_OFL.txt.
 
+The engine (packages/switchclock) computes the normal distribution function with @stdlib/math-base-special-erfc
+(https://github.com/stdlib-js/math-base-special-erfc), Copyright (c) 2016-2026 The Stdlib Authors, licensed under the
+Apache License, Version 2.0. Its erfc follows FreeBSD's msun s_erf.c, which carries this notice:
+
+  Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+
+  Developed at SunPro, a Sun Microsystems, Inc. business.
+  Permission to use, copy, modify, and distribute this
+  software is freely granted, provided that this notice
+  is preserved.
+
 The studio (apps/studio) uses third-party material that is not under the Apache License 2.0:
 
 - Background photo: "A group of green leaves with a dark background" by Aaron Vasquez on Unsplash

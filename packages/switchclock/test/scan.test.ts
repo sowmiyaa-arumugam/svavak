@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'; // test API
 import fc from 'fast-check'; // property-based testing
 import { priors } from '../src/core/priors.ts'; // the expected starting posterior
 import { cycleMs, DEFAULT_SCAN_CONFIG, normalCdf, onsetMs, ScanEngine, type ScanConfig, windowMs } from '../src/core/scan.ts'; // under test
+import baseline from './normal-cdf-baseline.json'; // generated: the previous normalCdf (Numerical Recipes' erfcc) on -40..40 and far tails
 
 const CFG: ScanConfig = DEFAULT_SCAN_CONFIG; // mu = 150 ms, sigma = 120 ms, eps = 0.05, theta = 0.97
 const T0 = 1000; // the injected clock's time when options are set
@@ -24,6 +25,13 @@ const simpson = (x: number): number => { // the standard normal density integrat
   for (let i = 0; i <= n; i++) sum += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) * Math.exp(-((-10 + i * h) ** 2) / 2); // Simpson's weights
   return (sum * h) / 3 / Math.sqrt(2 * Math.PI); // the integral
 }; // end of simpson
+const EXACT: [number, number][] = [ // x and Phi(x) to 17 significant digits, computed with mpmath at 50 digits
+  [-37, 5.7255712225245768e-300], [-30, 4.9067139271481871e-198], [-20, 2.7536241186062337e-89], // far left tail
+  [-10, 7.6198530241605261e-24], [-6, 9.8658764503769814e-10], [-3, 1.3498980316300945e-3], // left tail
+  [-1.5, 6.6807201268858066e-2], [-0.5, 3.085375387259869e-1], [0, 0.5], [0.5, 6.914624612740131e-1], // the middle
+  [1.5, 9.3319279873114193e-1], [3, 9.9865010196836991e-1], [6, 9.9999999901341235e-1], // right side
+]; // end of EXACT
+const MIN_NORMAL = 2.2250738585072014e-308; // smallest normal double: below it a value keeps too few bits for a relative error
 
 describe('scan timing', () => { // cycle, onsets and windows
   it('gives every option one step and the first one extra time', () => { // the defaults
@@ -37,6 +45,19 @@ describe('scan timing', () => { // cycle, onsets and windows
 describe('normalCdf', () => { // Phi, for the window model
   it('matches numerical integration of the normal density to 1e-7', () => { // against an independent reference
     for (const x of [-4, -2.5, -1, 0, 0.5, 1.96, 3]) expect(Math.abs(normalCdf(x) - simpson(x))).toBeLessThan(1e-7); // spot values
+  }); // end of the case
+  it('is accurate to double precision against exact values, deep into the left tail', () => { // against mpmath
+    for (const [x, phi] of EXACT) expect(Math.abs(normalCdf(x) - phi) / phi).toBeLessThan(1e-12); // relative; 1e-12 allows for rounding x / sqrt 2
+  }); // end of the case
+  it('stays within 2e-7 relative error of the replaced function on every input the engine can give it', () => { // regression
+    let worst = 0; // the largest relative error seen
+    baseline.x.forEach((x, i) => { // each recorded point, -40..40 in steps of 1/64, then the far tails
+      const before = baseline.phi[i]!; // the replaced function's value
+      if (before >= MIN_NORMAL) worst = Math.max(worst, Math.abs(normalCdf(x) - before) / before); // relative error
+      else expect(normalCdf(x)).toBeLessThan(MIN_NORMAL); // below x of about -37.5 both are zero for the engine's sums
+    }); // end of the points
+    expect(baseline.x.length).toBe(5129); // the whole grid was read
+    expect(worst).toBeLessThan(2e-7); // the bound asked for
   }); // end of the case
 }); // end of normalCdf
 

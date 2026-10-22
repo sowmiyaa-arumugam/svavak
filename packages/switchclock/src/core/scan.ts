@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Scan mode: one highlight steps through the options in a fixed order, and each press is scored against the windows.
 
+import erfc from '@stdlib/math-base-special-erfc'; // complementary error function (Apache-2.0; FreeBSD msun's s_erf.c)
 import { type ClickModel, normalise } from './model.ts'; // the click-model parameters and log-space normalisation
 import { rankOrder } from './phases.ts'; // options by posterior
 import { type Option, type PriorConfig, priors } from './priors.ts'; // scores to priors
@@ -46,11 +47,10 @@ export function windowMs(p: number, c: Timing): number { // window length
   return p === 0 ? c.stepMs + c.firstExtraMs : c.stepMs; // the first option gets the extra time
 } // end of windowMs
 
-/** Phi(x), the standard normal distribution function, through Numerical Recipes' erfcc (fractional error < 1.2e-7). */
+/** Phi(x), the standard normal distribution function, through stdlib's erfc (double precision). */
 export function normalCdf(x: number): number { // P(Z <= x)
   const z = Math.abs(x) / Math.SQRT2; // erfc argument for |x|
-  const t = 1 / (1 + 0.5 * z); // the approximation's variable
-  const tail = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277))))))))); // erfc(z)
+  const tail = erfc(z); // P(|Z| >= |x|), accurate far into the tail
   return x >= 0 ? 1 - tail / 2 : tail / 2; // Phi(x) = erfc(-x / sqrt 2) / 2
 } // end of normalCdf
 
