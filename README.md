@@ -5,6 +5,38 @@
 A single-switch AAC (augmentative and alternative communication) communicator for Fire TV, built for the
 Amazon Developer Hackathon 2026.
 
+## For judges
+
+**Mock quickstart (5 minutes, no AWS account).** You need Node.js 24 with Corepack (Yarn 4.5) and
+[uv](https://docs.astral.sh/uv/). `.env.example` holds public demo tokens for mock mode, so copying it is the only
+set-up:
+
+```sh
+git clone <repository-url> svavak && cd svavak
+yarn install
+cp .env.example .env
+```
+
+Then start each part in its own terminal, from the repository root:
+
+```sh
+yarn workspace server start                          # the server on 127.0.0.1:8787
+cd services/agent && uv run python -m svavak_agent   # the agent (the simulated Alexa+) on 127.0.0.1:8790
+yarn workspace studio dev                            # the studio on http://localhost:5173
+```
+
+Open http://localhost:5173 and switch on **Drive mode**. Send "Ask Sam if he wants tea or coffee.", click the virtual
+TV and press Space when Tea lights up. Then try "Remember that Sam loves gardening.", "What did Sam say?" and holding
+Space for 2 s (Help).
+
+**Fire TV route.** Install the demo APK (`svavak-demo.apk`) from the repository's Releases on an Android TV emulator
+(1080p), for example with `adb install svavak-demo.apk`. It connects to the server at `10.0.2.2:8787` (the emulator's
+address for your computer) with the public demo token. Switch Drive mode off in the studio and answer on the TV with
+Enter.
+
+**Live mode** (Nova 2 Lite on Bedrock, Polly) needs your own AWS access and your own tokens; see
+[services/server](services/server).
+
 ## Status
 
 - **Engine** ([packages/switchclock](packages/switchclock)): Bayesian single-switch selection with clock mode
