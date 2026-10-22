@@ -37,9 +37,9 @@ stage that is scaled to fit the window (see Look).
     help…", then "Help request sent." or "Couldn't send the help request.".
   - It reads each question aloud before its scan starts, as the TV does (B9): it fetches the question's announcement
     from the server with the device token and plays it in the page, and the highlight starts once it has ended and
-    the replies are ready. A press during it stops it and starts the scan at once; holding for Help stops it too. The
-    browser plays audio only after a click or a key on the page (switching Drive mode on is one); when it can't play
-    the announcement, the scan starts as without one.
+    the replies are ready. A press during it stops it, and the scan starts as soon as the replies are ready; holding
+    for Help stops it too. The browser plays audio only after a click or a key on the page (switching Drive mode on
+    is one); when it can't play the announcement, the scan starts as without one.
   - The **space bar** is the switch: press when your answer lights up, or hold for 2 s for Help. While you type in the
     caregiver's text box, a space is just a space.
   - A reply that stands through its 2 s cancel window is posted to `POST /v1/utterances`, as the TV posts it. The
@@ -156,7 +156,8 @@ caregiver turn, recording the page's audio events (`playing`, `pause`, `ended`, 
 - The virtual TV fetches the question's announcement with the device token (200, the mock's `audio/wav` tone), plays
   it to its end, and lights its first option only after that end.
 - With the announcement's request failing on the network, the scan starts at once and nothing plays. With a 5 s
-  announcement instead (served by the test), a short press during it pauses it and starts the scan at once.
+  announcement instead (served by the test), a short press during it pauses it, and the scan starts at once, since
+  the question's replies are final.
 
 Each answers Tea with the space bar at the end, as the loop test does, since an open question would be replayed to
 the next test's virtual TV.

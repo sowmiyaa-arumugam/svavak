@@ -25,8 +25,9 @@ attempt fails.
   plays its spoken announcement from the server, "Alex asks: Would you like tea or coffee?", in a voice that is not
   Sam's own (Polly's Amy; a short tone in mock mode), while its replies are found. The highlight starts only once the
   announcement has finished and the replies are ready (below). A press whose key goes down during the announcement
-  stops it and starts the scan at once, choosing nothing, on the replies shown (the defaults, if the model's have not
-  come yet), even if the announcement ended before the key came up; one that went down before it began does nothing.
+  stops it, choosing nothing; the scan then starts as soon as the replies are ready, as without an announcement: at
+  once if they are final, else when the model's arrive or the budget ends (B9.1). One whose key went down before the
+  announcement began does nothing.
   Holding the switch for 2 s opens Help then too, with its one help request, and stops the announcement. A question
   is announced once: not again when Help is dismissed, after a cancel, or for its replay after a reconnect. When the
   app can't play it (the server made none, the audio can't be loaded, or it has not started within 2 s), the scan

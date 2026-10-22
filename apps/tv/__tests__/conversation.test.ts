@@ -1023,24 +1023,35 @@ describe('Announcements', () => { // B9: a server question is read aloud, and it
     expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // nothing changed
   }); // end of the case
 
-  it('starts the scan at once on a press whose key went down during the announcement, though it ended before the press was handed over', () => { // a short tone
+  it("stops the announcement on a press before the model's replies, and starts the scan as soon as they come, selecting nothing", () => { // B9.1: the usual wait
+    conversation.receive(ANNOUNCED); // at 0, waiting for the replies too
+    press(); // a short press during the announcement
+    expect(played[0]!.stopped).toBe(true); // silenced
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // nothing lit: the defaults are not final yet
+    time = 1200; // the model's replies
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: READY, reply: null }); // the scan starts on them
+    expect(conversation.engine.scanAt(time).epoch).toBe(1200); // now
+    expect([selections, said]).toEqual([[], []]); // the press chose nothing
+  }); // end of the case
+
+  it('stops the announcement on a press, and scans the defaults once the budget ends without the replies', () => { // the usual wait, to its end
+    conversation.receive(ANNOUNCED); // at 0
+    press(); // a short press during the announcement
+    expect(conversation.snapshot().mode).toBe('waiting'); // waiting for the replies
+    time = BUDGET_MS; // the budget ends without them
+    jest.advanceTimersByTime(BUDGET_MS); // passed
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the defaults, exactly then
+    expect(conversation.engine.scanAt(time).epoch).toBe(BUDGET_MS); // as without an announcement
+  }); // end of the case
+
+  it('changes nothing on a press handed over after a short announcement ended: the scan still waits for the replies', () => { // no jump to the defaults
     conversation.receive(ANNOUNCED); // at 0, the replies not final yet
     time = 250; // the announcement ends
     played[0]!.end(); // the player says so
-    expect(conversation.snapshot().mode).toBe('waiting'); // waiting for the replies
     time = 330; // a press whose key went down at 100 is handed over
     conversation.press(100); // pressed during the announcement
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the scan starts at once, on the defaults
-    expect([selections, said]).toEqual([[], []]); // nothing chosen
-  }); // end of the case
-
-  it("starts the scan at once on the defaults on a press during the announcement, before the model's replies", () => { // skip before the replies
-    conversation.receive(ANNOUNCED); // at 0, waiting for the replies too
-    press(); // a short press during the announcement
-    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the scan on the defaults
-    const asking = conversation.snapshot(); // the scan
-    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies, after the scan started
-    expect(conversation.snapshot()).toBe(asking); // ignored, as for any running scan
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // still waiting for the replies
   }); // end of the case
 
   it('opens Help on a 2 s hold during the announcement, stops it and sends one help request; a press then starts the scan, without announcing again', () => { // Help at any time
