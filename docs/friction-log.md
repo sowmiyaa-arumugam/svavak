@@ -74,6 +74,7 @@ Sorted by severity, then date.
 | 2026-10-22 | Android TV emulator (launcher) | The launcher took the foreground back from `am start` | Low |
 | 2026-10-22 | Android Emulator | The emulator shut itself down right after loading its snapshot | Low |
 | 2026-10-22 | Claude desktop app (Browser pane) | A page in the hidden Browser pane gets no animation frames | Low |
+| 2026-10-22 | pip with git-filter-repo, Git for Windows | pip installs git-filter-repo where Git cannot find it | Low |
 
 ## Entries
 
@@ -1049,3 +1050,24 @@ Sorted by severity, then date.
 - **Severity:** Low. The studio is fine; only the check could not run there.
 - **Workaround:** the same steps in headless Chromium through Playwright, where animation frames run.
 - **Suggestion:** say in the tool result when a page is hidden and its animation frames are paused.
+- **Seen again:** 2026-10-22 (B12), on the fresh-clone check of the judge steps. Screenshots timed out after 5 s, and
+  a script waiting for Tea's `lit` class timed out after 20 s; a Space press sent after it still chose Tea, since the
+  engine works from the clock, not from the drawn highlight. The agent's 20 s wait had ended by then, so the caregiver
+  panel said "Sam hasn't answered yet." The rest of the steps were driven through the page's accessibility tree.
+
+## 2026-10-22: pip installs git-filter-repo where Git cannot find it
+
+- **Date:** 2026-10-22
+- **Tool:** pip 25.1 (Anaconda Python 3.13.5) with git-filter-repo 2.47.0; Git for Windows 2.49.0
+- **Task attempted:** rewrite the author and committer of every commit to the GitHub no-reply address before
+  publishing (B12).
+- **Steps taken:** `python -m pip install --user git-filter-repo`, then `git filter-repo --version` and
+  `git filter-repo --help`.
+- **Expected:** Git finds the new `filter-repo` command, and `--help` shows its options.
+- **Actual:** pip put `git-filter-repo.exe` in `%APPDATA%\Python\Python313\Scripts`, which is not on `PATH`, and said
+  so only in a warning ("Consider adding this directory to PATH"); Git answered "'filter-repo' is not a git command".
+  With that folder on `PATH` the command ran, but `--help` failed with "documentation file not found"
+  (`git-filter-repo.html`, exit 128): Git for Windows opens an HTML manual page, which pip does not install.
+- **Severity:** Low. The command works once the folder is on `PATH`.
+- **Workaround:** added the folder to `PATH` for the shell, and read the options with `python -m git_filter_repo -h`.
+- **Suggestion:** the install notes could name the Scripts folder on Windows and the `-h` route for help.
