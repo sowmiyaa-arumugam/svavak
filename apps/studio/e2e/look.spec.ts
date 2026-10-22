@@ -25,6 +25,7 @@ test('draws the darkened photo of leaves in Montserrat, all from localhost, with
   await expect(page.getByTestId('sim-banner')).toHaveText('Simulated Alexa+ experience'); // kept
   await page.getByTestId('drive-mode').check(); // the virtual TV and its label are shown only in drive mode
   await expect(page.locator('.mirror')).toHaveText('Web version of the TV app: the real app runs on Fire OS'); // kept, renamed in B7.2
+  await expect(page.locator('.engine .muted')).toHaveText('The bars appear when the virtual TV scans a question: press the space bar.'); // shown only in Drive mode, so it no longer says to turn it on
   await expect(page.getByTestId('mode-badge')).toHaveText('MOCK'); // kept
   const look = await page.evaluate(async () => { // what the page drew with
     await document.fonts.ready; // every font face in use has loaded or failed

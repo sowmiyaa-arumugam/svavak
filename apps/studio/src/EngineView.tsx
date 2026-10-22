@@ -13,7 +13,7 @@ export function EngineView({ state }: { state: EngineState | null }) { // under 
         {state && <span className="theta-label">θ = {state.threshold}</span>}{/* the commit threshold */}
       </div>{/* end of the head */}
       {state === null ? ( // no question has been scanned yet
-        <p className="muted">The bars appear when the virtual TV scans a question: turn on Drive mode and press the space bar.</p> // what to do
+        <p className="muted">The bars appear when the virtual TV scans a question: press the space bar.</p> // what to do; the panel shows only in Drive mode
       ) : ( // one bar per option
         <div className="bars" style={{ ['--theta' as string]: String(state.threshold) }}>{/* θ as a CSS variable for the line */}
           {state.labels.map((label, i) => { // each option, in scan order

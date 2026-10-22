@@ -147,8 +147,9 @@ of played where they count it:
 
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
-- The page draws the darkened photo in Montserrat, with the banner, the virtual TV's label and the mode badge, and
-  shows the whole wordmark as its title, top left, with its capitals as tall as the text title's were.
+- The page draws the darkened photo in Montserrat, with the banner, the virtual TV's label, the engine panel's hint
+  (which no longer says to turn on Drive mode, since the panel shows only in it) and the mode badge, and shows the
+  whole wordmark as its title, top left, with its capitals as tall as the text title's were.
 - Every request goes to the studio, the server or the agent.
 - Every line of the main text, a help alert's included, has WCAG AA contrast (4.5:1, or 3:1 for large text) against
   the pixels drawn behind it, with Drive mode off and on. They are measured in a 1080p screenshot taken with the text
