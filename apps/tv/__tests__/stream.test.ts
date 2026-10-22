@@ -23,6 +23,14 @@ describe('parseEvent', () => { // server JSON to screen events
     expect(asked?.type === 'question.created' && asked.question.slots).toBe(4); // final already: no empty slot
   }); // end of the case
 
+  it("carries the path of the question's spoken announcement when it has one, and nothing when it has none (B9)", () => { // what the TV plays
+    const announced = parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, announcement_url: '/v1/questions/q1/announcement' } })); // with an announcement
+    expect(announced).toEqual({ type: 'question.created', question: { ...SCREEN, announcement: '/v1/questions/q1/announcement' } }); // its path, for the player
+    const silent = parseEvent(JSON.stringify({ type: 'question.created', question: { ...QUESTION, announcement_url: null } })); // the voice failed, or the cap was used up
+    expect(silent).toEqual({ type: 'question.created', question: SCREEN }); // nothing to play
+    expect(silent?.type === 'question.created' && 'announcement' in silent.question).toBe(false); // not even an empty field
+  }); // end of the case
+
   it('turns question.candidates into replies and priors for a question id', () => { // model replies
     expect(parseEvent(JSON.stringify({ type: 'question.candidates', question_id: 'q1', candidates: EIGHT }))).toEqual({ type: 'question.candidates', questionId: 'q1', replies: SCREEN.replies, scores: SCREEN.scores }); // mapped
   }); // end of the case

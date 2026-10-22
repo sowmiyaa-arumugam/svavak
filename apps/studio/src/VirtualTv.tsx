@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'; // hooks
 import { now } from '../../tv/src/clock'; // the TV's shared clock
-import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, IDLE_HINT, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules, grid, and Help and idle screens' words
+import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, IDLE_HINT, type Announce, type Reply } from '../../tv/src/conversation'; // the TV's state machine, scan rules, grid, Help and idle screens' words, and its announcement hook
 import { QUESTIONS } from '../../tv/src/questions'; // the TV's practice questions
 import { StreamClient, type SocketLike } from '../../tv/src/stream'; // the TV's stream client: parsing and reconnects
 import { RELEASE_DEBOUNCE_MS, SwitchInput } from '../../tv/src/switchInput'; // the TV's switch: press, hold for Help, debounce
@@ -19,7 +19,25 @@ const CANCEL = 'Saying it — press to cancel'; // the TV's text under a committ
 /** What the engine view draws after each press: one bar per option, and the commit threshold θ. */
 export interface EngineState { labels: string[]; posterior: number[]; threshold: number } // labels in scan order
 
-/** Posts a reply that stood through its cancel window, as the TV does; the studio plays no audio. */
+/**
+ * Plays a question's spoken announcement (B9), as the TV does: fetched with the device token, which an audio element
+ * cannot send, then played from memory. Calls onEnd once, later, when it has ended or can't be fetched or played (the
+ * browser refuses audio before the page has had a click or a key); after stop, never.
+ */
+const announce: Announce = (path, onEnd) => { // the conversation's announcement hook
+  const controller = new AbortController(); // stops the fetch
+  const audio = new Audio(); // the player
+  let done = false; // ended or stopped: nothing more happens
+  const release = () => { done = true; audio.pause(); if (audio.src) URL.revokeObjectURL(audio.src); }; // silent, and its memory freed
+  const end = () => { if (!done) { release(); onEnd(); } }; // once
+  fetch(`${SERVER_URL}${path}`, { headers: { Authorization: `Bearer ${DEVICE_TOKEN}` }, signal: controller.signal }) // the device token in a header
+    .then((res) => { if (!res.ok) throw new Error(`GET ${path} answered ${res.status}`); return res.blob(); }) // the WAV or MP3
+    .then((blob) => { if (done) return; audio.src = URL.createObjectURL(blob); audio.onended = end; audio.onerror = end; return audio.play(); }) // played, unless stopped meanwhile
+    .catch(end); // not fetched or not played: the scan starts as without one
+  return () => { if (!done) { controller.abort(); release(); } }; // a press, Help, a newer question or Drive mode going off
+}; // end of announce
+
+/** Posts a reply that stood through its cancel window, as the TV does; the studio plays no reply audio. */
 function post(reply: Reply): void { // the conversation's reply hook
   const body = JSON.stringify({ question_id: reply.questionId, question_text: reply.questionText, text: reply.text, clicks: reply.clicks, duration_ms: reply.durationMs }); // the TV's wire format
   const headers = { Authorization: `Bearer ${DEVICE_TOKEN}`, 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }; // the device token in a header
@@ -46,7 +64,7 @@ function typing(event: KeyboardEvent): boolean { // the caregiver panel's text b
 export function VirtualTv({ onEngine }: { onEngine: (state: EngineState | null) => void }) { // mounted only while drive mode is on, so it never competes with the emulator: connects, and hangs up when switched off
   const { conversation, input } = useMemo(() => { // one conversation and its switch while drive mode is on
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
-    const conversation = new Conversation(CONFIG, now, QUESTIONS, () => {}, post, help, () => input.held(), true); // online from the start, as a TV with a server
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, () => {}, post, help, () => input.held(), true, announce); // online from the start, as a TV with a server, reading its questions aloud
     return { conversation, input }; // each calls the other only later, from key events and timers
   }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change

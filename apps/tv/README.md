@@ -21,14 +21,26 @@ instead of "Alex asks". A build with a server starts on the idle screen and turn
 attempt fails.
 - **A server question** takes over at once while the scan runs, another server question waits for its replies, or the
   screen is idle. If it arrives during "Saying it" or Help, it waits until that window ends or Help is dismissed.
+- **Read aloud** (B9). A question shows on the screen only, so Sam may not notice it arrive. When it shows, the app
+  plays its spoken announcement from the server, "Alex asks: Would you like tea or coffee?", in a voice that is not
+  Sam's own (Polly's Amy; a short tone in mock mode), while its replies are found. The highlight starts only once the
+  announcement has finished and the replies are ready (below). A press whose key goes down during the announcement
+  stops it and starts the scan at once, choosing nothing, on the replies shown (the defaults, if the model's have not
+  come yet), even if the announcement ended before the key came up; one that went down before it began does nothing.
+  Holding
+  the switch for 2 s opens Help then too, with its one help request, and stops the announcement. A question is
+  announced once: not again when Help is dismissed, after a cancel, or for its replay after a reconnect. When the app
+  can't play it (the server made none, the audio can't be loaded, or it has not started within 2 s), the scan starts
+  as it would without one. Practice questions have no announcement.
 - It shows the question and the server's default replies at once, but the highlight starts only when the model's
   replies arrive (then on them, in the server's order, using its priors) or when the server's 3.5 s budget for
-  them has passed (then on the defaults). Until then the question band reads "Alex asks · Finding replies…", so the
+  them has passed (then on the defaults), and not before the question's announcement has finished or failed, unless a
+  press skips it (above). Until then the question band reads "Alex asks · Finding replies…", so the
   unlit defaults look intentional. Replies that come later are ignored, so the list never changes while the
   highlight moves. The grid keeps its size too: a question asked without options shows its defaults and dimmed empty
   cards up to eight, which the model's replies fill in place. Empty cards are never lit or scanned; any that the
-  final list doesn't reach stay empty, as do all of them if the model's replies don't come. A question asked with options gets its final replies straight after it, so its highlight starts at
-  once; replayed after a reconnect, it waits out the budget like any other question.
+  final list doesn't reach stay empty, as do all of them if the model's replies don't come. A question asked with options gets its final replies straight after it, so its highlight starts as soon
+  as its announcement has finished; replayed after a reconnect, it waits out the budget like any other question.
 - After a reconnect the server sends the open question again. If the screen already has it (shown, or held until
   "Saying it" or Help ends), new replies in it are the model's, taken within the budget as above, and the same replies
   again change nothing; a running scan never restarts.
@@ -62,7 +74,7 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
 
 A press counts for the card that was lit when the user decided: any moment while the card is lit, plus a reaction
 delay of about 150 ms (the engine's window model). Every reply card and both pills carry an accessibility label and
-the button role (an empty card has neither); nothing is announced aloud. The Android TV launcher banner is
+the button role (an empty card has neither); they are not read aloud as they light up. The Android TV launcher banner is
 [assets/tv-banner.png](assets/tv-banner.png) (320 × 180), drawn from the SvaVāk logo on black
 ([assets/brand](../../assets/brand)) and applied at prebuild; Fire TV takes its banner from the Appstore submission
 instead.
@@ -91,6 +103,14 @@ window opens Help on that question.
   and expo-constants embeds it in the APK at build time, so changing the token needs a rebuild. A build without a
   token runs on the fixtures only.
 - **Posting replies.** `POST /v1/utterances` has a 4 s timeout and one retry under the same idempotency key.
+- **Announcements.** A question's `announcement_url` is played from the server with the device token by Expo's
+  audio module, on a player apart from the replies' speech, so neither cuts the other off. Dev builds log
+  `[announcement] playing`, then `finished`, `not played` or `stopped`, in the Metro terminal and `adb logcat -s
+  ReactNativeJS`. On the emulator (2026-10-22, mock mode, five questions asked on the dev endpoint, raw screen frames
+  150 to 490 ms apart on the device clock), the highlight showed only in frames captured after `[announcement]
+  finished` (in one run the frame began 13 ms before that line, within the capture's own start-up time). In four runs
+  a frame taken while the tone played showed the question with its final replies and nothing lit; in the fifth, the
+  question's first frame was already after the tone.
 - **Cleartext HTTP.** [plugins/withDebugCleartext.js](plugins/withDebugCleartext.js) allows it only to `10.0.2.2` and
   only in debug builds, through a network security config. Release builds keep Android's default of HTTPS only.
 

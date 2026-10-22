@@ -802,3 +802,36 @@ These entries feed the product-feedback answers. Values marked *(proposed)* stil
   a question not about it in 2 first fours (4 with the old prompt).
 - **Suggestion:** say in the Nova prompting guidance where the question should go when earlier turns come as context,
   and whether temperature 0 is meant to repeat. *(proposed)*
+
+## 2026-10-22: Fast Refresh ran new code against an object the old code had made
+
+- **Tool:** Metro with React Native Fast Refresh (Expo SDK 54.0.37, react-native-tvos 0.81.5-2), the TV app's dev build
+  on the Android TV emulator
+- **Task attempted:** add question announcements to the TV app's conversation state machine (B9), with the app
+  running on the emulator from the shared Metro.
+- **Steps:** edited `apps/tv/src/conversation.ts`, which exports the `Conversation` class that the screen creates
+  once with `useMemo`, while the app was running.
+- **Expected:** Fast Refresh reloads the app in full when a module that is not a component changes. *(proposed)*
+- **Actual:** the app logged `TypeError: this.quiet is not a function (it is undefined)` (`isComponentError: true`):
+  new code apparently ran against the `Conversation` made by the old module, which has no `quiet` method. *(proposed)*
+- **Severity:** low; it only happens while editing, and a relaunch clears it. *(proposed)*
+- **Workaround:** force-stop and start the app after editing a module that is not a component, before checking
+  anything on the emulator.
+- **Suggestion:** Fast Refresh should fall back to a full reload when an edited module's exports are held in
+  component state, or say in the log that a reload is needed. *(proposed)*
+
+## 2026-10-22: After a force-stop, the Android TV launcher took the foreground back from `am start`
+
+- **Tool:** Android Emulator 37.2.12 (Android TV, API 30), `adb shell am`
+- **Task attempted:** relaunch the TV app's dev build so it loads the new bundle from Metro (B9).
+- **Steps:** `adb shell am force-stop dev.svavak.tv`, then `adb shell am start -n dev.svavak.tv/.MainActivity`.
+- **Expected:** the app in the foreground. *(proposed)*
+- **Actual:** the app's process started, but the TV launcher started itself right after ("Background activity start
+  for com.google.android.tvlauncher allowed because SYSTEM_ALERT_WINDOW permission is granted") and stayed in front,
+  so `dumpsys activity activities` named the launcher as the resumed activity. A second `am start` brought the app's
+  task to the front.
+- **Severity:** low; a second command fixes it, but an emulator check on the launcher would test nothing.
+  *(proposed)*
+- **Workaround:** after `am start`, check `mResumedActivity` and run `am start` again when the launcher is in front.
+- **Suggestion:** the launcher should not bring itself to the front while another app's start is in progress.
+  *(proposed)*

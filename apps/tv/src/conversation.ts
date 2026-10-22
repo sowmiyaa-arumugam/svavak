@@ -1,7 +1,8 @@
 // Copyright 2026 Sowmiya Arumugam
 // SPDX-License-Identifier: Apache-2.0
-// The conversation screen's state machine (plan §5.2) in scan mode: Waiting, Asking, Saying (2 s to cancel), Help (with
-// its help request), and Idle (where a short press only shows how to ask for help).
+// The conversation screen's state machine (plan §5.2) in scan mode: Waiting (while a server question's announcement
+// plays and its replies are found), Asking, Saying (2 s to cancel), Help (with its help request), and Idle (where a
+// short press only shows how to ask for help).
 
 import { DEFAULT_SCAN_CONFIG, ScanEngine, type Option, type ScanConfig } from 'switchclock'; // the scan engine
 import type { Question } from './questions'; // fixture shape
@@ -18,6 +19,13 @@ export const MOCK_SCORES = [0.35, 0.2, 0.12, 0.09, 0.07, 0.06, 0.05, 0.04] as co
 
 /** Engine parameters: the scan defaults, with the 2% the mock scores leave split over the two controls. */
 export const CONFIG: ScanConfig = { ...DEFAULT_SCAN_CONFIG, controlShare: 0.01 }; // so the priors equal the scores
+
+/**
+ * Plays a server question's spoken announcement (B9), a path on the server. Calls onEnd once, later (never during the
+ * call), when it has finished or can't be played, and returns a function that stops it, after which onEnd is not called;
+ * calling that function after the end does nothing.
+ */
+export type Announce = (path: string, onEnd: () => void) => () => void; // the TV's audio player, or the studio's
 
 /** What happened to the help request sent when Help opened. */
 export type HelpStatus = 'sending' | 'sent' | 'failed'; // on its way; the server confirmed it; it could not be sent
@@ -83,7 +91,9 @@ function labelOf(question: Question, i: number): string { // option index to lab
  * While the server can be reached the screen is idle between its questions; otherwise fixture questions rotate as
  * practice. A question from the server takes over at once while scanning, waiting or idle, or as soon as "Saying it"
  * or Help ends, and the idle screen (or practice, offline) follows it. Its scan starts when the model's replies arrive
- * or its budget ends, whichever comes first, so the list never changes while the highlight moves.
+ * or its budget ends, whichever comes first, so the list never changes while the highlight moves; if it has a spoken
+ * announcement, not before that has finished or failed. A press during the announcement stops it and starts the scan
+ * at once, choosing nothing; Help stops it too.
  */
 export class Conversation { // one per screen
   readonly engine: ScanEngine; // the screen reads its highlight on every frame
@@ -94,6 +104,7 @@ export class Conversation { // one per screen
   private readonly onSay: (reply: Reply) => void; // receives each reply once its cancel window has passed
   private readonly onHelp: () => Promise<unknown>; // sends one help request each time Help opens; settles when the server confirms it or it fails
   private readonly held: () => boolean; // whether a switch key is down now
+  private readonly announce: Announce | null; // plays a server question's announcement; null in a build that can't
   private readonly listeners = new Set<() => void>(); // the screen's change callbacks
   private index = 0; // the fixture question shown last
   private online: boolean; // whether the stream is connected: then no practice question is asked
@@ -102,13 +113,16 @@ export class Conversation { // one per screen
   private pending: Question | null = null; // a server question that arrived during "Saying it" or Help
   private helps = 0; // how often Help has opened, so a late answer to an earlier help request changes nothing
   private readonly budgets = new Map<string, number>(); // server questions whose scan has not started: when their budget ends
+  private readonly announcements = new Map<string, string>(); // server questions not shown yet: their announcement's path, played once when shown
+  private silence: (() => void) | null = null; // stops the announcement playing now; null while none is
+  private heard = { from: Infinity, until: Infinity }; // the shown question's announcement: when it started and ended (until is Infinity while it plays; from is Infinity without one)
   private askedAt = 0; // when the current selection's scan started
   private lastPress = -Infinity; // key-down time of the last press that was not debounced, in any state
   private presses: (number | null)[][] = []; // accepted presses of this selection: offsets from each option's onset
   private timer: ReturnType<typeof setTimeout> | undefined; // the pending end of the "Saying it" window, of a budget, or of the idle screen's hint
   private snap: Snapshot; // what the screen shows now
 
-  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, onHelp: () => Promise<unknown>, held: () => boolean, online = false) { // start
+  constructor(config: ScanConfig, now: () => number, questions: readonly Question[], onSelection: (s: Selection) => void, onSay: (r: Reply) => void, onHelp: () => Promise<unknown>, held: () => boolean, online = false, announce: Announce | null = null) { // start
     this.engine = new ScanEngine(config, now); // engine on the shared clock
     this.now = now; // the clock
     this.debounceMs = config.debounceMs; // 150 ms by default
@@ -117,6 +131,7 @@ export class Conversation { // one per screen
     this.onSay = onSay; // reply hook
     this.onHelp = onHelp; // help hook
     this.held = held; // the switch's state
+    this.announce = announce; // the announcement player, if any
     this.online = online; // a build with a server counts as connected until its first attempt fails
     this.snap = this.ask(questions[0]!); // Asking the first question; the engine holds a scan from the start
     if (online) { // a build with a server: idle from the start, so no practice question flashes up
@@ -141,7 +156,7 @@ export class Conversation { // one per screen
   press(t: number): void { // from the switch input, once the key has stayed up for 150 ms
     if (t - this.lastPress < this.debounceMs) return; // debounced: tremor or a bounce
     this.lastPress = t; // the next press is debounced against this one
-    if (this.snap.mode === 'waiting') return; // nothing is lit yet
+    if (this.snap.mode === 'waiting') return this.skip(t); // its key went down during the announcement: it stops and the scan starts; otherwise nothing is lit yet
     if (this.snap.mode === 'idle') return this.hint(); // nothing to answer: say how to ask for help, and send nothing
     if (this.snap.mode === 'help' && (this.pending || this.idleHelp)) return this.set(this.next()); // closes Help: a server question asked meanwhile comes first, then the idle screen
     if (this.snap.mode !== 'asking') return this.set(this.show(this.snap.question)); // cancels "Saying it" or closes Help: the same question
@@ -166,6 +181,7 @@ export class Conversation { // one per screen
   help(_t: number): void { // from the switch input, as soon as the hold reaches 2 s
     if (this.snap.mode === 'help') return; // already shown, its request already sent
     clearTimeout(this.timer); // a reply still in its "Saying it" window is not said; a waiting scan waits for Help to close
+    this.quiet(); // an announcement playing stops, and is not played again
     this.idleHelp = this.snap.mode === 'idle'; // where dismissing it goes back to
     const opening = ++this.helps; // this opening of Help
     this.set({ mode: 'help', question: this.snap.question, reply: null, help: 'sending' }); // "Asking for help…"; the idle screen's hint, if shown, goes
@@ -196,6 +212,7 @@ export class Conversation { // one per screen
     if (known && known.replies.join('\n') === question.replies.join('\n')) return; // the same replies: nothing new
     if (known) return this.update(id, question.replies, question.scores ?? []); // the model's replies: an update
     this.budgets.set(id, this.now() + BUDGET_MS); // a new question: its budget runs from its arrival here
+    if (question.announcement !== undefined) this.announcements.set(id, question.announcement); // played when it is shown
     if (this.snap.mode !== 'saying' && this.snap.mode !== 'help') this.set(this.show(question)); // replaces the current question, or the idle screen
     else this.pending = question; // the next question, ahead of the fixtures and the idle screen
   } // end of receive
@@ -208,13 +225,14 @@ export class Conversation { // one per screen
     if (this.pending?.id === id) this.pending = { ...this.pending, replies, scores }; // not shown yet: scanned at once when it is
     if (this.snap.question.id !== id) return; // not on screen: replaced, or queued
     const question = { ...this.snap.question, replies, scores }; // the new replies, in the server's order; its slots stay
-    if (this.snap.mode === 'waiting') this.set(this.ask(question)); // the highlight starts now, on the final list
-    else this.set({ ...this.snap, question }); // Help, opened while waiting: scanned when Help is dismissed
+    if (this.snap.mode === 'waiting' && this.silence === null) this.set(this.ask(question)); // the highlight starts now, on the final list
+    else this.set({ ...this.snap, question }); // Help, opened while waiting, or the announcement still playing: scanned when it ends
   } // end of update
 
-  /** Cancels the pending timer; the screen calls this when it unmounts. */
+  /** Cancels the pending timer and stops an announcement; the screen calls this when it unmounts. */
   dispose(): void { // clean-up
     clearTimeout(this.timer); // nothing fires after the screen is gone
+    this.quiet(); // and nothing is heard
   } // end of dispose
 
   private commit(id: string): void { // option `id` was chosen
@@ -252,14 +270,45 @@ export class Conversation { // one per screen
     return (this.index + step + this.questions.length) % this.questions.length; // after the last comes the first
   } // end of nearby
 
-  private show(question: Question): Snapshot { // a server question within its budget waits for its replies; others are asked
+  private show(question: Question): Snapshot { // a server question waits for its announcement and, within its budget, its replies; others are asked
+    this.quiet(); // an announcement still playing is over: this question replaces it
     if (this.online && question.id === undefined) return this.next(); // a practice question again (after a cancel or Help), now connected: what comes next instead
-    const end = this.budgets.get(question.id ?? ''); // when its budget ends; fixtures have none
-    if (end === undefined || this.now() >= end) return this.ask(question); // nothing to wait for: the scan starts now
+    const id = question.id ?? ''; // fixtures have none
+    this.heard = { from: Infinity, until: Infinity }; // no announcement heard for this question yet
+    const path = this.announcements.get(id); // its announcement, if it has not been played
+    this.announcements.delete(id); // played once: now, or never
+    if (path !== undefined && this.announce) this.listen(path); // it plays while the replies are found
+    const end = this.budgets.get(id); // when its budget ends; fixtures have none
+    if (this.silence === null && (end === undefined || this.now() >= end)) return this.ask(question); // nothing to wait for: the scan starts now
     clearTimeout(this.timer); // one pending timer at a time
-    this.timer = setTimeout(() => this.set(this.ask(this.snap.question)), end - this.now()); // the budget ends: scan what is shown
+    if (end !== undefined && this.now() < end) this.timer = setTimeout(() => { this.budgets.delete(id); this.proceed(); }, end - this.now()); // the budget ends: what is shown is final, scanned once the announcement is over
     return { mode: 'waiting', question, reply: null }; // the question and its replies, nothing lit
   } // end of show
+
+  private listen(path: string): void { // plays the shown question's announcement; its scan waits for the end
+    this.heard = { from: this.now(), until: Infinity }; // playing from now
+    const stop = this.announce!(path, () => { if (this.silence !== stop) return; this.quiet(); this.proceed(); }); // finished or can't be played: ignored once stopped
+    this.silence = stop; // playing now
+  } // end of listen
+
+  private quiet(): void { // stops the announcement playing now, if one is
+    if (this.silence === null) return; // none is
+    this.silence(); // the player stops (a no-op once it has ended)
+    this.silence = null; // none playing
+    this.heard = { ...this.heard, until: this.now() }; // it ended now
+  } // end of quiet
+
+  private skip(t: number): void { // a press whose key went down at t, while waiting
+    if (t < this.heard.from || t > this.heard.until) return; // not during the announcement: nothing is lit yet, so the press means nothing
+    this.quiet(); // the announcement stops, if it still plays
+    this.set(this.ask(this.snap.question)); // and the scan starts at once, on the replies shown; the press chose nothing
+  } // end of skip
+
+  private proceed(): void { // the announcement or the budget ended: scan once the announcement is over and the replies are final or out of budget
+    if (this.snap.mode !== 'waiting' || this.silence !== null) return; // not waiting, or the announcement still plays
+    const end = this.budgets.get(this.snap.question.id ?? ''); // none once the replies are final or the budget has ended
+    if (end === undefined || this.now() >= end) this.set(this.ask(this.snap.question)); // the scan starts now, on what is shown
+  } // end of proceed
 
   private ask(question: Question): Snapshot { // a new selection on `question`
     clearTimeout(this.timer); // a pending "Saying it" window or budget is over

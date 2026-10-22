@@ -35,10 +35,15 @@ stage that is scaled to fit the window (see Look).
     model's replies (with dimmed empty cards up to eight, as on the TV), and Help. Help sends one help request to
     `POST /v1/alerts`, as the TV does (without its 4 s timeout and retry), and shows the TV's lines: "Asking for
     help…", then "Help request sent." or "Couldn't send the help request.".
+  - It reads each question aloud before its scan starts, as the TV does (B9): it fetches the question's announcement
+    from the server with the device token and plays it in the page, and the highlight starts once it has ended and
+    the replies are ready. A press during it stops it and starts the scan at once; holding for Help stops it too. The
+    browser plays audio only after a click or a key on the page (switching Drive mode on is one); when it can't play
+    the announcement, the scan starts as without one.
   - The **space bar** is the switch: press when your answer lights up, or hold for 2 s for Help. While you type in the
     caregiver's text box, a space is just a space.
   - A reply that stands through its 2 s cancel window is posted to `POST /v1/utterances`, as the TV posts it. The
-    studio plays no audio of its own.
+    studio plays no reply audio of its own.
 - **Engine view** (under the virtual TV): the scan engine's posterior for every option as bars, after each press, with
   the commit threshold θ = 0.97 as a dashed line.
 - **System trace** (bottom): the server's live spans from `GET /v1/trace` as a strip of hops: caregiver → agent →
@@ -145,6 +150,17 @@ of played where they count it:
 - An alert stays the same element when the caregiver starts a turn after it, so a screen reader does not announce it
   again.
 
+The announcement tests ([e2e/announce.spec.ts](e2e/announce.spec.ts)) switch Drive mode on and send the same
+caregiver turn, recording the page's audio events (`playing`, `pause`, `ended`, `error`) from its first script on:
+
+- The virtual TV fetches the question's announcement with the device token (200, the mock's `audio/wav` tone), plays
+  it to its end, and lights its first option only after that end.
+- With the announcement's request failing on the network, the scan starts at once and nothing plays. With a 5 s
+  announcement instead (served by the test), a short press during it pauses it and starts the scan at once.
+
+Each answers Tea with the space bar at the end, as the loop test does, since an open question would be replayed to
+the next test's virtual TV.
+
 The look tests ([e2e/look.spec.ts](e2e/look.spec.ts)) check four things:
 
 - The page draws the darkened photo in Montserrat, with the banner, the virtual TV's label, the engine panel's hint
@@ -187,4 +203,4 @@ Pinned: React 19.1.0 (the TV's version), Vite 8.3.1 with `@vitejs/plugin-react` 
 | `src/EngineView.tsx` | The posterior bars and θ |
 | `src/TraceStrip.tsx` | The trace stream, the strip of hops and the help requests |
 | `src/sse.ts` | Server-sent events read with `fetch` |
-| `e2e/` | The Playwright tests: the loop, Help, the look and the layout (`sendHelp.ts` sends a help request as the TV does) |
+| `e2e/` | The Playwright tests: the loop, Help, the announcement, the look and the layout (`sendHelp.ts` sends a help request as the TV does) |

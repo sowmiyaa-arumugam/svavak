@@ -13,12 +13,14 @@ Amazon Developer Hackathon 2026.
   - Questions come from the server's WebSocket stream. While it is connected, the TV shows a calm idle screen between
     questions (the last reply; a short press only shows "Hold the button for help.", and a 2 s hold opens Help).
     Local practice questions, labelled "Practice", run only when the server can't be reached.
+  - Each server question is read aloud ("Alex asks: …", in a voice that is not Sam's own) before its highlight starts;
+    a press skips the announcement, and holding for Help works throughout.
   - It has a 2 s cancel window, after which the reply is posted and its speech played, a 2 s hold for Help, which
     sends one help request to the server and says whether it got there, and K2 instrumentation.
   - It runs on the Android TV emulator; gate K2 on a device is still open.
 - **Server** ([services/server](services/server)): REST, the WebSocket question stream and the SSE trace for flow S1,
-  mock-first. It has default replies at once and model candidates within 3.5 s, idempotent utterances, a device token
-  and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) ran on 2026-10-21 and passed gate K3 (candidates p50 1.0 s). The store is in
+  mock-first. It has default replies at once and model candidates within 3.5 s, a spoken announcement of each
+  question (Polly's standard voice Amy, or a tone in mock mode), idempotent utterances, a device token and daily caps. Live mode (Nova 2 Lite on Bedrock, Polly) ran on 2026-10-21 and passed gate K3 (candidates p50 1.0 s). The store is in
   memory.
   - An MCP endpoint (`/mcp`, Streamable HTTP) gives caregiver agents `ask_question`, `get_answer`,
     `get_recent_messages` and `add_profile_fact`, with its own agent token (gate K4: conformance suite and Inspector).

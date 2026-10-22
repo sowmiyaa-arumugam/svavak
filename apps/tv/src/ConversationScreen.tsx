@@ -11,7 +11,7 @@ import { cardsOf, CONFIG, CONTROLS, Conversation, HELP_TEXT, IDLE_HINT, type Rep
 import { FpsMeter, selectionLog } from './k2'; // K2 instrumentation (dev builds)
 import { QUESTIONS } from './questions'; // mock questions
 import { postHelp, postUtterance, SERVER } from './server'; // the server, if this build has one
-import { playSpeech } from './speech'; // speech playback
+import { playAnnouncement, playSpeech } from './speech'; // speech playback: replies, and question announcements
 import { StreamClient } from './stream'; // the server's question stream
 import { SwitchInput } from './switchInput'; // the single switch
 import { colors, px } from './theme'; // tokens and scale
@@ -31,6 +31,12 @@ function say(reply: Reply): void { // the conversation's reply hook
   ); // end of the post
 } // end of say
 
+/** Plays a server question's spoken announcement (B9) from this build's server, which a build without one never gets. */
+function announce(path: string, onEnd: () => void): () => void { // the conversation's announcement hook
+  const server = SERVER!; // only server questions have announcements
+  return playAnnouncement(`${server.url}${path}`, server.token, onEnd); // its own player, with the device token
+} // end of announce
+
 /** Sends the help request of one opening of Help; rejects when this build has no server or the server can't be reached. */
 function requestHelp(): Promise<void> { // the conversation's help hook
   if (!SERVER) return Promise.reject(new Error('no server in this build')); // fixtures only: nobody to alert
@@ -44,7 +50,7 @@ function requestHelp(): Promise<void> { // the conversation's help hook
 export function ConversationScreen() { // the screen
   const { conversation, input } = useMemo(() => { // one conversation and its switch for the screen's lifetime
     const input = new SwitchInput(now, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // stamps at key-down
-    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, requestHelp, () => input.held(), SERVER !== null); // K2 log in dev; a build with a server starts idle
+    const conversation = new Conversation(CONFIG, now, QUESTIONS, __DEV__ ? selectionLog(console.log) : () => {}, say, requestHelp, () => input.held(), SERVER !== null, announce); // K2 log in dev; a build with a server starts idle and reads its questions aloud
     return { conversation, input }; // each calls the other only later, from key events and timers
   }, []); // created once
   const snap = useSyncExternalStore(conversation.subscribe, conversation.snapshot); // re-render on every change

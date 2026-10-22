@@ -3,7 +3,7 @@
 // The screen state machine in scan mode: Asking -> Saying (2 s, cancellable) -> next question; controls; Help; K2; Idle.
 
 import { nextOnset } from 'switchclock/sim/scan'; // when an option next lights up
-import { BUDGET_MS, cardsOf, CONFIG, Conversation, HELP_TEXT, IDLE_HINT, IDLE_HINT_MS, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Reply, type Selection } from '../src/conversation'; // tested
+import { BUDGET_MS, cardsOf, CONFIG, Conversation, HELP_TEXT, IDLE_HINT, IDLE_HINT_MS, MOCK_SCORES, REPLY_COUNT, SAY_MS, type Announce, type Reply, type Selection } from '../src/conversation'; // tested
 import type { Question } from '../src/questions'; // question shape
 import { QUESTIONS } from '../src/questions'; // the fixture
 import { HOLD_MS, RELEASE_DEBOUNCE_MS, SwitchInput } from '../src/switchInput'; // the key handling the screen wires to it
@@ -941,3 +941,227 @@ describe('Help requests', () => { // B8: Help sends one help request, and the sc
     expect(conversation.snapshot()).toMatchObject({ mode: 'help', help: 'sent' }); // its answer
   }); // end of the case
 }); // end of the Help requests
+
+describe('Announcements', () => { // B9: a server question is read aloud, and its scan waits for that and for its replies
+  let played: { path: string; end: () => void; stopped: boolean }[] = []; // what the hook was asked to play, oldest first
+  const announce: Announce = (path, onEnd) => { const a = { path, end: onEnd, stopped: false }; played.push(a); return () => { a.stopped = true; }; }; // a fake player: the test ends it
+  const ANNOUNCED: Question = { ...LIVE, ...DEFAULTS, announcement: '/v1/questions/q1/announcement' }; // question.created: the defaults, and its announcement
+  const READY: Question = { ...ANNOUNCED, replies: LIVE.replies, scores: LIVE.scores }; // after question.candidates: the model's replies
+  const OPTIONS: Question = { id: 'q2', speaker: 'Alex', text: 'Would you like tea or coffee?', replies: ['Tea', 'Coffee', 'Not now', 'Not sure'], scores: [0.37, 0.37, 0.14, 0.12], slots: 4, announcement: '/v1/questions/q2/announcement' }; // asked with options
+
+  /** Shows OPTIONS with its final replies, as the server sends them at once: only its announcement holds the scan back. */
+  const askOptions = () => { conversation.receive(OPTIONS); conversation.update('q2', OPTIONS.replies, OPTIONS.scores!); }; // question.created, then question.candidates
+
+  /** A short press of the switch, handed over once the key has stayed up. */
+  const press = () => { input.keyDown(ENTER); wait(80); input.keyUp(ENTER); wait(RELEASE_DEBOUNCE_MS); }; // 80 ms down
+
+  beforeEach(() => { // a TV built with a server and an audio player, connected: idle
+    played = []; // nothing played yet
+    conversation.dispose(); // the one from the set-up, built without
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), true, announce); // under test
+  }); // end of set-up
+
+  it('plays the announcement when a question is shown, and starts the scan only once it has finished and the replies are ready', () => { // replies first
+    time = 100; // the question arrives
+    conversation.receive(ANNOUNCED); // question.created
+    expect(played.map((a) => a.path)).toEqual(['/v1/questions/q1/announcement']); // playing
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // shown, nothing lit
+    time = 1100; // the model's replies, while it plays
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: READY, reply: null }); // shown, still nothing lit
+    time = 2600; // it has finished
+    played[0]!.end(); // the player says so
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: READY, reply: null }); // the scan starts
+    expect(conversation.engine.scanAt(time).epoch).toBe(2600); // now, on the final list
+  }); // end of the case
+
+  it('waits for the replies when the announcement finishes first, then scans at once', () => { // announcement first
+    conversation.receive(ANNOUNCED); // at 0
+    time = 800; // finished before the model's replies came
+    played[0]!.end(); // the player says so
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // still waiting
+    time = 1500; // the model's replies
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // question.candidates
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: READY, reply: null }); // the scan starts
+    expect(conversation.engine.scanAt(time).epoch).toBe(1500); // with them
+  }); // end of the case
+
+  it('scans the defaults once the announcement ends after the budget passed without the replies, and ignores replies after that', () => { // a long announcement
+    conversation.receive(ANNOUNCED); // at 0
+    time = BUDGET_MS; // the budget ends while it plays
+    jest.advanceTimersByTime(BUDGET_MS); // passed
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // the announcement goes on
+    time = BUDGET_MS + 1000; // it ends
+    played[0]!.end(); // the player says so
+    const asking = conversation.snapshot(); // the scan
+    expect(asking).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // on the defaults
+    expect(conversation.engine.scanAt(time).epoch).toBe(BUDGET_MS + 1000); // from the end of the announcement
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies, too late
+    expect(conversation.snapshot()).toBe(asking); // the list stays as it is
+  }); // end of the case
+
+  it('stops the announcement on a press and starts the scan at once, without selecting anything', () => { // skip
+    askOptions(); // at 0: replies final, announcement playing
+    expect(conversation.snapshot().mode).toBe('waiting'); // nothing lit while it plays
+    press(); // a short press during the announcement
+    expect(played[0]!.stopped).toBe(true); // stopped
+    const asking = conversation.snapshot(); // the scan
+    expect(asking).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // started
+    expect(conversation.engine.scanAt(time)).toEqual({ items: [0, 1, 2, 3, 4, 5], epoch: time, end: Infinity }); // a full scan from now: the press chose nothing
+    expect([selections, said]).toEqual([[], []]); // nothing selected, nothing said
+    played[0]!.end(); // a late end from the stopped player
+    expect(conversation.snapshot()).toBe(asking); // changes nothing
+    expect(select(0)).toBe(1); // the next aimed press answers Tea
+    expect(selections.map((s) => s.label)).toEqual(['Tea']); // as usual
+  }); // end of the case
+
+  it('ignores a press whose key went down before the announcement started', () => { // a tap begun on the idle screen
+    time = 100; // the question arrives
+    conversation.receive(ANNOUNCED); // its announcement starts
+    conversation.press(50); // a press whose key went down at 50, handed over now
+    expect(played[0]!.stopped).toBe(false); // still playing
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // nothing changed
+  }); // end of the case
+
+  it('starts the scan at once on a press whose key went down during the announcement, though it ended before the press was handed over', () => { // a short tone
+    conversation.receive(ANNOUNCED); // at 0, the replies not final yet
+    time = 250; // the announcement ends
+    played[0]!.end(); // the player says so
+    expect(conversation.snapshot().mode).toBe('waiting'); // waiting for the replies
+    time = 330; // a press whose key went down at 100 is handed over
+    conversation.press(100); // pressed during the announcement
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the scan starts at once, on the defaults
+    expect([selections, said]).toEqual([[], []]); // nothing chosen
+  }); // end of the case
+
+  it("starts the scan at once on the defaults on a press during the announcement, before the model's replies", () => { // skip before the replies
+    conversation.receive(ANNOUNCED); // at 0, waiting for the replies too
+    press(); // a short press during the announcement
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the scan on the defaults
+    const asking = conversation.snapshot(); // the scan
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // the model's replies, after the scan started
+    expect(conversation.snapshot()).toBe(asking); // ignored, as for any running scan
+  }); // end of the case
+
+  it('opens Help on a 2 s hold during the announcement, stops it and sends one help request; a press then starts the scan, without announcing again', () => { // Help at any time
+    askOptions(); // at 0: announcement playing
+    input.keyDown(ENTER); // the hold starts
+    wait(HOLD_MS); // 2 s held
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: OPTIONS, reply: null, help: 'sending' }); // Help
+    expect(played[0]!.stopped).toBe(true); // the announcement stopped
+    wait(500); // held on
+    input.keyUp(ENTER); // released
+    wait(RELEASE_DEBOUNCE_MS); // the hold's final release does nothing
+    expect([helps.length, conversation.snapshot().mode]).toEqual([1, 'help']); // still one request, still Help
+    conversation.press((time += 1000)); // a press dismisses it
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // the scan starts
+    expect(played).toHaveLength(1); // not announced again
+  }); // end of the case
+
+  it('takes the K3 key chatter during the announcement as one hold: Help at 2 s and one request', () => { // the emulator's held key
+    askOptions(); // at 0: announcement playing
+    chatter(); // 57 press/release pairs about 46 ms apart
+    wait(RELEASE_DEBOUNCE_MS); // the final release, then nothing
+    expect(helps).toHaveLength(1); // one request
+    expect(conversation.snapshot()).toEqual({ mode: 'help', question: OPTIONS, reply: null, help: 'sending' }); // Help, not a skipped announcement
+    expect(played[0]!.stopped).toBe(true); // stopped
+  }); // end of the case
+
+  it('does not hold the scan back when the announcement cannot be played', () => { // a failed announcement
+    askOptions(); // at 0: replies final
+    time = 40; // the player gives up
+    played[0]!.end(); // can't be played
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // the scan starts as soon as that is known
+    expect(conversation.engine.scanAt(time).epoch).toBe(40); // now
+    conversation.receive({ ...ANNOUNCED, id: 'q3', announcement: '/v1/questions/q3/announcement' }); // the next question, at 40
+    time = 140; // its announcement fails too
+    played[1]!.end(); // can't be played
+    expect(conversation.snapshot().mode).toBe('waiting'); // waiting for its replies, as without an announcement
+    time = 40 + BUDGET_MS; // the budget ends without them
+    jest.advanceTimersByTime(BUDGET_MS); // passed
+    expect(conversation.snapshot().mode).toBe('asking'); // the scan starts on the defaults
+    expect(conversation.engine.scanAt(time).epoch).toBe(40 + BUDGET_MS); // exactly when it would without an announcement
+  }); // end of the case
+
+  it('scans as before in a build that cannot play announcements', () => { // no player
+    connected(); // a build with a server, without an announcement hook
+    askOptions(); // at 0: replies final
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // the scan starts at once
+    expect(played).toEqual([]); // nothing to play it with
+  }); // end of the case
+
+  it('never announces a practice question offline', () => { // fixtures have no announcement
+    conversation.dispose(); // the online one
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), false, announce); // offline: practice
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // practice, scanning at once
+    select(SOMETHING_ELSE); // the next practice question
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // scanning at once
+    expect(played).toEqual([]); // nothing announced
+  }); // end of the case
+
+  it("stops the announcement when a newer question replaces it, and plays the newer one's", () => { // two questions in a row
+    conversation.receive(ANNOUNCED); // q1 at 0
+    time = 500; // q2 replaces it
+    conversation.receive(OPTIONS); // question.created
+    expect([played.map((a) => a.path), played.map((a) => a.stopped)]).toEqual([['/v1/questions/q1/announcement', '/v1/questions/q2/announcement'], [true, false]]); // q1's stopped, q2's playing
+    played[0]!.end(); // a late end of q1's
+    conversation.update('q2', OPTIONS.replies, OPTIONS.scores!); // q2's final replies
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: OPTIONS, reply: null }); // still waiting for q2's own announcement
+    played[1]!.end(); // q2's ends
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // now the scan starts
+  }); // end of the case
+
+  it('scans once the announcement has ended, when the budget timer fires a little before the clock reads its end', () => { // timers and the clock may disagree by a fraction of a millisecond
+    conversation.receive(ANNOUNCED); // at 0
+    time = 800; // the announcement ends; no replies yet
+    played[0]!.end(); // the player says so
+    time = BUDGET_MS - 1; // the clock still reads just inside the budget
+    jest.advanceTimersByTime(BUDGET_MS); // but the budget timer fires
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: ANNOUNCED, reply: null }); // the scan starts on the defaults, not stuck waiting
+  }); // end of the case
+
+  it('waits for the announcement of a queued question whose replies are already final', () => { // a question asked with options during "Saying it"
+    conversation.receive(ANNOUNCED); // q1 at 0
+    played[0]!.end(); // announced
+    conversation.update('q1', LIVE.replies, LIVE.scores!); // its replies: the scan starts
+    select(0); // "Tea, please": Saying
+    askOptions(); // q2 and its final replies arrive during the window: queued
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed: q2 is shown
+    expect(played.map((a) => a.path)).toEqual(['/v1/questions/q1/announcement', '/v1/questions/q2/announcement']); // its announcement plays
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: OPTIONS, reply: null }); // nothing lit while it plays, though its replies are final
+    time += 300; // it ends
+    played[1]!.end(); // the player says so
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // the scan starts
+    expect(conversation.engine.scanAt(time).epoch).toBe(time); // now
+  }); // end of the case
+
+  it('plays the announcement of a question that arrived during "Saying it" when it is shown', () => { // queued
+    askOptions(); // at 0
+    played[0]!.end(); // announced: the scan starts
+    select(0); // "Tea": Saying
+    conversation.receive(ANNOUNCED); // q1 arrives during the window
+    expect(played).toHaveLength(1); // not yet: the reply keeps the screen
+    time += SAY_MS; // the window's end
+    jest.advanceTimersByTime(SAY_MS); // passed
+    expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // now
+    expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // shown, waiting for it
+  }); // end of the case
+
+  it('announces a question once: not for its replay after a reconnect, nor when its scan restarts after a cancel', () => { // once per question
+    askOptions(); // at 0
+    played[0]!.end(); // announced: the scan starts
+    conversation.receive(OPTIONS); // the replay after a reconnect
+    select(0); // "Tea": Saying
+    conversation.press((time += 500)); // cancelled: the same question again
+    expect(conversation.snapshot()).toEqual({ mode: 'asking', question: OPTIONS, reply: null }); // scanned at once
+    expect(played).toHaveLength(1); // announced once
+  }); // end of the case
+
+  it('stops the announcement when the screen goes away', () => { // unmount
+    conversation.receive(ANNOUNCED); // playing
+    conversation.dispose(); // the screen unmounts
+    expect(played[0]!.stopped).toBe(true); // silent
+  }); // end of the case
+}); // end of the announcements

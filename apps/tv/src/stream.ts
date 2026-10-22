@@ -43,7 +43,8 @@ export function parseEvent(data: string): StreamEvent | null { // the server's J
     const c = candidatesOf(q?.candidates); // its default replies
     if (typeof q?.id !== 'string' || typeof q.text !== 'string' || typeof q.asked_by !== 'string' || !c) return null; // malformed
     const options = (q.candidates as { source?: unknown }[]).some((x) => x.source === 'option'); // asked with options: its list is final
-    return { type: 'question.created', question: { id: q.id, speaker: q.asked_by, text: q.text, ...c, slots: options ? c.replies.length : REPLY_COUNT } }; // for the screen; the model's replies fill up to eight
+    const announcement = typeof q.announcement_url === 'string' ? { announcement: q.announcement_url } : {}; // its spoken announcement's path, if it has one (B9)
+    return { type: 'question.created', question: { id: q.id, speaker: q.asked_by, text: q.text, ...c, slots: options ? c.replies.length : REPLY_COUNT, ...announcement } }; // for the screen; the model's replies fill up to eight
   } // end of question.created
   if (message?.type === 'question.candidates') { // the final replies: the model's, or a question's options
     const c = candidatesOf(message.candidates); // the replies
