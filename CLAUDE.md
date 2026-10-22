@@ -59,7 +59,8 @@ installed package, not memory.
 - AWS only through IAM Identity Center (SSO) short-lived credentials. Never create or use access keys.
 - Nothing sensitive in files or commits: no tokens, keys, account IDs or real personal data.
   Use placeholders and synthetic personas.
-- Local values go in a git-ignored `.env`; only `.env.example` (placeholders) is committed.
+- Local values go in a git-ignored `.env`; only `.env.example` is committed: placeholders, plus the two public
+  demo tokens for mock mode, which the server and the agent refuse in live mode.
 - Never bypass the pre-commit hook (`--no-verify`). If it blocks, fix the cause.
 
 ## Scope

@@ -12,7 +12,7 @@ Amazon Developer Hackathon 2026.
 set-up:
 
 ```sh
-git clone <repository-url> svavak && cd svavak
+git clone https://github.com/sowmiyaa-arumugam/svavak.git svavak && cd svavak
 yarn install
 cp .env.example .env
 ```
@@ -39,7 +39,8 @@ Enter.
 
 ## Status
 
-- **Engine** ([packages/switchclock](packages/switchclock)): Bayesian single-switch selection with clock mode
+- **Engine** ([packages/switchclock](packages/switchclock), also published on its own as
+  [switchclock](https://github.com/sowmiyaa-arumugam/switchclock)): Bayesian single-switch selection with clock mode
   (gate K1: 1.19% error) and Smart Scan mode (gate K1-scan: 0.48% and 1.19% error), and a seeded simulator.
 - **TV app** ([apps/tv](apps/tv)): the conversation screen in Smart Scan mode.
   - Questions come from the server's WebSocket stream. While it is connected, the TV shows a calm idle screen between
