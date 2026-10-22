@@ -6,6 +6,7 @@ export const HOST = '127.0.0.1'; // loopback only; the Android emulator reaches 
 export const PORT = 8787; // the server's port
 export const STUDIO_ORIGIN = 'http://localhost:5173'; // the studio (plan §4.7): the browser origin /v1/trace and /v1/stream accept
 export const TV_ORIGIN = `http://10.0.2.2:${PORT}`; // the emulator TV: React Native's Android WebSocket sends the URL's own origin
+const PUBLIC_DEMO_TOKENS = ['svavak-public-demo-device-token', 'svavak-public-demo-agent-token']; // .env.example's tokens (plan §4.2): public, mock mode only
 
 /** Validated settings. AWS credentials are never part of it: the SDK's default chain resolves the SSO profile. */
 export interface Config { // what compose.ts needs
@@ -27,10 +28,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config { //
   const mode = env.SVAVAK_MODE || 'mock'; // mock by default
   if (mode !== 'mock' && mode !== 'live') throw new Error(`SVAVAK_MODE must be "mock" or "live", not "${mode}"`); // typo guard
   const deviceToken = env.SVAVAK_DEVICE_TOKEN ?? ''; // fail closed: no token, no server
-  if (deviceToken.length < 16) throw new Error('SVAVAK_DEVICE_TOKEN must be set to at least 16 characters (see .env.example)'); // also rejects the placeholder
+  if (deviceToken.length < 16) throw new Error('SVAVAK_DEVICE_TOKEN must be set to at least 16 characters (see .env.example)'); // also rejects a placeholder such as <device-token>
   const agentToken = env.SVAVAK_AGENT_TOKEN ?? ''; // fail closed here too
-  if (agentToken.length < 16) throw new Error('SVAVAK_AGENT_TOKEN must be set to at least 16 characters (see .env.example)'); // also rejects the placeholder
+  if (agentToken.length < 16) throw new Error('SVAVAK_AGENT_TOKEN must be set to at least 16 characters (see .env.example)'); // also rejects a placeholder such as <agent-token>
   if (agentToken === deviceToken) throw new Error('SVAVAK_AGENT_TOKEN must differ from SVAVAK_DEVICE_TOKEN'); // else an agent could post answers
+  if (mode === 'live' && (PUBLIC_DEMO_TOKENS.includes(deviceToken) || PUBLIC_DEMO_TOKENS.includes(agentToken))) throw new Error('SVAVAK_MODE=live refuses the public demo tokens from .env.example: set your own SVAVAK_DEVICE_TOKEN and SVAVAK_AGENT_TOKEN'); // anyone can read them
   const awsProfile = env.AWS_PROFILE || undefined; // empty counts as unset
   if (mode === 'live' && !awsProfile) throw new Error('SVAVAK_MODE=live needs AWS_PROFILE, an IAM Identity Center (SSO) profile'); // never access keys
   const awsRegion = env.AWS_REGION || 'eu-central-1'; // Frankfurt (plan §8.1)

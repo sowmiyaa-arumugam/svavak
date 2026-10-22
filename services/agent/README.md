@@ -48,7 +48,7 @@ It reads the repository's `.env`, and the process environment overrides it. The 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `SVAVAK_MODE` | `mock` | `mock` or `live`, as the server's |
-| `SVAVAK_AGENT_TOKEN` | none (required) | The server's agent token for `/mcp`: at least 16 visible ASCII characters, no spaces; never logged or printed |
+| `SVAVAK_AGENT_TOKEN` | none (required) | The server's agent token for `/mcp`: at least 16 visible ASCII characters, no spaces; never logged or printed. Live mode refuses `.env.example`'s public demo tokens |
 | `AWS_PROFILE` | none | IAM Identity Center (SSO) profile; required in live mode, which refuses to start while `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key) is set |
 | `AWS_REGION` | `eu-central-1` | Bedrock region |
 | `SVAVAK_MODEL_ID` | `eu.amazon.nova-2-lite-v1:0` | Bedrock model or inference profile |

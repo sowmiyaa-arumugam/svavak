@@ -35,8 +35,8 @@ Amazon Developer Hackathon 2026.
 
 ## Run a demo
 
-Mock mode needs no AWS account. Copy `.env.example` to `.env` and set the two tokens, then start each part in its own
-terminal, from the repository root, in this order:
+Mock mode needs no AWS account. Copy `.env.example` to `.env` (its public demo tokens are enough for mock mode; set your
+own for live mode), then start each part in its own terminal, from the repository root, in this order:
 
 ```sh
 yarn install                                         # 0. once: the workspaces' dependencies (Yarn 4 through Corepack)

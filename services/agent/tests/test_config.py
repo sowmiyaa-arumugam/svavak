@@ -3,10 +3,24 @@
 # Configuration: defaults, validation and the .env file, without ever showing the token.
 
 import pytest  # test framework
+from dotenv import dotenv_values  # parses .env.example
 
 from svavak_agent import config  # the module under test
 
 TOKEN = "agent-token-for-tests-0123"  # a synthetic agent token, at least 16 characters
+EXAMPLE = dotenv_values(config.ENV_FILE.parent / ".env.example")  # .env.example, as a judge copies it to .env
+
+
+def test_env_example_as_it_is_starts_mock_mode_with_its_public_agent_token():  # copying it is all mock mode needs
+    c = config.load_config(EXAMPLE)  # no edits
+    assert (c.mode, c.agent_token) == ("mock", EXAMPLE["SVAVAK_AGENT_TOKEN"])  # mock, with the public demo token
+
+
+@pytest.mark.parametrize("name", ["SVAVAK_AGENT_TOKEN", "SVAVAK_DEVICE_TOKEN"])  # either public demo token
+def test_live_mode_refuses_the_public_demo_tokens(name):  # public, mock mode only
+    env = {"SVAVAK_MODE": "live", "AWS_PROFILE": "sso-profile", "SVAVAK_AGENT_TOKEN": EXAMPLE[name]}  # live, with one of them as the agent token
+    with pytest.raises(ValueError, match="SVAVAK_MODE=live refuses the public demo tokens from .env.example"):  # a clear message
+        config.load_config(env)  # refused
 
 
 def test_defaults_are_mock_mode_and_the_eu_model():  # only the token is required

@@ -8,7 +8,8 @@ private vulnerability reporting ("Report a vulnerability" on the repository's Se
 ## How secrets are kept out of the repository
 
 - AWS access uses short-lived AWS IAM Identity Center (SSO) credentials only; no access keys are created.
-- Local values live in a git-ignored `.env`; only `.env.example`, with placeholders, is committed.
+- Local values live in a git-ignored `.env`; only `.env.example`, with placeholders and two public demo tokens, is
+  committed. The demo tokens are for mock mode only: the server and the agent refuse them in live mode.
 - The pre-commit hook in `.githooks/` runs gitleaks on staged changes and blocks `.env` files.
 
 ## If a secret leaks

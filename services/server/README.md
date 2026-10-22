@@ -32,7 +32,8 @@ There is no build step: Node 24 runs the TypeScript source directly, as it does 
 
 ## Configuration
 
-Copy `.env.example` to `.env` at the repository root. The server refuses to start without both tokens.
+Copy `.env.example` to `.env` at the repository root. The server refuses to start without both tokens. The two in
+`.env.example` are public demo tokens, for mock mode only: in live mode the server refuses to start with either.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

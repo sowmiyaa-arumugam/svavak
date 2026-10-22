@@ -14,6 +14,7 @@ HOST = "127.0.0.1"  # loopback only (plan Table 21)
 PORT = 8790  # the agent's port (plan Table 21)
 MCP_URL = "http://127.0.0.1:8787/mcp"  # the server's MCP endpoint
 ENV_FILE = Path(__file__).resolve().parents[3] / ".env"  # the repository's .env: three folders up from this file
+PUBLIC_DEMO_TOKENS = ("svavak-public-demo-device-token", "svavak-public-demo-agent-token")  # .env.example's tokens (plan §4.2): public, mock mode only
 
 
 @dataclass(frozen=True)  # read-only once loaded
@@ -34,8 +35,10 @@ def load_config(env: Mapping[str, str | None]) -> Config:  # checks the settings
     if mode not in ("mock", "live"):  # a typo
         raise ValueError(f'SVAVAK_MODE must be "mock" or "live", not "{mode}"')  # name the setting
     token = env.get("SVAVAK_AGENT_TOKEN") or ""  # fail closed: no token, no agent
-    if not re.fullmatch(r"[!-~]{16,}", token):  # too short (the .env.example placeholder too), or not a valid header value
+    if not re.fullmatch(r"[!-~]{16,}", token):  # too short (a placeholder such as <agent-token> too), or not a valid header value
         raise ValueError("SVAVAK_AGENT_TOKEN must be set to at least 16 visible ASCII characters, without spaces (see .env.example)")  # never echoes it
+    if mode == "live" and token in PUBLIC_DEMO_TOKENS:  # anyone can read them in .env.example
+        raise ValueError("SVAVAK_MODE=live refuses the public demo tokens from .env.example: set your own SVAVAK_AGENT_TOKEN")  # name the fix
     profile = env.get("AWS_PROFILE") or None  # empty counts as unset
     if mode == "live" and profile is None:  # live mode signs in with SSO only
         raise ValueError("SVAVAK_MODE=live needs AWS_PROFILE, an IAM Identity Center (SSO) profile")  # never access keys

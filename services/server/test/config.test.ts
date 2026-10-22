@@ -2,12 +2,28 @@
 // SPDX-License-Identifier: Apache-2.0
 // Configuration from the environment.
 
+import { readFileSync } from 'node:fs'; // reads .env.example
+import { parseEnv } from 'node:util'; // parses it as --env-file does
 import { expect, it } from 'vitest'; // test API
 import { loadConfig } from '../src/config.ts'; // tested
 
 const TOKEN = 'a'.repeat(32); // a synthetic token
 const AGENT = 'b'.repeat(32); // a synthetic agent token
 const MCP_DEFAULTS = { mcpAllowedHosts: ['localhost', '127.0.0.1'], mcpAllowedOrigins: ['http://localhost:5173'] }; // the /mcp allow-lists by default
+const EXAMPLE = parseEnv(readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8')); // .env.example, as a judge copies it to .env
+
+it('starts in mock mode on .env.example as it is, with its public demo tokens', () => { // copying it is all mock mode needs
+  expect(loadConfig(EXAMPLE)).toMatchObject({ mode: 'mock', deviceToken: EXAMPLE.SVAVAK_DEVICE_TOKEN, agentToken: EXAMPLE.SVAVAK_AGENT_TOKEN }); // no edits
+}); // end of the case
+
+it("refuses live mode with either of .env.example's public demo tokens", () => { // public, mock mode only
+  const live = { ...EXAMPLE, SVAVAK_MODE: 'live', AWS_PROFILE: 'svavak-dev' }; // live, with both public tokens
+  expect(() => loadConfig(live)).toThrow('SVAVAK_MODE=live refuses the public demo tokens from .env.example'); // both
+  expect(() => loadConfig({ ...live, SVAVAK_AGENT_TOKEN: AGENT })).toThrow('public demo tokens'); // the public device token
+  expect(() => loadConfig({ ...live, SVAVAK_DEVICE_TOKEN: TOKEN })).toThrow('public demo tokens'); // the public agent token
+  expect(() => loadConfig({ ...live, SVAVAK_DEVICE_TOKEN: EXAMPLE.SVAVAK_AGENT_TOKEN, SVAVAK_AGENT_TOKEN: AGENT })).toThrow('public demo tokens'); // either one, in either setting
+  expect(loadConfig({ ...live, SVAVAK_DEVICE_TOKEN: TOKEN, SVAVAK_AGENT_TOKEN: AGENT }).mode).toBe('live'); // own tokens: live starts
+}); // end of the case
 
 it('defaults to mock mode, Frankfurt, Nova 2 Lite on the EU profile, a neural voice and local-only /mcp allow-lists', () => { // defaults
   expect(loadConfig({ SVAVAK_DEVICE_TOKEN: TOKEN, SVAVAK_AGENT_TOKEN: AGENT })).toEqual({ mode: 'mock', deviceToken: TOKEN, agentToken: AGENT, awsProfile: undefined, awsRegion: 'eu-central-1', modelId: 'eu.amazon.nova-2-lite-v1:0', voice: 'Brian', pollyRegion: 'eu-central-1', pollyEngine: 'neural', ...MCP_DEFAULTS }); // mock
