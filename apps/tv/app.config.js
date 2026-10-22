@@ -21,7 +21,7 @@ module.exports = { // read by the Expo CLI for prebuild, build and start
     }, // end of extra
     plugins: [ // config plugins applied at prebuild
       './plugins/withKeyEvent', // forwards every key event to JavaScript (react-native-keyevent)
-      './plugins/withDebugCleartext', // debug builds: cleartext HTTP to the emulator host only
+      './plugins/withDebugCleartext', // debug and release (demo APK) builds: cleartext HTTP to the emulator host only
       [ // TV manifest: leanback launcher, no portrait lock (active when EXPO_TV=1)
         '@react-native-tvos/config-tv', // the TV config plugin
         { androidTVBanner: './assets/tv-banner.png' }, // 320 x 180 launcher banner (Fire TV takes its banner from the Appstore)

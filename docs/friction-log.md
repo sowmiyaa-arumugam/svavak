@@ -35,6 +35,7 @@ Sorted by severity, then date.
 | 2026-10-21 | Amazon Nova 2 Lite | Nova 2 Lite made up options the agent policy forbids | Medium |
 | 2026-10-21 | Amazon Nova 2 Lite | Nova 2 Lite repeats earlier answers to an unrelated question | Medium |
 | 2026-10-21 | Chrome | Speech synthesis is blocked until the page has been clicked | Medium |
+| 2026-10-22 | Expo CLI (`export:embed`) | A release build cannot find the app's entry file in a Yarn workspaces repository | Medium |
 | 2026-10-18 | Android Studio | First-run wizard offered no SDK components | Low |
 | 2026-10-18 | Amazon's React Native multi-TV sample | Legacy Architecture warning and StrictMode error on first run | Low |
 | 2026-10-18 | Yarn 4.5.0 with TypeScript 7.0.2 | Yarn cannot apply its built-in TypeScript patch | Low |
@@ -71,6 +72,8 @@ Sorted by severity, then date.
 | 2026-10-21 | Android Emulator | A closed port on the host is not refused | Low |
 | 2026-10-22 | Metro Fast Refresh | Fast Refresh ran new code against an object the old code had made | Low |
 | 2026-10-22 | Android TV emulator (launcher) | The launcher took the foreground back from `am start` | Low |
+| 2026-10-22 | Android Emulator | The emulator shut itself down right after loading its snapshot | Low |
+| 2026-10-22 | Claude desktop app (Browser pane) | A page in the hidden Browser pane gets no animation frames | Low |
 
 ## Entries
 
@@ -1001,3 +1004,48 @@ Sorted by severity, then date.
 - **Workaround:** (22 Oct) pause the player, then `remove()` it, then release it.
 - **Suggestion:** make `remove()` stop playback and release the native player, or document that it only detaches the
   player from the module's registry and that `pause()` and `release()` must be called first.
+
+## 2026-10-22: A release build cannot find the app's entry file in a Yarn workspaces repository
+
+- **Date:** 2026-10-22
+- **Tool:** Expo CLI 54.0.27 (`export:embed`, run by React Native's Gradle task `createBundleReleaseJsAndAssets`)
+- **Task attempted:** build the TV app's release APK for judges (B11), with its JavaScript bundled into the APK.
+- **Steps taken:** `EXPO_TV=1 ./gradlew assembleRelease --no-daemon` in `apps/tv/android`, after `expo prebuild`.
+- **Expected:** the bundle built from the app's entry, `node_modules/expo/AppEntry.js` (the `main` in its
+  `package.json`), as Metro does for the debug build.
+- **Actual:** "Unable to resolve module ./node_modules/expo/AppEntry.js from C:\dev\aloud/." Expo makes the
+  workspace root Metro's server root, but resolves the app's relative entry path against that root, where no
+  `node_modules/expo` exists (Yarn installs expo in `apps/tv/node_modules`). The build failed after 1.5 minutes.
+- **Severity:** Medium. It stops the release build, and the message points at the repository root, not at a setting.
+- **Workaround:** set `EXPO_NO_METRO_WORKSPACE_ROOT=1` for the build, so Metro's server root is the app's folder (found
+  in `@expo/config`'s `getMetroServerRoot`); `metro.config.js` still watches the whole repository for switchclock.
+- **Suggestion:** resolve the entry file against the project root, or name `EXPO_NO_METRO_WORKSPACE_ROOT` in the error.
+
+## 2026-10-22: The emulator shut itself down right after loading its snapshot
+
+- **Date:** 2026-10-22
+- **Tool:** Android Emulator (AVD `Television_1080p`, Android TV API 30) on Windows 11
+- **Task attempted:** start the TV emulator for the demo APK check (B11).
+- **Steps taken:** `emulator -avd Television_1080p`, first through PowerShell's `Start-Process` with a minimized window,
+  then from a background Git Bash shell.
+- **Expected:** the emulator keeps running until it is closed.
+- **Actual:** both times it loaded the `default_boot` snapshot and then shut down on its own ("Wait for emulator ... to
+  shutdown gracefully", then "Saving snapshot"), and `adb devices` listed nothing. The cause was not found.
+- **Severity:** Low. A third start stayed up.
+- **Workaround:** `Start-Process` with standard output and error redirected to files, and no window style.
+- **Suggestion:** log why a graceful shutdown was requested.
+
+## 2026-10-22: A page in the hidden Browser pane gets no animation frames
+
+- **Date:** 2026-10-22
+- **Tool:** Claude desktop app, Browser pane (Claude Code)
+- **Task attempted:** walk through the README's judge steps in the studio, pressing Space when Tea lights up on the
+  virtual TV.
+- **Steps taken:** opened http://localhost:5173 in the Browser pane, switched on Drive mode, sent the question, and
+  waited for Tea's highlight from a script.
+- **Expected:** the virtual TV's highlight steps through the cards.
+- **Actual:** while the pane was hidden (the user was away), `requestAnimationFrame` never ran, so the highlight did
+  not move and the script timed out; a later press landed on Coffee, and the agent's 20 s wait ended first.
+- **Severity:** Low. The studio is fine; only the check could not run there.
+- **Workaround:** the same steps in headless Chromium through Playwright, where animation frames run.
+- **Suggestion:** say in the tool result when a page is hidden and its animation frames are paused.

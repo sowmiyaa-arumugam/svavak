@@ -121,8 +121,9 @@ window opens Help on that question.
   finished` (in one run the frame began 13 ms before that line, within the capture's own start-up time). In four runs
   a frame taken while the tone played showed the question with its final replies and nothing lit; in the fifth, the
   question's first frame was already after the tone.
-- **Cleartext HTTP.** [plugins/withDebugCleartext.js](plugins/withDebugCleartext.js) allows it only to `10.0.2.2` and
-  only in debug builds, through a network security config. Release builds keep Android's default of HTTPS only.
+- **Cleartext HTTP.** [plugins/withDebugCleartext.js](plugins/withDebugCleartext.js) allows it only to `10.0.2.2`,
+  through a network security config, in debug builds and in release builds (the demo APK below), since the mock
+  server on the emulator's host has no HTTPS. Every other host is HTTPS only.
 
 ## Develop
 
@@ -131,6 +132,21 @@ yarn workspace tv start       # Metro dev server
 yarn workspace tv android     # prebuild, build and install the debug app on the emulator, then start it
 yarn workspace tv test        # Jest: state machine, key handling, K2 maths, stream client, utterance posting
 yarn workspace tv typecheck   # strict tsc over the app, the tests and the engine source it imports
+```
+
+## Demo APK
+
+The judges' APK (B11) is a release build: it carries its own JavaScript bundle (no Metro) and the public demo device
+token from `.env.example`, and works against a mock-mode server on the emulator's host. The token in the environment
+wins over `.env`. Gradle signs a release build with the template's debug key; `apksigner` replaces that signature
+with your own key (schemes v1 and v2, as Fire OS 8 requires; plan §4.2). Keep the keystore and the APK outside the
+repository. `EXPO_NO_METRO_WORKSPACE_ROOT=1` makes the app's folder Metro's root for the bundle, which otherwise
+looks for the app's entry at the repository root (see the friction log).
+
+```bash
+cd apps/tv && EXPO_TV=1 npx expo prebuild --platform android --no-install
+cd android && SVAVAK_DEVICE_TOKEN=svavak-public-demo-device-token EXPO_NO_METRO_WORKSPACE_ROOT=1 EXPO_TV=1 ./gradlew assembleRelease --no-daemon
+apksigner sign --ks <keystore> --v1-signing-enabled true --v2-signing-enabled true --out <outside-the-repo>/svavak-demo.apk app/build/outputs/apk/release/app-release.apk
 ```
 
 ## Gate K2 (scan mode)

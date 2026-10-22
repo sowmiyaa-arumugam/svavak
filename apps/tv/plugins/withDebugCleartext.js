@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Config plugin (plan §4.2): debug builds may use cleartext HTTP to the emulator's host (10.0.2.2) and nowhere else.
 // React Native's debug manifests allow cleartext to every host; a network security config narrows that, and Android
-// ignores usesCleartextTraffic once one is present. Release builds get none, so they keep Android's default: HTTPS only.
+// ignores usesCleartextTraffic once one is present. Release builds, which make the judges' demo APK (B11), get the same
+// config, as the mock server it talks to on the emulator's host has no HTTPS; every other host stays HTTPS only.
 
 const fs = require('fs'); // file access
 const path = require('path'); // path helpers
 const { withDangerousMod } = require('expo/config-plugins'); // runs at prebuild with the generated android/ folder
 
-const VARIANTS = ['debug', 'debugOptimized']; // React Native 0.81's two debug build types
+const VARIANTS = ['debug', 'debugOptimized', 'release']; // React Native 0.81's two debug build types, and release (the demo APK)
+const OVERLAY = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n  <application />\n</manifest>\n'; // a manifest overlay for a source set the template lacks (release)
 const ATTRIBUTE = 'android:networkSecurityConfig="@xml/network_security_config"'; // points <application> at the config
 const XML = [ // res/xml/network_security_config.xml, one line per entry
   '<?xml version="1.0" encoding="utf-8"?>', // XML declaration
@@ -23,11 +25,11 @@ const XML = [ // res/xml/network_security_config.xml, one line per entry
 
 function withDebugCleartext(config) { // the plugin named in app.config.js
   return withDangerousMod(config, ['android', async (config) => { // edits files in android/ directly
-    for (const variant of VARIANTS) { // each debug build type
+    for (const variant of VARIANTS) { // each build type above
       const dir = path.join(config.modRequest.platformProjectRoot, 'app', 'src', variant); // its source set
       const manifest = path.join(dir, 'AndroidManifest.xml'); // its manifest overlay
-      if (!fs.existsSync(manifest)) continue; // a template without this build type
-      fs.mkdirSync(path.join(dir, 'res', 'xml'), { recursive: true }); // the resource folder
+      fs.mkdirSync(path.join(dir, 'res', 'xml'), { recursive: true }); // the resource folder, and the source set with it
+      if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, OVERLAY); // the template has no release overlay: start one
       fs.writeFileSync(path.join(dir, 'res', 'xml', 'network_security_config.xml'), XML); // the config, rewritten each prebuild
       const source = fs.readFileSync(manifest, 'utf8'); // the overlay's text
       if (!source.includes(ATTRIBUTE)) fs.writeFileSync(manifest, source.replace('<application ', `<application ${ATTRIBUTE} `)); // once
