@@ -30,7 +30,7 @@ beforeEach(() => { // a fresh conversation at time 0
   said = []; // nothing said yet
   helps = []; // no help requested yet
   input = new SwitchInput(() => time, (t) => conversation.press(t), (t) => conversation.help(t), (t) => conversation.down(t)); // as on screen
-  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held()); // under test
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => input.held()); // under test
 }); // end of set-up
 
 afterEach(() => { // tidy up
@@ -211,7 +211,7 @@ describe('Conversation', () => { // the state machine
   it("cancels when a switch key is still down at the window's end", () => { // held at the end, the input's other guard
     let held = false; // the screen's switch state, set by hand here
     conversation.dispose(); // the set-up's conversation is not used
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => held); // under test
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => held); // under test
     select(0); // "Coffee, please": Saying
     held = true; // a switch key is down without a key-down notice in the window
     jest.advanceTimersByTime(SAY_MS); // the window's end
@@ -572,7 +572,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
     conversation.receive(LIVE); // shown before the reload
     conversation.update('q1', LIVE.replies, LIVE.scores!); // and scanned
     conversation.dispose(); // the app reloads
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held()); // fresh
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => input.held()); // fresh
     time = 5000; // it connects
     conversation.receive(LIVE); // the server sends the open question
     expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: LIVE, reply: null }); // shown
@@ -596,7 +596,7 @@ describe('Conversation with the server', () => { // questions from the stream, r
 /** Replaces the conversation with one built with a server, as the screen makes it: it starts connected. */
 function connected(): void { // a build with a server
   conversation.dispose(); // the one from the set-up, built without
-  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), true); // online
+  conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => input.held(), true); // online
 } // end of connected
 
 /** Answers LIVE with "Coffee, please" and lets the reply stand through its window. */
@@ -958,7 +958,7 @@ describe('Announcements', () => { // B9: a server question is read aloud, and it
   beforeEach(() => { // a TV built with a server and an audio player, connected: idle
     played = []; // nothing played yet
     conversation.dispose(); // the one from the set-up, built without
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), true, announce); // under test
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => input.held(), true, announce); // under test
   }); // end of set-up
 
   it('plays the announcement when a question is shown, and starts the scan only once it has finished and the replies are ready', () => { // replies first
@@ -1093,7 +1093,7 @@ describe('Announcements', () => { // B9: a server question is read aloud, and it
 
   it('never announces a practice question offline', () => { // fixtures have no announcement
     conversation.dispose(); // the online one
-    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => said.push(r), sendHelp, () => input.held(), false, announce); // offline: practice
+    conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), (r) => { said.push(r); }, sendHelp, () => input.held(), false, announce); // offline: practice
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[0], reply: null }); // practice, scanning at once
     select(SOMETHING_ELSE); // the next practice question
     expect(conversation.snapshot()).toEqual({ mode: 'asking', question: QUESTIONS[1], reply: null }); // scanning at once
@@ -1164,4 +1164,125 @@ describe('Announcements', () => { // B9: a server question is read aloud, and it
     conversation.dispose(); // the screen unmounts
     expect(played[0]!.stopped).toBe(true); // silent
   }); // end of the case
+
+  describe("and Sam's own speech", () => { // B9.1: Amy never talks over Sam
+    let speeches: { done: () => void; failed: () => void }[] = []; // each reply's speech, settled by the test, oldest first
+
+    /** Rebuilds the conversation with a reply hook whose speech lasts until the test settles it, as the TV's does. */
+    beforeEach(() => { // a TV that speaks its replies
+      speeches = []; // none yet
+      conversation.dispose(); // the one from the set-up above
+      const speak = (r: Reply) => { said.push(r); return new Promise<void>((done, failed) => { speeches.push({ done, failed: () => failed(new Error('no audio')) }); }); }; // posted, then spoken until settled
+      conversation = new Conversation(CONFIG, () => time, QUESTIONS, (s) => selections.push(s), speak, sendHelp, () => input.held(), true, announce); // under test
+    }); // end of set-up
+
+    /** Answers OPTIONS with "Tea": announced, scanned and chosen; leaves the reply in its "Saying it" window. */
+    const chooseTea = () => { askOptions(); played[0]!.end(); select(0); }; // Saying
+
+    /** Lets the promise callbacks run. */
+    const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); }; // a few microtask turns
+
+    it("announces a question that arrived in the reply's cancel window only once Sam's reply has been spoken", async () => { // queued
+      chooseTea(); // "Tea": Saying
+      conversation.receive(ANNOUNCED); // q1 arrives in the window: queued
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // passed: the reply is posted and spoken, and q1 is shown
+      expect(said.map((r) => r.text)).toEqual(['Tea']); // handed over
+      expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // q1 shown, nothing lit
+      await settle(); // nothing more happens while Sam speaks
+      expect(played).toHaveLength(1); // q1 not announced yet: only q2's, earlier
+      speeches[0]!.done(); // Sam's reply has been spoken
+      await settle(); // its end is handled
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // now Amy speaks
+      conversation.update('q1', LIVE.replies, LIVE.scores!); // q1's replies, while she speaks
+      played[1]!.end(); // she has finished
+      expect(conversation.snapshot().mode).toBe('asking'); // the scan starts
+    }); // end of the case
+
+    it('announces a question that arrives while the reply is being spoken once the speech has finished, or failed', async () => { // after the window
+      chooseTea(); // "Tea": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // the reply stands: idle, Sam's speech on its way
+      conversation.receive(ANNOUNCED); // q1 arrives while it is spoken
+      await settle(); // nothing more happens
+      expect([conversation.snapshot().mode, played.length]).toEqual(['waiting', 1]); // shown, not announced
+      speeches[0]!.failed(); // the speech could not be played
+      await settle(); // handled as its end
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // announced now
+    }); // end of the case
+
+    it('announces at once after a cancel, since nothing is spoken', () => { // a cancelled reply never leaves the TV
+      chooseTea(); // "Tea": Saying
+      conversation.press((time += 500)); // cancelled: OPTIONS is scanned again
+      conversation.receive(ANNOUNCED); // q1 arrives
+      expect(said).toEqual([]); // nothing was posted or spoken
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // announced at once
+    }); // end of the case
+
+    it("plays only the newer question's announcement when it replaced one waiting for Sam's speech", async () => { // the wait is part of the announcement
+      chooseTea(); // "Tea": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // the reply stands; Sam's speech on its way
+      conversation.receive(ANNOUNCED); // q1: waits for the speech
+      conversation.receive({ ...ANNOUNCED, id: 'q3', announcement: '/v1/questions/q3/announcement' }); // q3 replaces it, and waits too
+      speeches[0]!.done(); // the speech is over
+      await settle(); // handled
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q3/announcement']); // q3's alone
+    }); // end of the case
+
+    it("never plays an announcement that Help replaced while it waited for Sam's speech", async () => { // Help at any time
+      chooseTea(); // "Tea": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // the reply stands; Sam's speech on its way
+      conversation.receive(ANNOUNCED); // q1: waits for the speech
+      conversation.help((time += 100)); // a 2 s hold: Help
+      speeches[0]!.done(); // the speech is over
+      await settle(); // handled
+      expect(played).toHaveLength(1); // q1's announcement never played
+      expect(helps).toHaveLength(1); // the one help request
+    }); // end of the case
+
+    it("keeps an announcement from playing on a press while it waits for Sam's speech, and selects nothing", async () => { // a press during the announcement, its wait included
+      chooseTea(); // "Tea": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // the reply stands; Sam's speech on its way
+      conversation.receive(ANNOUNCED); // q1: waits for the speech
+      conversation.update('q1', LIVE.replies, LIVE.scores!); // its final replies
+      conversation.press((time += 300)); // a press during the wait
+      expect(conversation.snapshot().mode).toBe('asking'); // the scan starts
+      expect([selections.length, said.length]).toEqual([1, 1]); // nothing more chosen or said than Tea
+      speeches[0]!.done(); // the speech is over
+      await settle(); // handled
+      expect(played).toHaveLength(1); // q1's announcement never played
+    }); // end of the case
+
+    it("waits for the latest reply's speech even when an earlier reply's speech ends first", async () => { // two replies in a row
+      chooseTea(); // "Tea": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // "Tea" stands: its speech on its way
+      conversation.receive({ ...OPTIONS, id: 'q4', announcement: undefined }); // q4, with no announcement
+      conversation.update('q4', OPTIONS.replies, OPTIONS.scores!); // and final replies: scanned at once
+      select(1); // "Coffee": Saying
+      time += SAY_MS; // the window's end
+      jest.advanceTimersByTime(SAY_MS); // "Coffee" stands: its speech on its way
+      speeches[0]!.done(); // "Tea"'s speech ends first
+      await settle(); // handled
+      conversation.receive(ANNOUNCED); // q1 arrives while "Coffee" is still spoken
+      await settle(); // nothing more happens
+      expect(played).toHaveLength(1); // q1 waits
+      speeches[1]!.done(); // "Coffee" has been spoken
+      await settle(); // handled
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // now
+    }); // end of the case
+
+    it('shows and announces at once a question that arrived in the window when the reply is cancelled', () => { // right after a cancel
+      chooseTea(); // "Tea": Saying
+      conversation.receive(ANNOUNCED); // q1 arrives in the window: queued
+      time += 500; // half a second into the window
+      input.keyDown(ENTER); // a key-down cancels the reply
+      expect(said).toEqual([]); // nothing posted or spoken
+      expect(conversation.snapshot()).toEqual({ mode: 'waiting', question: ANNOUNCED, reply: null }); // q1 takes over, not q2 again
+      expect(played.map((a) => a.path)).toEqual(['/v1/questions/q2/announcement', '/v1/questions/q1/announcement']); // announced at once
+    }); // end of the case
+  }); // end of Sam's own speech
 }); // end of the announcements

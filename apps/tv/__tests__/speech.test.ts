@@ -33,13 +33,57 @@ describe('playSpeech', () => { // one reply's speech
     const [first, second] = [fake(), fake()]; // one per reply
     jest.mocked(createAudioPlayer).mockReturnValueOnce(first as unknown as ReturnType<typeof createAudioPlayer>).mockReturnValueOnce(second as unknown as ReturnType<typeof createAudioPlayer>); // handed out in turn
     const freed = (p: ReturnType<typeof fake>) => [p.pause, p.remove, p.release].map((f) => f.mock.calls.length); // [pause, remove, release] calls
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {}); // the dev log, kept quiet
     playSpeech('http://10.0.2.2:8787/v1/utterances/u1/audio', 'test-token'); // a reply
     expect(freed(first)).toEqual([0, 0, 0]); // it plays on
     playSpeech('http://10.0.2.2:8787/v1/utterances/u2/audio', 'test-token'); // the next reply
     expect(freed(first)).toEqual([1, 1, 1]); // the first is silenced at once, out of the module's list, and freed
     expect(freed(second)).toEqual([0, 0, 0]); // the new one plays
+    expect(log.mock.calls).toEqual([['[speech] stopped']]); // and the Metro log says so
+    log.mockRestore(); // the console as before
   }); // end of the case
 }); // end of playSpeech
+
+describe("playSpeech's end", () => { // B9.1: a question's announcement waits until Sam's reply has been spoken
+  let statuses: ((status: Status) => void)[] = []; // each reply player's status listener, oldest first
+  let log: jest.SpyInstance; // the dev log, kept quiet
+
+  beforeEach(() => { // fresh fakes
+    jest.useFakeTimers(); // the start limit
+    statuses = []; // no players yet
+    jest.mocked(createAudioPlayer).mockImplementation(() => ({ addListener: jest.fn((_: string, listener: (status: Status) => void) => { statuses.push(listener); }), play: jest.fn(), pause: jest.fn(), remove: jest.fn(), release: jest.fn() }) as unknown as ReturnType<typeof createAudioPlayer>); // a new fake player each time
+    log = jest.spyOn(console, 'log').mockImplementation(() => {}); // captured, not printed
+  }); // end of set-up
+
+  afterEach(() => { // tidy up
+    log.mockRestore(); // the console as before
+    jest.useRealTimers(); // back to real timers
+  }); // end of tidy-up
+
+  it('settles once the reply has been spoken, could not be played, or was replaced by a newer reply; one slow to start is not given up', async () => { // every way a reply's speech ends
+    const settled: string[] = []; // the replies whose speech is over, in order
+    const track = (name: string, speech: Promise<void>) => { void speech.then(() => settled.push(name)); }; // records when it settles
+    const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); }; // lets the promise callbacks run
+    track('spoken', playSpeech('http://10.0.2.2:8787/v1/utterances/u1/audio', 'test-token')); // a reply
+    statuses[0]!({ playing: true, didJustFinish: false, playbackState: 'ready' }); // playing
+    await flush(); // nothing yet
+    expect(settled).toEqual([]); // still being spoken
+    statuses[0]!({ playing: false, didJustFinish: true, playbackState: 'ended' }); // its end
+    track('failed', playSpeech('http://10.0.2.2:8787/v1/utterances/u2/audio', 'test-token')); // the next reply
+    statuses[1]!({ playing: false, didJustFinish: false, playbackState: 'idle' }); // can't be loaded
+    track('replaced', playSpeech('http://10.0.2.2:8787/v1/utterances/u3/audio', 'test-token')); // another
+    track('slow', playSpeech('http://10.0.2.2:8787/v1/utterances/u4/audio', 'test-token')); // replaced at once by this one, which is slow to start
+    await flush(); // handled
+    expect(settled).toEqual(['spoken', 'failed', 'replaced']); // in order
+    jest.advanceTimersByTime(10 * ANNOUNCE_START_MS); // long past the announcements' start limit
+    await flush(); // handled
+    expect(settled).toEqual(['spoken', 'failed', 'replaced']); // Sam's reply is not given up: it plays when it can
+    statuses[3]!({ playing: true, didJustFinish: false, playbackState: 'ready' }); // it starts late
+    statuses[3]!({ playing: false, didJustFinish: true, playbackState: 'ended' }); // and ends
+    await flush(); // handled
+    expect(settled).toEqual(['spoken', 'failed', 'replaced', 'slow']); // spoken after all
+  }); // end of the case
+}); // end of playSpeech's end
 
 describe('playAnnouncement', () => { // B9: a question's spoken announcement
   const URL = 'http://10.0.2.2:8787/v1/questions/q1/announcement'; // where it is

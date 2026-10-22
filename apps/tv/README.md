@@ -27,11 +27,16 @@ attempt fails.
   announcement has finished and the replies are ready (below). A press whose key goes down during the announcement
   stops it and starts the scan at once, choosing nothing, on the replies shown (the defaults, if the model's have not
   come yet), even if the announcement ended before the key came up; one that went down before it began does nothing.
-  Holding
-  the switch for 2 s opens Help then too, with its one help request, and stops the announcement. A question is
-  announced once: not again when Help is dismissed, after a cancel, or for its replay after a reconnect. When the app
-  can't play it (the server made none, the audio can't be loaded, or it has not started within 2 s), the scan starts
-  as it would without one. Practice questions have no announcement.
+  Holding the switch for 2 s opens Help then too, with its one help request, and stops the announcement. A question
+  is announced once: not again when Help is dismissed, after a cancel, or for its replay after a reconnect. When the
+  app can't play it (the server made none, the audio can't be loaded, or it has not started within 2 s), the scan
+  starts as it would without one. Practice questions have no announcement.
+- **Never over Sam** (B9.1). If Sam's reply is still being posted or spoken when a question shows (one that arrived
+  in the reply's 2 s window shows as the window ends), its announcement starts only once his latest reply's speech has
+  finished or failed, or at most 10 s after the reply stood, so a stuck post or player holds nothing back for good. A
+  cancelled reply is never spoken: while connected, a cancel shows a question that arrived in the window at once,
+  and announces it at once. The wait counts as part of the announcement: a press or Help during it keeps the
+  announcement from playing.
 - It shows the question and the server's default replies at once, but the highlight starts only when the model's
   replies arrive (then on them, in the server's order, using its priors) or when the server's 3.5 s budget for
   them has passed (then on the defaults), and not before the question's announcement has finished or failed, unless a
@@ -55,7 +60,8 @@ Fixture replies get mock AI-like priors by position (0.35, 0.20, 0.12, 0.09, 0.0
 
 - **A reply** that is committed fills the screen for 2 s with "Saying it — press to cancel". A key-down in that
   window cancels it at once and scans the same question again (a practice question once the connection is back gives
-  way to the idle screen instead), and so does a switch key still held when the window ends. Otherwise the reply is
+  way to the idle screen instead; while connected, a server question that arrived in the window takes over), and so
+  does a switch key still held when the window ends. Otherwise the reply is
   posted to `POST /v1/utterances`, its speech is played with Expo's audio module (Polly's MP3, or a short tone in mock
   mode), and the idle screen (or, offline, the next practice question) appears. A cancelled reply never leaves the TV.
 - **Not sure yet.** When a press leaves no option at θ = 0.97, only the top two are scanned once more and the other
@@ -104,9 +110,12 @@ window opens Help on that question.
   token runs on the fixtures only.
 - **Posting replies.** `POST /v1/utterances` has a 4 s timeout and one retry under the same idempotency key.
 - **Announcements.** A question's `announcement_url` is played from the server with the device token by Expo's
-  audio module, on a player apart from the replies' speech, so neither cuts the other off. Dev builds log
-  `[announcement] playing`, then `finished`, `not played` or `stopped`, in the Metro terminal and `adb logcat -s
-  ReactNativeJS`. On the emulator (2026-10-22, mock mode, five questions asked on the dev endpoint, raw screen frames
+  audio module, on a player apart from the replies' speech, so neither cuts the other off. A new reply stops the
+  previous reply's speech: its player is paused, removed and released, since on Android `remove()` alone neither
+  stops nor frees it. An announcement is given up if it has not started within 2 s; a reply's speech plays whenever
+  it starts. Dev builds log `[speech]` and
+  `[announcement]` lines (`playing`, then `finished`, `not played` or `stopped`) in the Metro terminal and `adb
+  logcat -s ReactNativeJS`. On the emulator (2026-10-22, mock mode, five questions asked on the dev endpoint, raw screen frames
   150 to 490 ms apart on the device clock), the highlight showed only in frames captured after `[announcement]
   finished` (in one run the frame began 13 ms before that line, within the capture's own start-up time). In four runs
   a frame taken while the tone played showed the question with its final replies and nothing lit; in the fifth, the

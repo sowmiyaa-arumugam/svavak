@@ -21,14 +21,21 @@ const CANCEL = 'Saying it — press to cancel'; // under a committed reply
 const FPS_WINDOW_MS = 5000; // K2: frames per second, logged every 5 s
 const HIGHLIGHT = px(12); // the scan highlight's border width
 
-/** Posts a reply that stood through its cancel window, then plays its speech if the server made any. */
-function say(reply: Reply): void { // the conversation's reply hook
-  if (!SERVER) return; // a build without a server: the reply was shown on screen only
+/** A question's announcement waits at most this long after Sam's reply stood for its speech to be over (B9.1). */
+export const SAY_WAIT_MS = 10_000; // a reply of up to 60 characters is posted and spoken in about 5 s; the rest is for a slow network
+
+/**
+ * Posts a reply that stood through its cancel window, then plays its speech if the server made any. Settles once that
+ * is over, but at most SAY_WAIT_MS later, so a stuck post or player never holds the next question's announcement back.
+ */
+export function say(reply: Reply): Promise<void> { // the conversation's reply hook: a question's announcement waits for it
+  if (!SERVER) return Promise.resolve(); // a build without a server: the reply was shown on screen only
   const server = SERVER; // narrowed for the callbacks
-  postUtterance(server, reply).then( // POST /v1/utterances
-    (audioUrl) => { if (audioUrl) playSpeech(audioUrl, server.token); }, // null when the server made none: nothing to play
+  const spoken = postUtterance(server, reply).then( // POST /v1/utterances
+    (audioUrl) => (audioUrl ? playSpeech(audioUrl, server.token) : undefined), // spoken to its end; null when the server made none: nothing to play
     (error) => { if (__DEV__) console.log(`[server] reply not posted: ${String(error)}`); }, // offline: nothing more to do
   ); // end of the post
+  return Promise.race([spoken, new Promise<void>((done) => setTimeout(done, SAY_WAIT_MS))]); // whichever comes first
 } // end of say
 
 /** Plays a server question's spoken announcement (B9) from this build's server, which a build without one never gets. */
