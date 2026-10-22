@@ -12,7 +12,9 @@ let player: AudioPlayer | null = null; // the one player; a new reply replaces i
 
 /** Plays the audio at `url`, fetched with the device token, stopping whatever played before. */
 export function playSpeech(url: string, token: string): void { // one reply's speech
-  player?.remove(); // stop and release the previous one
+  player?.pause(); // the previous one stops at once: on Android remove() alone does not stop it
+  player?.remove(); // out of the module's list
+  player?.release(); // and its native player freed
   player = createAudioPlayer({ uri: url, headers: { Authorization: `Bearer ${token}` } }); // the audio route needs the token too
   if (__DEV__) { // dev builds: the Metro log shows whether the speech really played
     let started = false; // "playing" is logged once

@@ -12,7 +12,7 @@ type Status = { playing: boolean; didJustFinish: boolean; playbackState?: string
 describe('playSpeech', () => { // one reply's speech
   it('fetches the audio with the device token, and logs once when it starts playing and when it finishes', () => { // dev log
     let onStatus: (status: Status) => void = () => {}; // the player's status listener, once added
-    const player = { addListener: jest.fn((_: string, listener: (status: Status) => void) => { onStatus = listener; }), play: jest.fn(), remove: jest.fn() }; // fake
+    const player = { addListener: jest.fn((_: string, listener: (status: Status) => void) => { onStatus = listener; }), play: jest.fn(), pause: jest.fn(), remove: jest.fn(), release: jest.fn() }; // fake
     jest.mocked(createAudioPlayer).mockReturnValue(player as unknown as ReturnType<typeof createAudioPlayer>); // handed out by the module
     const log = jest.spyOn(console, 'log').mockImplementation(() => {}); // captured, not printed
     playSpeech('http://10.0.2.2:8787/v1/utterances/u1/audio', 'test-token'); // a reply's speech
@@ -26,6 +26,18 @@ describe('playSpeech', () => { // one reply's speech
     onStatus({ playing: false, didJustFinish: true }); // the end again: expo-audio sent it twice on the emulator
     expect(log.mock.calls).toEqual([['[speech] playing'], ['[speech] finished']]); // once each
     log.mockRestore(); // the console as before
+  }); // end of the case
+
+  it("stops, removes and releases the previous reply's player when the next reply plays, so an earlier reply never keeps playing", () => { // on Android remove() alone stops nothing
+    const fake = () => ({ addListener: jest.fn(), play: jest.fn(), pause: jest.fn(), remove: jest.fn(), release: jest.fn() }); // a fake player
+    const [first, second] = [fake(), fake()]; // one per reply
+    jest.mocked(createAudioPlayer).mockReturnValueOnce(first as unknown as ReturnType<typeof createAudioPlayer>).mockReturnValueOnce(second as unknown as ReturnType<typeof createAudioPlayer>); // handed out in turn
+    const freed = (p: ReturnType<typeof fake>) => [p.pause, p.remove, p.release].map((f) => f.mock.calls.length); // [pause, remove, release] calls
+    playSpeech('http://10.0.2.2:8787/v1/utterances/u1/audio', 'test-token'); // a reply
+    expect(freed(first)).toEqual([0, 0, 0]); // it plays on
+    playSpeech('http://10.0.2.2:8787/v1/utterances/u2/audio', 'test-token'); // the next reply
+    expect(freed(first)).toEqual([1, 1, 1]); // the first is silenced at once, out of the module's list, and freed
+    expect(freed(second)).toEqual([0, 0, 0]); // the new one plays
   }); // end of the case
 }); // end of playSpeech
 
