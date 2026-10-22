@@ -4,9 +4,9 @@ A Bayesian single-switch selection engine, with a seeded synthetic user and simu
 
 Each option has a small clock, and every clock turns with the same period T. To choose an option, the user
 presses the one switch when that option's hand points to noon. Each press updates a posterior over the options,
-and the engine commits when the leading option reaches the threshold θ. Pure TypeScript with one runtime
-dependency, stdlib's pure-JavaScript `erfc` ([@stdlib/math-base-special-erfc](https://github.com/stdlib-js/math-base-special-erfc),
-Apache-2.0), so the same source runs in React Native (Hermes via Metro), in the browser and in Node 24.
+and the engine commits when the leading option reaches the threshold θ. Pure TypeScript with no runtime
+dependencies, so the same source runs in React Native (Hermes via Metro), in the browser and in Node 24. Its `erfc`
+is a port of FreeBSD's `lib/msun/src/s_erf.c` ([src/core/erfc.ts](src/core/erfc.ts); Sun's notice is in NOTICE).
 
 ## What it does
 

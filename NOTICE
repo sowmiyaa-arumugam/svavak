@@ -12,9 +12,8 @@ which is the studio's title, are set in the typeface Source Serif 4, Copyright 2
 (https://openfontlicense.org). The logo files hold its glyphs as outlines; no font file is committed. The licence text
 is kept next to the logo: assets/brand/SourceSerif4_OFL.txt.
 
-The engine (packages/switchclock) computes the normal distribution function with @stdlib/math-base-special-erfc
-(https://github.com/stdlib-js/math-base-special-erfc), Copyright (c) 2016-2026 The Stdlib Authors, licensed under the
-Apache License, Version 2.0. Its erfc follows FreeBSD's msun s_erf.c, which carries this notice:
+The engine's erfc (packages/switchclock/src/core/erfc.ts) is ported from FreeBSD's lib/msun/src/s_erf.c, which
+carries this notice:
 
   Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
 

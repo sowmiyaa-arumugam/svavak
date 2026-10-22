@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Scan mode: one highlight steps through the options in a fixed order, and each press is scored against the windows.
 
-import erfc from '@stdlib/math-base-special-erfc'; // complementary error function (Apache-2.0; FreeBSD msun's s_erf.c)
+import { erfc } from './erfc.ts'; // complementary error function: FreeBSD msun's s_erf.c, ported
 import { type ClickModel, normalise } from './model.ts'; // the click-model parameters and log-space normalisation
 import { rankOrder } from './phases.ts'; // options by posterior
 import { type Option, type PriorConfig, priors } from './priors.ts'; // scores to priors
@@ -47,7 +47,7 @@ export function windowMs(p: number, c: Timing): number { // window length
   return p === 0 ? c.stepMs + c.firstExtraMs : c.stepMs; // the first option gets the extra time
 } // end of windowMs
 
-/** Phi(x), the standard normal distribution function, through stdlib's erfc (double precision). */
+/** Phi(x), the standard normal distribution function, through erfc (FreeBSD's, ported; double precision). */
 export function normalCdf(x: number): number { // P(Z <= x)
   const z = Math.abs(x) / Math.SQRT2; // erfc argument for |x|
   const tail = erfc(z); // P(|Z| >= |x|), accurate far into the tail
