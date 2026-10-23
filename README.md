@@ -29,7 +29,7 @@ Open http://localhost:5173 and switch on **Drive mode**. Send "Ask Sam if he wan
 TV and press Space when Tea lights up. Then try "Remember that Sam loves gardening.", "What did Sam say?" and holding
 Space for 2 s (Help).
 
-**Fire TV route.** Install the demo APK (`svavak-demo.apk`) from the repository's Releases on an Android TV emulator
+**Fire TV route.** Install the [demo APK (`svavak-demo.apk`)](https://github.com/sowmiyaa-arumugam/svavak/releases/latest/download/svavak-demo.apk) from the repository's Releases on an Android TV emulator
 (1080p), for example with `adb install svavak-demo.apk`. It connects to the server at `10.0.2.2:8787` (the emulator's
 address for your computer) with the public demo token. Switch Drive mode off in the studio and answer on the TV with
 Enter.
